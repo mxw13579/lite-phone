@@ -242,8 +242,14 @@
                         <span class="action-btn" id="edit-messages-btn" title="编辑消息"><img
                                 src="https://i.postimg.cc/V60TWbGr/image.png" alt="编辑"></span>
 
-                        <span class="action-btn" id="listen-together-btn" title="一起听"><img
-                                src="https://i.postimg.cc/8kYShvrJ/90-UI-2.png" alt="一起听"></span>
+                        <span class="action-btn" id="listen-together-btn" title="一起听">
+                            <svg id="listen-together-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <!-- 默认开始图标 (播放 + 音乐) -->
+                                <path d="M8 5V19L19 12L8 5Z" fill="currentColor"/>
+                                <path d="M3 18V6H5V18H3Z" fill="currentColor"/>
+                                <path d="M21 18V6H23V18H21Z" fill="currentColor"/>
+                            </svg>
+                        </span>
                         <span class="action-btn" id="chat-settings-btn" title="聊天设置"><img
                                 src="https://i.postimg.cc/wRDhh491/image.png" alt="设置"></span>
                     </div>
@@ -368,106 +374,255 @@
 
 <div id="chat-settings-modal" class="modal">
     <div class="modal-content">
-        <div class="modal-header"><span>聊天设置</span></div>
+        <div class="modal-header">
+            <div class="settings-header-content">
+                <span class="settings-title">聊天设置</span>
+                <span class="settings-subtitle">个性化你的聊天体验</span>
+            </div>
+        </div>
         <div class="modal-body">
-            <div class="form-group" id="chat-name-group"><label for="chat-name-input">备注名 / 群名</label><input
-                    type="text" id="chat-name-input"></div>
-            <div class="form-group" id="my-group-nickname-group"><label for="my-group-nickname-input">我的群昵称</label><input
-                    type="text" id="my-group-nickname-input"></div>
-            <div class="form-group" id="group-avatar-group"><label>群头像</label>
-                <div class="avatar-upload"><img id="group-avatar-preview">
-                    <button onclick="document.getElementById('group-avatar-input').click()">上传群头像</button>
-                    <input type="file" id="group-avatar-input" accept="image/*"></div>
-            </div>
-            <div class="form-group" id="world-book-link-group">
-                <label>关联世界书 (可多选)</label>
-                <div class="custom-multiselect">
-                    <div class="select-box">
-                        <span class="selected-options-text">-- 点击选择 --</span>
-                        <span class="arrow-down">▼</span>
+            <!-- 基础信息区块 -->
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span>📝 基础信息</span>
+                </div>
+                <div class="form-group" id="chat-name-group">
+                    <label for="chat-name-input">
+                        <span class="label-icon">💬</span>
+                        <span>备注名 / 群名</span>
+                    </label>
+                    <input type="text" id="chat-name-input" placeholder="给这个聊天起个有趣的名字...">
+                </div>
+                <div class="form-group" id="my-group-nickname-group">
+                    <label for="my-group-nickname-input">
+                        <span class="label-icon">👤</span>
+                        <span>我的群昵称</span>
+                    </label>
+                    <input type="text" id="my-group-nickname-input" placeholder="在群里显示的昵称...">
+                </div>
+                <div class="form-group" id="group-avatar-group">
+                    <label>
+                        <span class="label-icon">🖼️</span>
+                        <span>群头像</span>
+                    </label>
+                    <div class="avatar-upload">
+                        <img id="group-avatar-preview" alt="群头像预览">
+                        <div class="upload-actions">
+                            <button onclick="document.getElementById('group-avatar-input').click()">
+                                <span>📸</span>
+                                <span>上传群头像</span>
+                            </button>
+                            <input type="file" id="group-avatar-input" accept="image/*">
+                        </div>
                     </div>
-                    <div id="world-book-checkboxes-container" class="checkboxes-container">
+                </div>
+            </div>
+
+            <!-- 世界观设定区块 -->
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span>🌍 世界观设定</span>
+                </div>
+                <div class="form-group" id="world-book-link-group">
+                    <label>
+                        <span class="label-icon">📚</span>
+                        <span>关联世界书</span>
+                        <span class="label-hint">(可多选)</span>
+                    </label>
+                    <div class="custom-multiselect">
+                        <div class="select-box">
+                            <span class="selected-options-text">-- 点击选择 --</span>
+                            <span class="arrow-down">▼</span>
+                        </div>
+                        <div id="world-book-checkboxes-container" class="checkboxes-container">
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="form-group" id="ai-persona-group">
-                <label for="ai-persona">对方人设 (AI Persona)</label>
-                <textarea id="ai-persona" rows="3"></textarea>
-                <div class="form-group" style="margin-top: 15px; margin-bottom: 0;">
-                    <label for="ai-pat-suffix-input">拍一拍后缀</label>
-                    <input type="text" id="ai-pat-suffix-input" placeholder="例如：的脑袋瓜">
+
+            <!-- 角色设定区块 -->
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span>🎭 角色设定</span>
+                </div>
+                <div class="form-group" id="ai-persona-group">
+                    <label for="ai-persona">
+                        <span class="label-icon">🤖</span>
+                        <span>对方人设 (AI Persona)</span>
+                    </label>
+                    <textarea id="ai-persona" rows="3" placeholder="描述AI角色的性格、背景和行为特点..."></textarea>
+                    <div class="form-group nested-group">
+                        <label for="ai-pat-suffix-input">
+                            <span class="label-icon">👋</span>
+                            <span>拍一拍后缀</span>
+                        </label>
+                        <input type="text" id="ai-pat-suffix-input" placeholder="例如：的脑袋瓜">
+                    </div>
+                </div>
+
+                <div class="form-group" id="ai-avatar-group">
+                    <label>
+                        <span class="label-icon">🎨</span>
+                        <span>对方头像</span>
+                    </label>
+                    <div class="avatar-upload">
+                        <img id="ai-avatar-preview" alt="对方头像预览">
+                        <div class="upload-actions">
+                            <button onclick="document.getElementById('ai-avatar-input').click()">
+                                <span>🖼️</span>
+                                <span>上传对方头像</span>
+                            </button>
+                            <input type="file" id="ai-avatar-input" accept="image/*">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" id="my-persona-group">
+                    <label for="my-persona">
+                        <span class="label-icon">👨‍💼</span>
+                        <span>我的人设 (My Persona)</span>
+                    </label>
+                    <textarea id="my-persona" rows="3" placeholder="描述你的角色设定和个人特点..."></textarea>
+                    <div class="form-group nested-group">
+                        <label for="my-pat-suffix-input">
+                            <span class="label-icon">✋</span>
+                            <span>拍一拍后缀</span>
+                        </label>
+                        <input type="text" id="my-pat-suffix-input" placeholder="例如：的肩膀">
+                    </div>
+                </div>
+
+                <div class="form-group" id="my-avatar-group">
+                    <label>
+                        <span class="label-icon">👤</span>
+                        <span>我的头像</span>
+                    </label>
+                    <div class="avatar-upload">
+                        <img id="my-avatar-preview" alt="我的头像预览">
+                        <div class="upload-actions">
+                            <button onclick="document.getElementById('my-avatar-input').click()">
+                                <span>📷</span>
+                                <span>上传我的头像</span>
+                            </button>
+                            <button id="open-persona-library-btn">
+                                <span>📂</span>
+                                <span>预设</span>
+                            </button>
+                            <input type="file" id="my-avatar-input" accept="image/*">
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="form-group" id="ai-avatar-group"><label>对方头像</label>
-                <div class="avatar-upload"><img id="ai-avatar-preview">
-                    <button onclick="document.getElementById('ai-avatar-input').click()">上传对方头像</button>
-                    <input type="file" id="ai-avatar-input" accept="image/*"></div>
-            </div>
-            <div class="form-group" id="my-persona-group">
-                <label for="my-persona">我的人设 (My Persona)</label>
-                <textarea id="my-persona" rows="3"></textarea>
-                <div class="form-group" style="margin-top: 15px; margin-bottom: 0;">
-                    <label for="my-pat-suffix-input">拍一拍后缀</label>
-                    <input type="text" id="my-pat-suffix-input" placeholder="例如：的肩膀">
+            <!-- 群成员管理区块 -->
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span>👥 群成员管理</span>
                 </div>
-            </div>
-
-            <div class="form-group" id="my-avatar-group"><label>我的头像</label>
-                <div class="avatar-upload"><img id="my-avatar-preview">
-                    <button onclick="document.getElementById('my-avatar-input').click()">上传我的头像</button>
-                    <button id="open-persona-library-btn">预设</button>
-                    <input type="file" id="my-avatar-input" accept="image/*"></div>
-            </div>
-            <div class="form-group" id="group-members-group">
-                <label>群成员人设</label>
-                <div id="group-members-settings"></div>
-                <button id="add-group-member-btn" class="form-button form-button-secondary" style="margin-top: 10px; width: auto; padding: 8px 15px;">新增成员</button>
-            </div>
-
-            <div class="form-group"><label for="max-memory">上下文记忆条数</label><input type="number" id="max-memory"
-                                                                                         value="10"></div>
-            <div class="form-group"><label>聊天气泡主题
-                <button id="reset-theme-btn" type="button">重置</button>
-            </label>
-                <div class="theme-selector"><label><input type="radio" name="theme-select" value="default"
-                                                          id="theme-default"> 默认</label><label><input type="radio"
-                                                                                                        name="theme-select"
-                                                                                                        value="pink_blue">
-                    粉蓝</label><label><input type="radio" name="theme-select" value="blue_white">
-                    蓝白</label><label><input type="radio" name="theme-select" value="purple_yellow">
-                    紫黄</label><label><input type="radio" name="theme-select" value="black_white">
-                    黑白</label><label><input type="radio" name="theme-select" value="yellow_white"> 黄白</label><label><input
-                        type="radio" name="theme-select" value="red_black"> 红黑</label><label><input type="radio"
-                                                                                                      name="theme-select"
-                                                                                                      value="blue_yellow">
-                    蓝黄</label><label><input type="radio" name="theme-select" value="pink_yellow">
-                    粉黄</label><label><input type="radio" name="theme-select" value="pink_purple">
-                    粉紫</label><label><input type="radio" name="theme-select" value="gray_white">
-                    灰白</label><label><input type="radio" name="theme-select" value="blue_green">
-                    蓝绿</label><label><input type="radio" name="theme-select" value="pink_white">
-                    粉白</label><label><input type="radio" name="theme-select" value="pink_black">
-                    粉黑</label><label><input type="radio" name="theme-select" value="pink_green">
-                    粉绿</label><label><input type="radio" name="theme-select" value="green_black"> 绿黑</label></div>
-            </div>
-            <div class="form-group">
-                <label>聊天背景</label>
-                <div class="bg-upload-container">
-                    <button type="button" class="form-button-secondary"
-                            style="width: auto; padding: 8px 12px; margin-top: 0;"
-                            onclick="document.getElementById('bg-input').click()">上传背景图
+                <div class="form-group" id="group-members-group">
+                    <label>
+                        <span class="label-icon">🏷️</span>
+                        <span>群成员人设</span>
+                    </label>
+                    <div id="group-members-settings"></div>
+                    <button id="add-group-member-btn" class="add-member-btn">
+                        <span>➕</span>
+                        <span>新增成员</span>
                     </button>
-                    <button type="button" id="remove-bg-btn">移除背景</button>
                 </div>
-                <img id="bg-preview" class="bg-preview-img">
-                <input type="file" id="bg-input" accept="image/*" style="display: none;">
             </div>
-            <hr style="margin: 25px 0; border: none; border-top: 1px solid #eee;">
-            <button class="form-button form-button-secondary" id="clear-chat-btn">清空聊天记录</button>
+
+            <!-- 聊天配置区块 -->
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span>⚙️ 聊天配置</span>
+                </div>
+                <div class="form-group">
+                    <label for="max-memory">
+                        <span class="label-icon">🧠</span>
+                        <span>上下文记忆条数</span>
+                    </label>
+                    <div class="number-input-wrapper">
+                        <input type="number" id="max-memory" value="10" min="1" max="50">
+                        <span class="input-unit">条</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 外观主题区块 -->
+            <div class="settings-section">
+                <div class="settings-section-title">
+                    <span>🎨 外观主题</span>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <span class="label-icon">🎭</span>
+                        <span>聊天气泡主题</span>
+                        <button id="reset-theme-btn" type="button" class="reset-btn">
+                            <span>🔄</span>
+                            <span>重置</span>
+                        </button>
+                    </label>
+                    <div class="theme-selector">
+                        <label><input type="radio" name="theme-select" value="default" id="theme-default"><span>默认</span></label>
+                        <label><input type="radio" name="theme-select" value="pink_blue"><span>粉蓝</span></label>
+                        <label><input type="radio" name="theme-select" value="blue_white"><span>蓝白</span></label>
+                        <label><input type="radio" name="theme-select" value="purple_yellow"><span>紫黄</span></label>
+                        <label><input type="radio" name="theme-select" value="black_white"><span>黑白</span></label>
+                        <label><input type="radio" name="theme-select" value="yellow_white"><span>黄白</span></label>
+                        <label><input type="radio" name="theme-select" value="red_black"><span>红黑</span></label>
+                        <label><input type="radio" name="theme-select" value="blue_yellow"><span>蓝黄</span></label>
+                        <label><input type="radio" name="theme-select" value="pink_yellow"><span>粉黄</span></label>
+                        <label><input type="radio" name="theme-select" value="pink_purple"><span>粉紫</span></label>
+                        <label><input type="radio" name="theme-select" value="gray_white"><span>灰白</span></label>
+                        <label><input type="radio" name="theme-select" value="blue_green"><span>蓝绿</span></label>
+                        <label><input type="radio" name="theme-select" value="pink_white"><span>粉白</span></label>
+                        <label><input type="radio" name="theme-select" value="pink_black"><span>粉黑</span></label>
+                        <label><input type="radio" name="theme-select" value="pink_green"><span>粉绿</span></label>
+                        <label><input type="radio" name="theme-select" value="green_black"><span>绿黑</span></label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <span class="label-icon">🖼️</span>
+                        <span>聊天背景</span>
+                    </label>
+                    <div class="bg-upload-container">
+                        <button type="button" class="upload-bg-btn" onclick="document.getElementById('bg-input').click()">
+                            <span>📁</span>
+                            <span>上传背景图</span>
+                        </button>
+                        <button type="button" id="remove-bg-btn" class="remove-bg-btn">
+                            <span>🗑️</span>
+                            <span>移除背景</span>
+                        </button>
+                    </div>
+                    <img id="bg-preview" class="bg-preview-img">
+                    <input type="file" id="bg-input" accept="image/*" style="display: none;">
+                </div>
+            </div>
+
+            <!-- 危险操作区块 -->
+            <div class="settings-section danger-section">
+                <div class="settings-section-title">
+                    <span>⚠️ 危险操作</span>
+                </div>
+                <button class="danger-btn" id="clear-chat-btn">
+                    <span>🗑️</span>
+                    <span>清空聊天记录</span>
+                    <span class="btn-hint">此操作不可撤销</span>
+                </button>
+            </div>
         </div>
         <div class="modal-footer">
-            <button class="cancel" id="cancel-chat-settings-btn">取消</button>
-            <button class="save" id="save-chat-settings-btn">保存</button>
+            <button class="cancel" id="cancel-chat-settings-btn">
+                <span>❌</span>
+                <span>取消</span>
+            </button>
+            <button class="save" id="save-chat-settings-btn">
+                <span>💾</span>
+                <span>保存设置</span>
+            </button>
         </div>
     </div>
 </div>

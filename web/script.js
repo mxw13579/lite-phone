@@ -1,6 +1,34 @@
 let isMessageEditMode = false;
 let editingPresetId = null;
 
+// 全局状态对象，避免作用域问题
+let state = {
+    chats: {},
+    activeChatId: null,
+    globalSettings: {},
+    apiConfig: {},
+    userStickers: [],
+    worldBooks: [],
+    personaPresets: [],
+    presets: []
+};
+
+// 全局变量定义
+let myAddress = '位置未知';
+let musicState = {
+    isActive: false,
+    activeChatId: null,
+    isPlaying: false,
+    playlist: [],
+    currentIndex: -1,
+    playMode: 'order',
+    totalElapsedTime: 0,
+    timerId: null
+};
+
+// 音频播放器引用 - 会在DOMContentLoaded中初始化
+let audioPlayer = null;
+
 function showScreen(screenId) {
     if (isMessageEditMode && screenId !== 'chat-interface-screen') {
         exitMessageEditMode(false);
@@ -80,28 +108,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    let state = {
-        chats: {},
-        activeChatId: null,
-        globalSettings: {},
-        apiConfig: {},
-        userStickers: [],
-        worldBooks: [],
-        personaPresets: [],
-        presets: [] // 新增 presets 数组
-    };
-    let myAddress = '位置未知';
-    let musicState = {
-        isActive: false,
-        activeChatId: null,
-        isPlaying: false,
-        playlist: [],
-        currentIndex: -1,
-        playMode: 'order',
-        totalElapsedTime: 0,
-        timerId: null
-    };
-    const audioPlayer = document.getElementById('audio-player');
+    // 初始化全局变量引用
+    audioPlayer = document.getElementById('audio-player');
     let newWallpaperBase64 = null;
     let isSelectionMode = false;
     let selectedMessages = new Set();
@@ -764,10 +772,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!chat) return;
         exitSelectionMode();
         const messagesContainer = document.getElementById('chat-messages');
-        messagesContainer.dataset.theme = chat.settings.theme || 'default';
+        const chatScreen = document.getElementById('chat-interface-screen');
+        
+        // 应用主题类到聊天界面
+        const theme = chat.settings.theme || 'default';
+        chatScreen.className = chatScreen.className.replace(/theme-\w+/g, '');
+        chatScreen.classList.add(`theme-${theme}`);
+        
         document.getElementById('chat-header-title').textContent = chat.name;
         messagesContainer.innerHTML = '';
-        const chatScreen = document.getElementById('chat-interface-screen');
         chatScreen.style.backgroundImage = chat.settings.background ? `url(${chat.settings.background})` : 'none';
         chatScreen.style.backgroundColor = chat.settings.background ? 'transparent' : '#f0f2f5';
         const history = chat.history;
@@ -1478,16 +1491,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateListenTogetherIcon(chatId, forceReset = false) {
-        const iconImg = document.querySelector('#listen-together-btn img');
-        if (!iconImg) return;
+        const iconSvg = document.getElementById('listen-together-icon');
+        if (!iconSvg) return;
+        
         if (forceReset || !musicState.isActive || musicState.activeChatId !== chatId) {
-            iconImg.src = 'https://i.postimg.cc/8kYShvrJ/90-UI-2.png';
-            iconImg.className = '';
+            // 默认开始图标 (播放 + 音乐符号)
+            iconSvg.innerHTML = `
+                <path d="M8 5V19L19 12L8 5Z" fill="currentColor"/>
+                <path d="M3 18V6H5V18H3Z" fill="currentColor"/>
+                <path d="M21 18V6H23V18H21Z" fill="currentColor"/>
+            `;
+            iconSvg.className = '';
             return;
         }
-        iconImg.src = 'https://i.postimg.cc/vBN7GnQ9/3-FC8-D1596-C5-CFB200-FCB1-D8-C3-A37-A370.png';
-        iconImg.classList.add('rotating');
-        if (musicState.isPlaying) iconImg.classList.remove('paused'); else iconImg.classList.add('paused');
+        
+        if (musicState.isPlaying) {
+            // 正在播放图标 (暂停 + 音乐波纹)
+            iconSvg.innerHTML = `
+                <rect x="6" y="4" width="4" height="16" fill="currentColor"/>
+                <rect x="14" y="4" width="4" height="16" fill="currentColor"/>
+                <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+            `;
+            iconSvg.classList.add('rotating');
+            iconSvg.classList.remove('paused');
+        } else {
+            // 已连接但暂停图标 (播放 + 音乐符号 + 暂停效果)
+            iconSvg.innerHTML = `
+                <path d="M8 5V19L19 12L8 5Z" fill="currentColor"/>
+                <path d="M3 18V6H5V18H3Z" fill="currentColor" opacity="0.6"/>
+                <path d="M21 18V6H23V18H21Z" fill="currentColor" opacity="0.6"/>
+            `;
+            iconSvg.classList.add('rotating');
+            iconSvg.classList.add('paused');
+        }
     }
 
     window.updateListenTogetherIconProxy = updateListenTogetherIcon;
