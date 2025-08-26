@@ -37,21 +37,34 @@
             </div>
             <div id="app-grid">
                 <div class="app-row">
-                    <button class="app-icon" onclick="showScreen('world-book-screen')" aria-label="打开世界书应用">
+                    <button class="app-icon" data-nav-screen="world-book-screen" aria-label="打开世界书应用">
                         <div class="icon-bg"><img src="https://i.postimg.cc/htP74QkL/1.jpg" alt="世界书"></div>
                         <span class="label">世界书</span></button>
-                    <button class="app-icon" onclick="showScreen('preset-list-screen')" aria-label="打开预设设置应用">
+                    <button class="app-icon" data-nav-screen="preset-list-screen" aria-label="打开预设设置应用">
                         <div class="icon-bg"><img src="https://i.postimg.cc/MKfTfsmq/1.png" alt="预设设置"></div>
                         <span class="label">预设设置</span></button>
                 </div>
                 <div class="app-row">
-                    <button class="app-icon" onclick="showScreen('chat-list-screen')" aria-label="打开QQ聊天应用">
+                    <button class="app-icon" data-nav-screen="chat-list-screen" aria-label="打开QQ聊天应用">
                         <div class="icon-bg"><img src="https://i.postimg.cc/gr2ndvPL/QQ.jpg" alt="QQ"></div>
                         <span class="label">QQ</span></button>
-                    <button class="app-icon" onclick="showScreen('api-settings-screen')" aria-label="打开API设置应用">
+                    <button class="app-icon" data-nav-screen="moments-screen" aria-label="打开朋友圈应用">
+                        <div class="icon-bg"><img src="https://i.postimg.cc/QxrJYvgQ/wechat-moments.jpg" alt="朋友圈"></div>
+                        <span class="label">朋友圈</span></button>
+                    <button class="app-icon" data-nav-screen="plugins-screen" aria-label="打开插件管理应用">
+                        <div class="icon-bg"><img src="https://i.postimg.cc/QdGLQ8x5/plugins.jpg" alt="插件管理"></div>
+                        <span class="label">插件管理</span></button>
+                </div>
+                <div class="app-row">
+                    <button class="app-icon" data-nav-screen="themes-screen" aria-label="打开美化中心应用">
+                        <div class="icon-bg"><img src="https://i.postimg.cc/g25KLT6T/themes.jpg" alt="美化中心"></div>
+                        <span class="label">美化中心</span></button>
+                    <button class="app-icon" data-nav-screen="api-settings-screen" aria-label="打开API设置应用">
                         <div class="icon-bg"><img src="https://i.postimg.cc/wy631NyP/settings.jpg" alt="API设置"></div>
                         <span class="label">API设置</span></button>
-                    <button class="app-icon" onclick="showScreen('wallpaper-screen')" aria-label="打开壁纸设置应用">
+                </div>
+                <div class="app-row">
+                    <button class="app-icon" data-nav-screen="wallpaper-screen" aria-label="打开壁纸设置应用">
                         <div class="icon-bg"><img src="https://i.postimg.cc/q6qRLdGx/photo.jpg" alt="壁纸"></div>
                         <span class="label">壁纸</span></button>
                 </div>
@@ -61,7 +74,7 @@
 
         <div id="world-book-screen" class="screen">
             <header class="header" role="banner">
-                <button class="back-btn" onclick="showScreen('home-screen')" aria-label="返回主屏幕">
+                <button class="back-btn" data-nav-screen="home-screen" aria-label="返回主屏幕">
                     <span aria-hidden="true">‹</span>
                 </button>
                 <h1 class="header-title">世界书</h1>
@@ -73,7 +86,7 @@
         </div>
         <div id="world-book-editor-screen" class="screen">
             <header class="header" role="banner">
-                <button class="back-btn" onclick="showScreen('world-book-screen')" aria-label="返回世界书列表">
+                <button class="back-btn" data-nav-screen="world-book-screen" aria-label="返回世界书列表">
                     <span aria-hidden="true">‹</span>
                 </button>
                 <h1 class="header-title" id="world-book-editor-title">编辑世界书</h1>
@@ -93,7 +106,7 @@
 
         <div id="api-settings-screen" class="screen">
             <header class="header" role="banner">
-                <button class="back-btn" onclick="showScreen('home-screen')" aria-label="返回主屏幕">
+                <button class="back-btn" data-nav-screen="home-screen" aria-label="返回主屏幕">
                     <span aria-hidden="true">‹</span>
                 </button>
                 <h1 class="header-title">API 设置</h1>
@@ -156,15 +169,47 @@
                     <h3 class="data-management-title">数据管理</h3>
                     <p class="data-management-desc">
                         您可以导出所有聊天记录、设置和素材为单个文件进行备份，或从备份文件恢复数据。</p>
-                    <button class="form-button form-button-secondary" id="export-data-btn">导出数据</button>
-                    <button class="form-button form-button-secondary" id="import-data-trigger-btn">导入数据</button>
-                    <input type="file" id="import-data-input" accept=".phone" style="display: none;">
+                    
+                    <!-- 导出选项 -->
+                    <div class="backup-options">
+                        <h4>备份选项</h4>
+                        <div class="backup-type-options">
+                            <button class="form-button form-button-secondary" id="export-full-backup-btn">完整备份</button>
+                            <button class="form-button form-button-secondary" id="export-incremental-backup-btn">增量备份</button>
+                            <button class="form-button form-button-secondary" id="export-selective-backup-btn">选择性备份</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 恢复选项 -->
+                    <div class="restore-options">
+                        <h4>恢复选项</h4>
+                        <div class="restore-type-options">
+                            <button class="form-button form-button-secondary" id="import-full-restore-btn">完整恢复</button>
+                            <button class="form-button form-button-secondary" id="import-selective-restore-btn">选择性恢复</button>
+                        </div>
+                        <input type="file" id="import-data-input" accept=".phone" style="display: none;">
+                        <input type="file" id="import-selective-input" accept=".phone" style="display: none;">
+                    </div>
+                    
+                    <!-- 备份历史 -->
+                    <div class="backup-history">
+                        <h4>备份历史 <button class="refresh-backup-history-btn" id="refresh-backup-history-btn">🔄</button></h4>
+                        <div class="backup-list" id="backup-history-list">
+                            <p class="no-backups">暂无备份记录</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 兼容性按钮（保留旧版行为） -->
+                    <div class="legacy-buttons">
+                        <button class="form-button form-button-secondary" id="export-data-btn" style="display: none;">导出数据</button>
+                        <button class="form-button form-button-secondary" id="import-data-trigger-btn" style="display: none;">导入数据</button>
+                    </div>
                 </div>
             </div>
         </div>
         <div id="preset-editor-screen" class="screen">
             <div class="header">
-                <span class="back-btn" onclick="showScreen('preset-list-screen')">‹</span>
+                <span class="back-btn" data-nav-screen="preset-list-screen">‹</span>
                 <span id="preset-editor-title">编辑预设</span>
                 <span class="save-btn" id="save-preset-btn">保存</span>
             </div>
@@ -208,7 +253,7 @@
         </div>
         <div id="preset-list-screen" class="screen">
             <div class="header">
-                <span class="back-btn" onclick="showScreen('home-screen')">‹</span>
+                <span class="back-btn" data-nav-screen="home-screen">‹</span>
                 <span>预设管理</span>
                 <span class="action-btn" id="add-preset-btn">+</span>
             </div>
@@ -217,7 +262,7 @@
             </div>
         </div>
         <div id="chat-list-screen" class="screen">
-            <div class="header"><span class="back-btn" onclick="showScreen('home-screen')">‹</span><span>消息</span>
+            <div class="header"><span class="back-btn" data-nav-screen="home-screen">‹</span><span>消息</span>
                 <div class="header-actions"><span class="action-btn" id="add-group-chat-btn" title="创建群聊"><svg
                         width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path
                         d="M17.5 17.5C19.1569 17.5 20.5 16.1569 20.5 14.5C20.5 12.8431 19.1569 11.5 17.5 11.5C15.8431 11.5 14.5 12.8431 14.5 14.5C14.5 16.1569 15.8431 17.5 17.5 17.5Z"
@@ -358,17 +403,351 @@
         </div>
 
         <div id="wallpaper-screen" class="screen">
-            <div class="header"><span class="back-btn" onclick="showScreen('home-screen')">‹</span><span>壁纸设置</span><span
+            <div class="header"><span class="back-btn" data-nav-screen="home-screen">‹</span><span>壁纸设置</span><span
                     style="width: 30px;"></span></div>
             <div class="form-container">
                 <div id="wallpaper-preview">点击下方上传</div>
-                <button class="form-button" onclick="document.getElementById('wallpaper-upload-input').click();">
+                <button class="form-button" data-upload-trigger="wallpaper-upload-input">
                     上传壁纸
                 </button>
                 <input type="file" id="wallpaper-upload-input" accept="image/*">
                 <button class="form-button" id="save-wallpaper-btn">保存并应用</button>
             </div>
         </div>
+
+        <!-- 朋友圈界面 -->
+        <div id="moments-screen" class="screen">
+            <header class="header" role="banner">
+                <button class="back-btn" data-nav-screen="home-screen" aria-label="返回主屏幕">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">朋友圈</h1>
+                <button class="action-btn" id="post-moment-btn" aria-label="发布动态">
+                    <span aria-hidden="true">+</span>
+                </button>
+            </header>
+            
+            <div id="moments-container" class="moments-container">
+                <div id="moments-list" class="moments-list">
+                    <!-- 动态列表将在这里动态生成 -->
+                </div>
+                <div id="moments-loading" class="moments-loading" style="display: none;">
+                    <div class="loading-spinner"></div>
+                    <span>正在加载更多动态...</span>
+                </div>
+                <div id="moments-empty" class="moments-empty" style="display: none;">
+                    <div class="empty-icon">📱</div>
+                    <p>还没有任何动态</p>
+                    <p style="color: #999; font-size: 14px;">AI角色们还没有发布朋友圈动态</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 插件管理界面 -->
+        <div id="plugins-screen" class="screen">
+            <header class="header" role="banner">
+                <button class="back-btn" data-nav-screen="home-screen" aria-label="返回主屏幕">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">插件管理</h1>
+                <button class="action-btn" id="refresh-plugins-btn" aria-label="刷新插件列表">
+                    <span aria-hidden="true">⟳</span>
+                </button>
+            </header>
+            
+            <div class="form-container" style="padding-top: 0;">
+                <div class="plugin-stats" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px; border-radius: 12px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #666;">总插件数</span>
+                        <span id="total-plugins-count" style="font-weight: bold;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="color: #666;">已启用</span>
+                        <span id="enabled-plugins-count" style="color: #28a745; font-weight: bold;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #666;">已禁用</span>
+                        <span id="disabled-plugins-count" style="color: #dc3545; font-weight: bold;">0</span>
+                    </div>
+                </div>
+                
+                <div id="plugins-list" class="plugins-list">
+                    <!-- 插件列表将在这里动态生成 -->
+                </div>
+                
+                <div id="plugins-loading" class="plugins-loading" style="display: none; text-align: center; padding: 40px;">
+                    <div class="loading-spinner" style="margin: 0 auto 10px;"></div>
+                    <p style="color: #666;">正在加载插件...</p>
+                </div>
+                
+                <div id="plugins-empty" class="plugins-empty" style="display: none; text-align: center; padding: 60px 20px;">
+                    <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.6;">🧩</div>
+                    <p>还没有安装任何插件</p>
+                    <p style="color: #999; font-size: 14px;">系统会自动创建默认插件</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 美化中心界面 -->
+        <div id="themes-screen" class="screen">
+            <header class="header" role="banner">
+                <button class="back-btn" data-nav-screen="home-screen" aria-label="返回主屏幕">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">美化中心</h1>
+                <button class="action-btn" id="reset-all-css-btn" aria-label="重置所有CSS">
+                    <span aria-hidden="true">↺</span>
+                </button>
+            </header>
+            
+            <div class="beautify-container">
+                <!-- 实时预览区域 -->
+                <div class="preview-section">
+                    <h3>🔍 实时预览</h3>
+                    <div class="preview-chat-window" id="css-preview-window">
+                        <!-- 全局背景预览 -->
+                        <div class="preview-global-bg">
+                            <div class="preview-message user-message">
+                                <div class="message-bubble user">
+                                    <div class="content">这是用户消息预览</div>
+                                </div>
+                            </div>
+                            <div class="preview-message ai-message">
+                                <div class="message-bubble ai">
+                                    <div class="content">这是AI回复消息预览</div>
+                                </div>
+                            </div>
+                            <div class="preview-ui-elements">
+                                <button class="form-button preview-btn">按钮预览</button>
+                                <div class="preview-text">普通文字预览</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CSS编辑器标签切换 -->
+                <div class="css-editor-tabs">
+                    <button class="css-tab active" data-tab="global">🌍 全局样式</button>
+                    <button class="css-tab" data-tab="user">👤 用户消息</button>
+                    <button class="css-tab" data-tab="ai">🤖 AI消息</button>
+                </div>
+
+                <!-- 全局样式编辑器 -->
+                <div class="css-editor-section" id="global-css-editor" data-editor="global">
+                    <h3>🌍 全局样式编辑器</h3>
+                    <p class="editor-description">编辑整体应用样式，包括背景、文字颜色、按钮等全局元素</p>
+                    
+                    <div class="css-editor-container">
+                        <div class="editor-header">
+                            <span class="editor-label">全局CSS样式</span>
+                            <div class="editor-actions">
+                                <button class="editor-btn" data-css-action="format" data-css-type="global">格式化</button>
+                                <button class="editor-btn" data-css-action="clear" data-css-type="global">清空</button>
+                                <button class="editor-btn" data-css-action="reset" data-css-type="global">重置</button>
+                            </div>
+                        </div>
+                        <textarea id="global-css-editor-textarea" class="css-editor-textarea" placeholder="/* 编辑全局样式 - 影响整个应用外观 */
+
+/* 全局背景和文字 */
+body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #333;
+}
+
+/* 主屏幕背景 */
+#phone-screen {
+    background: rgba(255, 255, 255, 0.95);
+}
+
+/* 全局按钮样式 */
+.form-button, .action-button, .btn {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+/* 页面标题 */
+.header-title {
+    color: #333;
+    font-weight: bold;
+}
+
+/* 文字颜色 */
+.text-primary {
+    color: #2c3e50;
+}
+
+.text-secondary {
+    color: #7f8c8d;
+}"></textarea>
+                    </div>
+                    
+                    <div class="css-templates">
+                        <h4>📋 全局主题模板</h4>
+                        <div class="template-buttons">
+                            <button class="template-btn" data-template="global-dark" data-category="global">暗黑主题</button>
+                            <button class="template-btn" data-template="global-light" data-category="global">明亮主题</button>
+                            <button class="template-btn" data-template="global-gradient" data-category="global">渐变主题</button>
+                            <button class="template-btn" data-template="global-minimal" data-category="global">极简主题</button>
+                            <button class="template-btn" data-template="global-colorful" data-category="global">多彩主题</button>
+                            <button class="template-btn" data-template="global-nature" data-category="global">自然主题</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 用户消息样式编辑器 -->
+                <div class="css-editor-section" id="user-css-editor" data-editor="user" style="display: none;">
+                    <h3>👤 用户消息样式编辑器</h3>
+                    <p class="editor-description">自定义用户发送的消息气泡样式和外观</p>
+                    
+                    <div class="css-editor-container">
+                        <div class="editor-header">
+                            <span class="editor-label">用户消息CSS样式</span>
+                            <div class="editor-actions">
+                                <button class="editor-btn" data-css-action="format" data-css-type="user">格式化</button>
+                                <button class="editor-btn" data-css-action="clear" data-css-type="user">清空</button>
+                                <button class="editor-btn" data-css-action="reset" data-css-type="user">重置</button>
+                            </div>
+                        </div>
+                        <textarea id="user-css-editor-textarea" class="css-editor-textarea" placeholder="/* 编辑用户消息样式 */
+
+/* 用户消息气泡基础样式 */
+.message-bubble.user {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    border-radius: 18px 18px 4px 18px;
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+    padding: 12px 16px;
+    max-width: 70%;
+    margin-left: auto;
+    margin-right: 0;
+}
+
+/* 用户消息文字 */
+.message-bubble.user .content {
+    font-size: 14px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+/* 用户消息悬停效果 */
+.message-bubble.user:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(0, 123, 255, 0.4);
+}
+
+/* 用户消息容器 */
+.user-message {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}"></textarea>
+                    </div>
+                    
+                    <div class="css-templates">
+                        <h4>📋 用户消息模板</h4>
+                        <div class="template-buttons">
+                            <button class="template-btn" data-template="user-classic" data-category="user">经典蓝色</button>
+                            <button class="template-btn" data-template="user-gradient" data-category="user">渐变气泡</button>
+                            <button class="template-btn" data-template="user-modern" data-category="user">现代简约</button>
+                            <button class="template-btn" data-template="user-rounded" data-category="user">圆润可爱</button>
+                            <button class="template-btn" data-template="user-shadow" data-category="user">阴影立体</button>
+                            <button class="template-btn" data-template="user-neon" data-category="user">霓虹发光</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI消息样式编辑器 -->
+                <div class="css-editor-section" id="ai-css-editor" data-editor="ai" style="display: none;">
+                    <h3>🤖 AI消息样式编辑器</h3>
+                    <p class="editor-description">自定义AI回复的消息气泡样式和外观</p>
+                    
+                    <div class="css-editor-container">
+                        <div class="editor-header">
+                            <span class="editor-label">AI消息CSS样式</span>
+                            <div class="editor-actions">
+                                <button class="editor-btn" data-css-action="format" data-css-type="ai">格式化</button>
+                                <button class="editor-btn" data-css-action="clear" data-css-type="ai">清空</button>
+                                <button class="editor-btn" data-css-action="reset" data-css-type="ai">重置</button>
+                            </div>
+                        </div>
+                        <textarea id="ai-css-editor-textarea" class="css-editor-textarea" placeholder="/* 编辑AI消息样式 */
+
+/* AI消息气泡基础样式 */
+.message-bubble.ai {
+    background: #f8f9fa;
+    color: #333;
+    border: 2px solid #e9ecef;
+    border-radius: 18px 18px 18px 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 12px 16px;
+    max-width: 70%;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+/* AI消息文字 */
+.message-bubble.ai .content {
+    font-size: 14px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+/* AI消息悬停效果 */
+.message-bubble.ai:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: #007bff;
+}
+
+/* AI消息容器 */
+.ai-message {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 12px;
+}
+
+/* AI思考状态动画 */
+.message-bubble.ai.thinking {
+    animation: aiThinking 2s ease-in-out infinite;
+}
+
+@keyframes aiThinking {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}"></textarea>
+                    </div>
+                    
+                    <div class="css-templates">
+                        <h4>📋 AI消息模板</h4>
+                        <div class="template-buttons">
+                            <button class="template-btn" data-template="ai-classic" data-category="ai">经典灰白</button>
+                            <button class="template-btn" data-template="ai-soft" data-category="ai">柔和温馨</button>
+                            <button class="template-btn" data-template="ai-tech" data-category="ai">科技感</button>
+                            <button class="template-btn" data-template="ai-elegant" data-category="ai">优雅简洁</button>
+                            <button class="template-btn" data-template="ai-colorful" data-category="ai">多彩活泼</button>
+                            <button class="template-btn" data-template="ai-glass" data-category="ai">玻璃质感</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 配置管理 -->
+                <div class="config-management-section">
+                    <h3>💾 配置管理</h3>
+                    <div class="config-actions">
+                        <button id="export-css-config-btn" class="form-button" data-css-config-action="export">导出全部CSS配置</button>
+                        <button id="import-css-config-btn" class="form-button" data-css-config-action="import">导入CSS配置</button>
+                        <input type="file" id="import-css-config-input" accept=".json" style="display: none;">
+                        <button id="reset-all-css-btn" class="form-button form-button-danger" data-css-config-action="reset-all">重置全部为默认</button>
+                    </div>
+                    <div class="config-info">
+                        <p style="font-size: 12px; color: #666; margin-top: 10px;">📁 配置包含：全局样式 + 用户消息样式 + AI消息样式</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         </main>
 </div>
 
@@ -408,7 +787,7 @@
                     <div class="avatar-upload">
                         <img id="group-avatar-preview" alt="群头像预览">
                         <div class="upload-actions">
-                            <button onclick="document.getElementById('group-avatar-input').click()">
+                            <button data-upload-trigger="group-avatar-input">
                                 <span>📸</span>
                                 <span>上传群头像</span>
                             </button>
@@ -468,7 +847,7 @@
                     <div class="avatar-upload">
                         <img id="ai-avatar-preview" alt="对方头像预览">
                         <div class="upload-actions">
-                            <button onclick="document.getElementById('ai-avatar-input').click()">
+                            <button data-upload-trigger="ai-avatar-input">
                                 <span>🖼️</span>
                                 <span>上传对方头像</span>
                             </button>
@@ -500,7 +879,7 @@
                     <div class="avatar-upload">
                         <img id="my-avatar-preview" alt="我的头像预览">
                         <div class="upload-actions">
-                            <button onclick="document.getElementById('my-avatar-input').click()">
+                            <button data-upload-trigger="my-avatar-input">
                                 <span>📷</span>
                                 <span>上传我的头像</span>
                             </button>
@@ -588,7 +967,7 @@
                         <span>聊天背景</span>
                     </label>
                     <div class="bg-upload-container">
-                        <button type="button" class="upload-bg-btn" onclick="document.getElementById('bg-input').click()">
+                        <button type="button" class="upload-bg-btn" data-upload-trigger="bg-input">
                             <span>📁</span>
                             <span>上传背景图</span>
                         </button>
@@ -647,7 +1026,7 @@
         <div class="modal-body">
             <div class="form-group"><label>预设头像</label>
                 <div class="avatar-upload"><img id="preset-avatar-preview">
-                    <button onclick="document.getElementById('preset-avatar-input').click()">上传头像</button>
+                    <button data-upload-trigger="preset-avatar-input">上传头像</button>
                     <input type="file" id="preset-avatar-input" accept="image/*"></div>
             </div>
             <div class="form-group"><label for="preset-persona-input">预设人设</label><textarea
@@ -680,7 +1059,7 @@
                 <label>头像</label>
                 <div class="avatar-upload">
                     <img id="member-avatar-preview">
-                    <button onclick="document.getElementById('member-avatar-input').click()">上传头像</button>
+                    <button data-upload-trigger="member-avatar-input">上传头像</button>
                     <input type="file" id="member-avatar-input" accept="image/*">
                 </div>
             </div>
@@ -747,6 +1126,48 @@
     </div>
 </div>
 
+<!-- 发布朋友圈模态框 -->
+<div id="post-moment-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>发布朋友圈</h2>
+            <button class="close-btn" data-close-modal="post-moment-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="moment-content">动态内容</label>
+                <textarea id="moment-content" rows="4" placeholder="分享你的想法..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>可见性</label>
+                <div class="visibility-options">
+                    <label>
+                        <input type="radio" name="moment-visibility" value="user_only" checked>
+                        <span>仅自己可见</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="moment-visibility" value="user_and_roles">
+                        <span>好友可见</span>
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="moment-image-upload">添加图片</label>
+                <div class="image-upload-area" data-upload-trigger="moment-image-input">
+                    <div id="moment-image-preview" class="image-preview">
+                        <span class="upload-hint">点击添加图片</span>
+                    </div>
+                    <input type="file" id="moment-image-input" accept="image/*" style="display: none;">
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" data-action="close-post-moment">取消</button>
+            <button class="btn btn-primary" data-action="publish-moment" id="publish-moment-btn">发布</button>
+        </div>
+    </div>
+</div>
+
 <div id="battery-alert-modal">
     <div class="battery-alert-content">
         <img id="battery-alert-image" src="">
@@ -760,6 +1181,7 @@
 <div id="main-content" class="sr-only">主内容区域</div>
 
 <!--<script src="https://fastly.jsdelivr.net/gh/mxw13579/phone@release-v1.0.0.7/myPhone/script.js"></script>-->
-<script src="./script.js"></script>
+<!--<script src="./script.js"></script>-->
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>
