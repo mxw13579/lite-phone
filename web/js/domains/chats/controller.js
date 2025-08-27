@@ -77,9 +77,9 @@ async function generatePromptWithPreset(chat, preset, myAddress = '位置未知'
         let memoryContent = '';
         try {
             const memoryResult = await memoryService.injectMemoriesIntoPrompt(chat.id, memoryContext);
-            if (memoryResult.success !== false && memoryResult.memoryText) {
-                memoryContent = memoryResult.memoryText;
-                console.log(`记忆注入成功 - 使用 ${memoryResult.usedMemories} 个记忆, ${memoryResult.estimatedTokens} tokens`);
+            if (memoryResult.success && memoryResult.data && memoryResult.data.memoryText) {
+                memoryContent = memoryResult.data.memoryText;
+                console.log(`记忆注入成功 - 使用 ${memoryResult.data.usedMemories} 个记忆, ${memoryResult.data.estimatedTokens} tokens`);
             } else if (memoryResult.error) {
                 console.warn('记忆注入失败:', memoryResult.error);
             }
@@ -472,12 +472,14 @@ export async function sendMessage(chatId, message) {
 
         // 发送消息事件
         try {
-            await eventBus.emit(EventTypes.MESSAGE_SENT, {
+            await eventBus.emit(EventTypes.CHAT_MESSAGE_SENT, {
                 chatId,
-                message: newMessage
+                message: newMessage,
+                senderId: newMessage.senderId,
+                timestamp: Date.now()
             });
         } catch (e) {
-            console.warn('Emit MESSAGE_SENT failed:', e);
+            console.warn('Emit CHAT_MESSAGE_SENT failed:', e);
         }
 
         // 消息发送成功后，异步进行记忆抽取

@@ -85,6 +85,7 @@ class MemoryStore {
                     tokenBudget: 10000,
                     tokenRatio: 0.3,
                     maxMemoriesPerContext: 20,
+                    injectionPreviewEnabled: false,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
@@ -595,6 +596,32 @@ export async function clearAllMemories() {
 }
 
 export async function batchMemoryOperation(operations) {
-    // TODO: 实现批量操作
-    return createErrorResponse('批量操作暂未实现', ServiceErrorTypes.INTERNAL_ERROR);
+    try {
+        if (!Array.isArray(operations) || operations.length === 0) {
+            return createErrorResponse('无有效批量操作', ServiceErrorTypes.VALIDATION_ERROR);
+        }
+        const db = getDB();
+        let affected = 0;
+        await db.transaction('rw', db.memories, async () => {
+            for (const op of operations) {
+                const { type, id, updates } = op || {};
+                if (!id) continue;
+                if (type === 'delete') {
+                    const res = await db.memories.delete(id);
+                    if (res !== 0) affected++;
+                } else if (type === 'update' && updates) {
+                    const res = await db.memories.update(id, {
+                        ...updates,
+                        updatedAt: new Date().toISOString()
+                    });
+                    if (res > 0) affected++;
+                }
+            }
+        });
+        await eventBus.emit('memory.batch-operation', { affected });
+        return createSuccessResponse({ affected }, '批量操作完成');
+    } catch (error) {
+        console.error('Batch memory operation failed:', error);
+        return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+    }
 }

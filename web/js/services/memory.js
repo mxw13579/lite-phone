@@ -15,7 +15,7 @@
 
 import { getDB } from '../core/db.js';
 import { eventBus, EventTypes } from '../core/event-bus.js';
-import { createSuccessResponse, createErrorResponse, ServiceErrorTypes } from './contracts.js';
+import { createSuccessResponse, createErrorResponse, ErrorTypes } from './contracts.js';
 import { getChatMessages } from '../domains/chats/controller.js';
 
 /**
@@ -125,7 +125,7 @@ class MemoryService {
     async extractMemoriesFromChat(chatId, messageCount = 50) {
         try {
             if (!chatId) {
-                return createErrorResponse('chatId不能为空', ServiceErrorTypes.VALIDATION_ERROR);
+                return createErrorResponse('chatId不能为空', ErrorTypes.VALIDATION_ERROR);
             }
 
             // 获取聊天消息
@@ -138,7 +138,7 @@ class MemoryService {
             const db = getDB();
             const chat = await db.chats.get(chatId);
             if (!chat) {
-                return createErrorResponse('聊天不存在', ServiceErrorTypes.NOT_FOUND);
+                return createErrorResponse('聊天不存在', ErrorTypes.NOT_FOUND);
             }
 
             // 抽取记忆
@@ -181,7 +181,7 @@ class MemoryService {
 
         } catch (error) {
             console.error('Extract memories from chat failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -196,15 +196,15 @@ class MemoryService {
 
             // 参数验证
             if (!roleId || !content) {
-                return createErrorResponse('roleId和content不能为空', ServiceErrorTypes.VALIDATION_ERROR);
+                return createErrorResponse('roleId和content不能为空', ErrorTypes.VALIDATION_ERROR);
             }
 
             if (!Object.values(MEMORY_CONFIG.memoryTypes).includes(type)) {
-                return createErrorResponse('无效的记忆类型', ServiceErrorTypes.VALIDATION_ERROR);
+                return createErrorResponse('无效的记忆类型', ErrorTypes.VALIDATION_ERROR);
             }
 
             if (importance < 0 || importance > 1) {
-                return createErrorResponse('重要性评分必须在0-1之间', ServiceErrorTypes.VALIDATION_ERROR);
+                return createErrorResponse('重要性评分必须在0-1之间', ErrorTypes.VALIDATION_ERROR);
             }
 
             const db = getDB();
@@ -233,7 +233,7 @@ class MemoryService {
 
         } catch (error) {
             console.error('Create memory failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -246,7 +246,7 @@ class MemoryService {
     async compressMemoriesByImportance(roleId, options = {}) {
         try {
             if (!roleId) {
-                return createErrorResponse('roleId不能为空', ServiceErrorTypes.VALIDATION_ERROR);
+                return createErrorResponse('roleId不能为空', ErrorTypes.VALIDATION_ERROR);
             }
 
             const result = await this.compressionManager.compressMemories(roleId, options);
@@ -261,7 +261,7 @@ class MemoryService {
 
         } catch (error) {
             console.error('Compress memories failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -274,7 +274,7 @@ class MemoryService {
     async injectMemoriesIntoPrompt(roleId, context) {
         try {
             if (!roleId) {
-                return createErrorResponse('roleId不能为空', ServiceErrorTypes.VALIDATION_ERROR);
+                return createErrorResponse('roleId不能为空', ErrorTypes.VALIDATION_ERROR);
             }
 
             const result = await this.injectionManager.injectMemories(roleId, context);
@@ -283,7 +283,7 @@ class MemoryService {
 
         } catch (error) {
             console.error('Inject memories failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -335,7 +335,7 @@ class MemoryService {
 
         } catch (error) {
             console.error('Search memories failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 

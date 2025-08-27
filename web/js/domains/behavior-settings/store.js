@@ -12,7 +12,23 @@
 import { getDB } from '../../core/db.js';
 import { eventBus, EventTypes } from '../../core/event-bus.js';
 import { createSuccessResponse, createErrorResponse, ServiceErrorTypes } from '../../services/contracts.js';
-import { validateRequired, validateNumber, validateBoolean } from '../../utils/validation.js';
+import { validateRequired, validateRange } from '../../utils/validation.js';
+
+/**
+ * 临时数字验证函数，用于替代缺失的validateNumber
+ * @param {*} value 要验证的值
+ * @param {string} fieldName 字段名
+ * @param {number} min 最小值
+ * @param {number} max 最大值
+ * @returns {Object} 验证结果
+ */
+function validateNumber(value, fieldName, min = -Infinity, max = Infinity) {
+    const rangeResult = validateRange(value, min, max);
+    return {
+        isValid: rangeResult.valid,
+        error: rangeResult.error || `${fieldName}必须是有效数字`
+    };
+}
 
 /**
  * 行为设置存储类
@@ -351,9 +367,8 @@ class BehaviorSettingsStore {
 
             // 验证enabled字段
             if (config.hasOwnProperty('enabled')) {
-                const enabledValidation = validateBoolean(config.enabled, 'enabled');
-                if (!enabledValidation.isValid) {
-                    errors.push(`enabled: ${enabledValidation.error}`);
+                if (typeof config.enabled !== 'boolean') {
+                    errors.push('enabled: 必须是布尔值（true/false）');
                 }
             }
 

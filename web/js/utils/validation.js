@@ -138,6 +138,40 @@ export function validateRange(num, min = -Infinity, max = Infinity) {
 }
 
 /**
+ * 验证数字（带字段名与范围提示）
+ * @param {*} value 待验证值
+ * @param {string} fieldName 字段名
+ * @param {number} min 最小值
+ * @param {number} max 最大值
+ * @returns {{isValid:boolean, value?:number, error?:string}}
+ */
+export function validateNumber(value, fieldName = '数值', min = -Infinity, max = Infinity) {
+    const num = typeof value === 'number' ? value : Number(value);
+    if (typeof num !== 'number' || isNaN(num)) {
+        return {
+            isValid: false,
+            error: `${fieldName}必须是有效数字`
+        };
+    }
+    if (num < min) {
+        return {
+            isValid: false,
+            error: `${fieldName}不能小于${min}`
+        };
+    }
+    if (num > max) {
+        return {
+            isValid: false,
+            error: `${fieldName}不能大于${max}`
+        };
+    }
+    return {
+        isValid: true,
+        value: num
+    };
+}
+
+/**
  * 验证必填字段
  * @param {*} value 值
  * @param {string} fieldName 字段名
@@ -168,6 +202,59 @@ export function validateRequired(value, fieldName = '此字段') {
     return {
         valid: true,
         value
+    };
+}
+
+/**
+ * 验证布尔值
+ * @param {*} value 值
+ * @param {string} fieldName 字段名
+ * @returns {Object} 验证结果
+ */
+export function validateBoolean(value, fieldName = '此字段') {
+    if (typeof value === 'boolean') {
+        return {
+            valid: true,
+            value
+        };
+    }
+    
+    // 支持字符串形式的布尔值
+    if (typeof value === 'string') {
+        const lowerValue = value.toLowerCase().trim();
+        if (lowerValue === 'true' || lowerValue === '1' || lowerValue === 'yes') {
+            return {
+                valid: true,
+                value: true
+            };
+        }
+        if (lowerValue === 'false' || lowerValue === '0' || lowerValue === 'no') {
+            return {
+                valid: true,
+                value: false
+            };
+        }
+    }
+    
+    // 支持数字形式的布尔值
+    if (typeof value === 'number') {
+        if (value === 1) {
+            return {
+                valid: true,
+                value: true
+            };
+        }
+        if (value === 0) {
+            return {
+                valid: true,
+                value: false
+            };
+        }
+    }
+    
+    return {
+        valid: false,
+        error: `${fieldName}必须是布尔值（true/false）`
     };
 }
 
@@ -423,3 +510,113 @@ export const ValidationRules = {
         })
     })
 };
+
+/**
+ * 通用输入验证函数
+ * @param {Object} fields 字段验证配置对象
+ * @returns {Object} 验证结果
+ */
+export function validateInput(fields) {
+    const errors = [];
+    let isValid = true;
+
+    for (const [fieldName, config] of Object.entries(fields)) {
+        const { value, required = false, type, min, max, pattern } = config;
+
+        // 必填验证
+        if (required) {
+            const requiredResult = validateRequired(value, fieldName);
+            if (!requiredResult.valid) {
+                errors.push(requiredResult.error);
+                isValid = false;
+                continue;
+            }
+        }
+
+        // 如果不是必填且值为空，跳过其他验证
+        if (!required && (value === null || value === undefined || value === '')) {
+            continue;
+        }
+
+        // 类型验证
+        if (type) {
+            let typeValid = true;
+            let typeError = '';
+
+            switch (type) {
+                case 'string':
+                    if (typeof value !== 'string') {
+                        typeValid = false;
+                        typeError = `${fieldName}必须是字符串`;
+                    }
+                    break;
+                case 'number':
+                    const numResult = validateNumber(value, fieldName, min, max);
+                    if (!numResult.isValid) {
+                        typeValid = false;
+                        typeError = numResult.error;
+                    }
+                    break;
+                case 'boolean':
+                    const boolResult = validateBoolean(value, fieldName);
+                    if (!boolResult.valid) {
+                        typeValid = false;
+                        typeError = boolResult.error;
+                    }
+                    break;
+                case 'email':
+                    if (!isValidEmail(value)) {
+                        typeValid = false;
+                        typeError = `${fieldName}必须是有效的邮箱地址`;
+                    }
+                    break;
+                case 'url':
+                    if (!isValidUrl(value)) {
+                        typeValid = false;
+                        typeError = `${fieldName}必须是有效的URL地址`;
+                    }
+                    break;
+                case 'phone':
+                    if (!isValidPhoneNumber(value)) {
+                        typeValid = false;
+                        typeError = `${fieldName}必须是有效的手机号码`;
+                    }
+                    break;
+                default:
+                    // 未知类型，跳过类型验证
+                    break;
+            }
+
+            if (!typeValid) {
+                errors.push(typeError);
+                isValid = false;
+                continue;
+            }
+        }
+
+        // 长度验证（字符串）
+        if (typeof value === 'string' && (min !== undefined || max !== undefined)) {
+            const lengthResult = validateLength(value, min, max);
+            if (!lengthResult.valid) {
+                errors.push(`${fieldName}: ${lengthResult.error}`);
+                isValid = false;
+                continue;
+            }
+        }
+
+        // 模式验证
+        if (pattern && typeof value === 'string') {
+            const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
+            if (!regex.test(value)) {
+                errors.push(`${fieldName}格式不正确`);
+                isValid = false;
+                continue;
+            }
+        }
+    }
+
+    return {
+        isValid,
+        errors
+    };
+}

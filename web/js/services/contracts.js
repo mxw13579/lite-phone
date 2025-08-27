@@ -337,7 +337,7 @@ export const ThemeServiceContract = {
  * 服务错误类型
  * @enum {string}
  */
-export const ServiceErrorTypes = {
+export const ErrorTypes = {
     VALIDATION_ERROR: 'VALIDATION_ERROR',
     NETWORK_ERROR: 'NETWORK_ERROR',
     DATABASE_ERROR: 'DATABASE_ERROR',
@@ -348,6 +348,9 @@ export const ServiceErrorTypes = {
     TIMEOUT: 'TIMEOUT',
     INTERNAL_ERROR: 'INTERNAL_ERROR'
 };
+
+// 为向后兼容性保留旧名称
+export const ServiceErrorTypes = ErrorTypes;
 
 /**
  * 标准化错误结构
@@ -386,7 +389,7 @@ export function createSuccessResponse(data, message = '操作成功', metadata =
  * @param {Object} [details] 错误详情
  * @returns {ServiceResponse} 标准响应对象
  */
-export function createErrorResponse(error, type = ServiceErrorTypes.INTERNAL_ERROR, details = {}) {
+export function createErrorResponse(error, type = ErrorTypes.INTERNAL_ERROR, details = {}) {
     const errorMessage = typeof error === 'string' ? error : error.message;
     
     return {

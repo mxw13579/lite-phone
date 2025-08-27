@@ -2,15 +2,19 @@
  * 朋友圈管理存储层
  */
 
-import { getDB } from '../../core/db.js';
+import { getDB } from '../../core/db-v13.js';
+import { permissionService, VisibilityLevels, ContentTypes, UserRoles } from '../../services/permissions.js';
+import { eventBus, EventTypes } from '../../core/event-bus.js';
 
 /**
- * 获取时间线（带可见性过滤）
+ * 获取时间线（带权限过滤）
  * @param {number} page 页码
  * @param {number} limit 每页数量
+ * @param {string} requesterId 请求者ID
+ * @param {string} requesterRole 请求者角色
  * @param {string} visibilityFilter 可见性过滤: 'private'|'friends'|'public'|'all'
  */
-export async function getMomentsPaginated(page = 1, limit = 10, visibilityFilter = 'all') {
+export async function getMomentsPaginated(page = 1, limit = 10, requesterId = 'user', requesterRole = UserRoles.SELF, visibilityFilter = 'all') {
     try {
         const db = getDB();
         if (!db) return { moments: [], totalPages: 0 };
@@ -27,13 +31,31 @@ export async function getMomentsPaginated(page = 1, limit = 10, visibilityFilter
             baseQuery = baseQuery.filter(m => m.visibility === visibilityFilter);
         }
 
-        const moments = await baseQuery
+        const allMoments = await baseQuery
             .offset(offset)
-            .limit(limit)
+            .limit(limit * 2) // 获取更多数据用于权限过滤
             .toArray();
 
+        // 权限过滤
+        const accessibleMoments = [];
+        for (const moment of allMoments) {
+            const permissionResult = await permissionService.checkPermission(
+                moment.id,
+                ContentTypes.MOMENT,
+                requesterId,
+                requesterRole
+            );
+            
+            if (permissionResult.success && permissionResult.data.granted) {
+                accessibleMoments.push(moment);
+            }
+            
+            // 达到所需数量就停止
+            if (accessibleMoments.length >= limit) break;
+        }
+
         // 聚合统计（点赞与评论）
-        const momentsWithStats = await Promise.all(moments.map(async moment => {
+        const momentsWithStats = await Promise.all(accessibleMoments.slice(0, limit).map(async moment => {
             const likesCount = await db.reactions
                 .where('momentId').equals(moment.id)
                 .and(r => r.type === 'like')
@@ -61,28 +83,110 @@ export async function getMomentsPaginated(page = 1, limit = 10, visibilityFilter
     }
 }
 
-export async function publishMoment({ content, visibility = 'private', image = null }) {
+export async function publishMoment({ content, visibility = 'friends', image = null, authorId = 'user' }) {
     try {
         const db = getDB();
         if (!db) throw new Error('Database not available');
 
         const moment = {
             id: `moment_${Date.now()}`,
-            authorId: 'user',
+            authorId,
             content,
-            visibility: visibility === 'friends' || visibility === 'public' ? visibility : 'private',
+            visibility: Object.values(VisibilityLevels).includes(visibility) ? visibility : VisibilityLevels.FRIENDS,
             image,
-            aiGenerated: false,
-            createdAt: new Date().toISOString(),
+            aiGenerated: authorId !== 'user',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
             likes: 0,
             comments: []
         };
 
         await db.moments.add(moment);
+
+        // 设置权限
+        await permissionService.setContentPermission(moment.id, ContentTypes.MOMENT, {
+            visibility: moment.visibility,
+            ownerId: authorId
+        });
+
+        // 发送内容创建事件
+        await eventBus.emit(EventTypes.CONTENT_CREATED, {
+            contentId: moment.id,
+            contentType: ContentTypes.MOMENT,
+            authorId,
+            timestamp: Date.now()
+        });
+
         return { success: true, moment };
 
     } catch (error) {
         console.error('Failed to publish moment:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * 更新动态权限
+ * @param {string} momentId 动态ID
+ * @param {string} newVisibility 新可见性
+ */
+export async function updateMomentVisibility(momentId, newVisibility) {
+    try {
+        const db = getDB();
+        if (!db) throw new Error('Database not available');
+
+        // 验证可见性级别
+        if (!Object.values(VisibilityLevels).includes(newVisibility)) {
+            throw new Error('Invalid visibility level');
+        }
+
+        // 更新数据库中的可见性
+        await db.moments.update(momentId, {
+            visibility: newVisibility,
+            updatedAt: Date.now()
+        });
+
+        // 更新权限系统
+        await permissionService.setContentPermission(momentId, ContentTypes.MOMENT, {
+            visibility: newVisibility
+        });
+
+        return { success: true };
+
+    } catch (error) {
+        console.error('Failed to update moment visibility:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * 批量更新动态权限
+ * @param {Array} momentIds 动态ID列表
+ * @param {string} newVisibility 新可见性
+ */
+export async function batchUpdateMomentsVisibility(momentIds, newVisibility) {
+    try {
+        const results = [];
+        const errors = [];
+
+        for (const momentId of momentIds) {
+            const result = await updateMomentVisibility(momentId, newVisibility);
+            if (result.success) {
+                results.push(momentId);
+            } else {
+                errors.push({ momentId, error: result.error });
+            }
+        }
+
+        return { 
+            success: true, 
+            updated: results, 
+            errors,
+            total: momentIds.length
+        };
+
+    } catch (error) {
+        console.error('Failed to batch update moments visibility:', error);
         return { success: false, error: error.message };
     }
 }

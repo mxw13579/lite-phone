@@ -12,7 +12,7 @@
 
 import { getDB } from '../core/db.js';
 import { eventBus, EventTypes } from '../core/event-bus.js';
-import { createSuccessResponse, createErrorResponse, ServiceErrorTypes } from './contracts.js';
+import { createSuccessResponse, createErrorResponse, ErrorTypes } from './contracts.js';
 
 // 行为类型枚举
 export const BehaviorActionTypes = {
@@ -111,7 +111,7 @@ class BehaviorService {
             
         } catch (error) {
             console.error('Behavior service initialization failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -148,7 +148,7 @@ class BehaviorService {
 
         } catch (error) {
             console.error('Calculate behavior score failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -212,7 +212,7 @@ class BehaviorService {
 
         } catch (error) {
             console.error('Assess action probability failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -234,7 +234,7 @@ class BehaviorService {
 
         } catch (error) {
             console.error('Apply cooldown failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -266,7 +266,7 @@ class BehaviorService {
 
         } catch (error) {
             console.error('Record behavior execution failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -282,7 +282,7 @@ class BehaviorService {
 
         } catch (error) {
             console.error('Get behavior config failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -322,7 +322,7 @@ class BehaviorService {
 
         } catch (error) {
             console.error('Update behavior config failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -386,7 +386,7 @@ class BehaviorService {
 
         } catch (error) {
             console.error('Get behavior stats failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
         }
     }
 

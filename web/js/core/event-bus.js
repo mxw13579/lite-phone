@@ -398,6 +398,19 @@ export const EventTypes = {
     API_REQUEST_SUCCESS: 'api.request.success', 
     API_REQUEST_ERROR: 'api.request.error',
     
+    // 内容相关（权限系统使用）
+    CONTENT_CREATED: 'content.created',
+    CONTENT_UPDATED: 'content.updated',
+    CONTENT_DELETED: 'content.deleted',
+    
+    // 设置相关
+    SETTINGS_UPDATED: 'settings.updated',
+    
+    // 朋友圈相关 
+    MOMENT_CREATED: 'moment.created',
+    MOMENT_UPDATED: 'moment.updated',
+    MOMENT_DELETED: 'moment.deleted',
+    
     // 主题相关
     THEME_UPDATED: 'theme.updated',
     THEME_APPLIED: 'theme.applied',
