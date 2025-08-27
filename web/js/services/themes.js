@@ -1,9 +1,13 @@
 /**
  * 主题服务层
- * 统一管理CSS主题、变量、模板和远程主题功能
  * 
- * @fileoverview 主题服务实现，遵循ThemeServiceContract规范
- * @version 1.1
+ * 安全策略：
+ * - 远程主题功能已禁用，仅支持本地主题自定义
+ * - 所有CSS内容必须来自本地模板或用户导入
+ * - 不支持从网络URL加载CSS或主题配置
+ * 
+ * @fileoverview 主题服务实现，遵循安全第一原则
+ * @version 1.2
  * @author EPhone Development Team
  * @implements {ThemeServiceContract}
  */
@@ -21,8 +25,8 @@ const THEME_CONFIG = {
     cssTypes: ['global', 'user', 'ai'],
     templateCategories: ['global', 'user', 'ai'],
     variablePrefix: '--ephone-',
-    remoteThemeTimeout: 10000,
-    maxCssSize: 1024 * 1024 // 1MB最大CSS大小限制
+    // remoteThemeTimeout: 禁用远程主题功能
+    maxCssSize: 1024 * 1024 // 本地导入CSS大小限制
 };
 
 /**
@@ -508,45 +512,7 @@ class ThemeService {
      * @returns {Promise<Object>} 加载结果
      */
     async loadRemoteTheme(themeUrl, options = {}) {
-        try {
-            // 验证URL
-            new URL(themeUrl); // 抛出异常如果URL无效
-            
-            // 设置超时
-            const timeout = options.timeout || THEME_CONFIG.remoteThemeTimeout;
-            
-            // 使用API服务加载主题
-            const themeData = await apiService.get(themeUrl, { timeout });
-            
-            // 验证主题数据
-            if (!themeData.cssConfig) {
-                throw new Error('远程主题格式无效');
-            }
-
-            // 应用主题（可选预览模式）
-            if (options.preview) {
-                await this.previewTheme(themeData);
-                return { 
-                    success: true, 
-                    message: '主题预览已加载',
-                    data: themeData
-                };
-            } else {
-                const result = await this.importCSSConfig(themeData);
-                return result;
-            }
-
-        } catch (error) {
-            console.error('Failed to load remote theme:', error);
-            
-            if (error.name === 'AbortError') {
-                return { success: false, error: '加载主题超时' };
-            } else if (error.message.includes('NetworkError')) {
-                return { success: false, error: '网络连接失败' };
-            } else {
-                return { success: false, error: `加载失败: ${error.message}` };
-            }
-        }
+        throw new Error('远程主题功能已禁用，出于安全考虑不支持从网络加载主题。请使用本地导入功能或内置模板。');
     }
 
     /**

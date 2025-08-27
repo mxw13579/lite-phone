@@ -67,9 +67,238 @@
                     <button class="app-icon" data-nav-screen="wallpaper-screen" aria-label="打开壁纸设置应用">
                         <div class="icon-bg"><img src="https://i.postimg.cc/q6qRLdGx/photo.jpg" alt="壁纸"></div>
                         <span class="label">壁纸</span></button>
+                    <button class="app-icon" data-nav-screen="memory-management-screen" aria-label="打开记忆管理应用">
+                        <div class="icon-bg"><img src="https://i.postimg.cc/LsGzS4xR/memory.jpg" alt="记忆管理"></div>
+                        <span class="label">记忆管理</span></button>
+                </div>
+                <div class="app-row">
+                    <button class="app-icon" data-nav-screen="behavior-settings-screen" aria-label="打开AI行为设置应用">
+                        <div class="icon-bg"><img src="https://i.postimg.cc/9fKvWrK7/behavior.jpg" alt="AI行为设置"></div>
+                        <span class="label">AI行为</span></button>
                 </div>
             </div>
 
+        </div>
+
+        <!-- AI行为设置界面 -->
+        <div id="behavior-settings-screen" class="screen">
+            <header class="header" role="banner">
+                <button class="back-btn" data-nav-screen="home-screen" aria-label="返回主屏幕">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">AI行为设置</h1>
+                <div style="width: 30px;"></div>
+            </header>
+            
+            <!-- 加载状态 -->
+            <div id="behavior-settings-loading" class="loading-overlay">
+                <div class="loading-spinner"></div>
+                <p>正在加载行为设置...</p>
+            </div>
+            
+            <!-- 主要内容区域 -->
+            <div class="behavior-settings-container">
+                <!-- 概览统计卡片 -->
+                <div class="stats-overview">
+                    <div class="stat-card">
+                        <div class="stat-value" id="behavior-total-actions">0</div>
+                        <div class="stat-label">总行为次数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="behavior-avg-score">0%</div>
+                        <div class="stat-label">平均评分</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="behavior-most-active">-</div>
+                        <div class="stat-label">最活跃行为</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="behavior-activity-trend">-</div>
+                        <div class="stat-label">活跃趋势</div>
+                    </div>
+                </div>
+                
+                <!-- 配置选项卡导航 -->
+                <div class="config-tabs">
+                    <button class="config-tab active" data-tab="basic">基础设置</button>
+                    <button class="config-tab" data-tab="frequency">频率控制</button>
+                    <button class="config-tab" data-tab="cooldown">冷却管理</button>
+                    <button class="config-tab" data-tab="scoring">评分权重</button>
+                    <button class="config-tab" data-tab="testing">测试调试</button>
+                </div>
+                
+                <!-- 基础设置面板 -->
+                <div id="basic-config" class="config-panel active">
+                    <div class="form-section">
+                        <h3>基础开关</h3>
+                        <div class="form-group">
+                            <label class="switch-label">
+                                <input type="checkbox" id="behavior-enabled" checked>
+                                <span class="switch-slider"></span>
+                                启用AI行为决策系统
+                            </label>
+                            <p class="form-help">关闭后AI将不会主动执行任何行为</p>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3>行为概率阈值</h3>
+                        <div class="form-group">
+                            <label for="chat-reply-threshold">聊天回复阈值 <span id="chat-reply-threshold-value">60%</span></label>
+                            <input type="range" id="chat-reply-threshold" min="0.1" max="1.0" step="0.05" value="0.6">
+                        </div>
+                        <div class="form-group">
+                            <label for="moment-post-threshold">朋友圈发布阈值 <span id="moment-post-threshold-value">80%</span></label>
+                            <input type="range" id="moment-post-threshold" min="0.1" max="1.0" step="0.05" value="0.8">
+                        </div>
+                        <div class="form-group">
+                            <label for="moment-comment-threshold">朋友圈评论阈值 <span id="moment-comment-threshold-value">70%</span></label>
+                            <input type="range" id="moment-comment-threshold" min="0.1" max="1.0" step="0.05" value="0.7">
+                        </div>
+                        <div class="form-group">
+                            <label for="moment-like-threshold">朋友圈点赞阈值 <span id="moment-like-threshold-value">50%</span></label>
+                            <input type="range" id="moment-like-threshold" min="0.1" max="1.0" step="0.05" value="0.5">
+                        </div>
+                        <div class="form-group">
+                            <label for="proactive-chat-threshold">主动聊天阈值 <span id="proactive-chat-threshold-value">90%</span></label>
+                            <input type="range" id="proactive-chat-threshold" min="0.1" max="1.0" step="0.05" value="0.9">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 频率控制面板 -->
+                <div id="frequency-config" class="config-panel">
+                    <div class="form-section">
+                        <h3>行为频率倍数</h3>
+                        <p class="form-help">调整各类行为的触发频率，1.0为标准频率</p>
+                        
+                        <div class="form-group">
+                            <label for="chat-reply-freq">聊天回复频率 <span id="chat-reply-freq-value">1.0x</span></label>
+                            <input type="range" id="chat-reply-freq" min="0.1" max="3.0" step="0.1" value="1.0">
+                        </div>
+                        <div class="form-group">
+                            <label for="moment-activity">朋友圈活跃度 <span id="moment-activity-value">1.0x</span></label>
+                            <input type="range" id="moment-activity" min="0.1" max="3.0" step="0.1" value="1.0">
+                        </div>
+                        <div class="form-group">
+                            <label for="proactive-chat">主动聊天概率 <span id="proactive-chat-value">30%</span></label>
+                            <input type="range" id="proactive-chat" min="0.1" max="1.0" step="0.05" value="0.3">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 冷却管理面板 -->
+                <div id="cooldown-config" class="config-panel">
+                    <div class="form-section">
+                        <h3>行为冷却时间（分钟）</h3>
+                        <p class="form-help">设置执行行为后的冷却时间，防止过度频繁触发</p>
+                        
+                        <div class="form-group">
+                            <label for="chat-cooldown">聊天回复冷却</label>
+                            <input type="number" id="chat-cooldown" min="1" max="1440" value="30" placeholder="分钟">
+                        </div>
+                        <div class="form-group">
+                            <label for="moment-post-cooldown">朋友圈发布冷却</label>
+                            <input type="number" id="moment-post-cooldown" min="1" max="1440" value="120" placeholder="分钟">
+                        </div>
+                        <div class="form-group">
+                            <label for="moment-comment-cooldown">朋友圈评论冷却</label>
+                            <input type="number" id="moment-comment-cooldown" min="1" max="1440" value="15" placeholder="分钟">
+                        </div>
+                        <div class="form-group">
+                            <label for="moment-like-cooldown">朋友圈点赞冷却</label>
+                            <input type="number" id="moment-like-cooldown" min="1" max="1440" value="5" placeholder="分钟">
+                        </div>
+                        <div class="form-group">
+                            <label for="proactive-cooldown">主动聊天冷却</label>
+                            <input type="number" id="proactive-cooldown" min="1" max="1440" value="60" placeholder="分钟">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 评分权重面板 -->
+                <div id="scoring-config" class="config-panel">
+                    <div class="form-section">
+                        <h3>行为评分权重</h3>
+                        <p class="form-help">调整各影响因子在行为评分中的权重（总和应为1.0）</p>
+                        
+                        <div class="form-group">
+                            <label for="interaction-frequency-weight">互动频率权重 <span id="interaction-frequency-weight-value">0.4</span></label>
+                            <input type="range" id="interaction-frequency-weight" min="0.0" max="1.0" step="0.05" value="0.4">
+                        </div>
+                        <div class="form-group">
+                            <label for="time-since-action-weight">时间因子权重 <span id="time-since-action-weight-value">0.3</span></label>
+                            <input type="range" id="time-since-action-weight" min="0.0" max="1.0" step="0.05" value="0.3">
+                        </div>
+                        <div class="form-group">
+                            <label for="context-relevance-weight">情境相关权重 <span id="context-relevance-weight-value">0.2</span></label>
+                            <input type="range" id="context-relevance-weight" min="0.0" max="1.0" step="0.05" value="0.2">
+                        </div>
+                        <div class="form-group">
+                            <label for="user-activity-weight">用户活跃权重 <span id="user-activity-weight-value">0.1</span></label>
+                            <input type="range" id="user-activity-weight" min="0.0" max="1.0" step="0.05" value="0.1">
+                        </div>
+                        
+                        <div class="weight-total">
+                            <span>权重总和: <span id="total-weight">1.0</span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 测试调试面板 -->
+                <div id="testing-config" class="config-panel">
+                    <div class="form-section">
+                        <h3>行为测试工具</h3>
+                        <p class="form-help">测试当前配置下的行为评分和执行概率</p>
+                        
+                        <div class="test-buttons">
+                            <button class="btn btn-secondary" id="test-behavior-score">🎯 测试行为评分</button>
+                            <button class="btn btn-secondary" id="test-action-probability">🎲 测试行为概率</button>
+                            <button class="btn btn-secondary" id="refresh-behavior-stats">📊 刷新统计</button>
+                        </div>
+                        
+                        <!-- 测试结果显示区域 -->
+                        <div id="test-results" class="test-results" style="display: none;"></div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3>最近评分记录</h3>
+                        <div id="behavior-score-chart" class="score-chart"></div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3>行为统计详情</h3>
+                        <div class="behavior-stats-detail">
+                            <div class="stat-item">
+                                <span class="stat-name">聊天回复次数:</span>
+                                <span class="stat-value" id="stat-chat-reply">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-name">朋友圈发布次数:</span>
+                                <span class="stat-value" id="stat-moment-post">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-name">朋友圈评论次数:</span>
+                                <span class="stat-value" id="stat-moment-comment">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-name">朋友圈点赞次数:</span>
+                                <span class="stat-value" id="stat-moment-like">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-name">主动聊天次数:</span>
+                                <span class="stat-value" id="stat-proactive-chat">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 保存和重置按钮 -->
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="save-behavior-config">💾 保存配置</button>
+                    <button class="btn btn-danger" id="reset-behavior-config">🔄 重置默认</button>
+                </div>
+            </div>
         </div>
 
         <div id="world-book-screen" class="screen">
@@ -138,29 +367,37 @@
                 </div>
                 <hr class="settings-divider">
                 <h3 class="data-management-title">主题与外观</h3>
-                <p class="data-management-desc">通过内置主题库、远程主题库或直接的URL来自定义应用外观。所有主题设置都会被保存。</p>
+                <p class="data-management-desc">通过内置主题库或本地导入来自定义应用外观。出于安全考虑，不支持远程主题加载。</p>
 
                 <!-- 内置主题和重置按钮 -->
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                     <button class="form-button form-button-secondary" id="open-builtin-themes-btn" style="flex: 1;">选择内置主题</button>
-                    <button class="form-button form-button-secondary" id="reset-remote-theme-btn" style="flex: 1;">重置为默认</button>
+                    <button class="form-button form-button-secondary" id="reset-builtin-theme-btn" style="flex: 1;">重置为默认</button>
                 </div>
-                <!-- 远程主题库 -->
-                <div class="form-group">
+                <!-- 远程主题功能已禁用 -->
+                <div class="form-group" style="opacity: 0.5; pointer-events: none;">
+                    <label>远程主题功能已禁用</label>
+                    <p class="form-group-description" style="color: #dc3545;">
+                        出于安全考虑，远程主题加载功能已被禁用。请使用内置主题或本地导入CSS文件。
+                    </p>
+                </div>
+
+                <!-- 原远程主题库区域已禁用 -->
+                <div class="form-group" style="display: none;">
                     <label for="remote-theme-library-url">远程主题库 URL (JSON)</label>
                     <div style="display: flex; gap: 10px;">
-                        <input type="text" id="remote-theme-library-url" placeholder="https://.../themeList.json" style="flex-grow: 1; margin-bottom: 0;">
-                        <button class="form-button form-button-secondary" id="load-remote-library-btn" style="flex-shrink: 0; width: auto; padding: 0 15px; margin-top: 0;">加载</button>
+                        <input type="text" id="remote-theme-library-url" placeholder="https://.../themeList.json" style="flex-grow: 1; margin-bottom: 0;" disabled>
+                        <button class="form-button form-button-secondary" id="load-remote-library-btn" style="flex-shrink: 0; width: auto; padding: 0 15px; margin-top: 0;" disabled>加载</button>
                     </div>
                     <p class="form-group-description">模式一：输入一个远程主题库(JSON文件)的URL，加载后选择主题。</p>
                 </div>
 
-                <!-- 远程单主题 -->
-                <div class="form-group">
+                <!-- 原远程单主题区域已禁用 -->
+                <div class="form-group" style="display: none;">
                     <label for="remote-theme-url">远程主题 CSS URL</label>
                     <div style="display: flex; gap: 10px;">
-                        <input type="text" id="remote-theme-url" placeholder="https://.../theme.css" style="flex-grow: 1; margin-bottom: 0;">
-                        <button class="form-button form-button-secondary" id="apply-remote-theme-btn" style="flex-shrink: 0; width: auto; padding: 0 15px; margin-top: 0;">应用</button>
+                        <input type="text" id="remote-theme-url" placeholder="https://.../theme.css" style="flex-grow: 1; margin-bottom: 0;" disabled>
+                        <button class="form-button form-button-secondary" id="apply-remote-theme-btn" style="flex-shrink: 0; width: auto; padding: 0 15px; margin-top: 0;" disabled>应用</button>
                     </div>
                     <p class="form-group-description">模式二：直接输入单个CSS文件的URL来立即替换样式。</p>
                 </div>
@@ -412,6 +649,223 @@
                 </button>
                 <input type="file" id="wallpaper-upload-input" accept="image/*">
                 <button class="form-button" id="save-wallpaper-btn">保存并应用</button>
+            </div>
+        </div>
+
+        <!-- 记忆管理界面 -->
+        <div id="memory-management-screen" class="screen">
+            <header class="header" role="banner">
+                <button class="back-btn" data-nav-screen="home-screen" aria-label="返回主屏幕">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">记忆管理</h1>
+                <button class="action-btn" id="memory-settings-btn" aria-label="记忆设置">
+                    <span aria-hidden="true">⚙</span>
+                </button>
+            </header>
+            
+            <!-- 记忆统计卡片 -->
+            <div class="memory-stats-container">
+                <div class="memory-stat-card">
+                    <div class="stat-icon">🧠</div>
+                    <div class="stat-info">
+                        <div class="stat-number" id="total-memories">0</div>
+                        <div class="stat-label">总记忆数</div>
+                    </div>
+                </div>
+                <div class="memory-stat-card">
+                    <div class="stat-icon">💎</div>
+                    <div class="stat-info">
+                        <div class="stat-number" id="important-memories">0</div>
+                        <div class="stat-label">重要记忆</div>
+                    </div>
+                </div>
+                <div class="memory-stat-card">
+                    <div class="stat-icon">📈</div>
+                    <div class="stat-info">
+                        <div class="stat-number" id="avg-importance">0.0</div>
+                        <div class="stat-label">平均重要度</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 记忆类型筛选器 -->
+            <div class="memory-filter-container">
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-memory-type="all">全部</button>
+                    <button class="filter-tab" data-memory-type="semantic">知识记忆</button>
+                    <button class="filter-tab" data-memory-type="episodic">情节记忆</button>
+                    <button class="filter-tab" data-memory-type="social">社交记忆</button>
+                    <button class="filter-tab" data-memory-type="general">一般记忆</button>
+                </div>
+            </div>
+            
+            <!-- 记忆列表容器 -->
+            <div class="memory-list-container">
+                <div id="memory-list-loading" class="loading-indicator" style="display: none;">
+                    <div class="loading-spinner"></div>
+                    <span>加载记忆中...</span>
+                </div>
+                <div id="memory-list" class="memory-list"></div>
+                <div id="memory-list-empty" class="empty-state" style="display: none;">
+                    <div class="empty-icon">🧠</div>
+                    <div class="empty-text">暂无记忆内容</div>
+                    <div class="empty-subtitle">开始聊天后，AI会自动形成记忆</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 记忆详情界面 -->
+        <div id="memory-detail-screen" class="screen">
+            <header class="header" role="banner">
+                <button class="back-btn" data-nav-screen="memory-management-screen" aria-label="返回记忆列表">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">记忆详情</h1>
+                <button class="action-btn" id="delete-memory-btn" aria-label="删除记忆">
+                    <span aria-hidden="true">🗑</span>
+                </button>
+            </header>
+            
+            <div class="memory-detail-container">
+                <!-- 记忆内容 -->
+                <div class="memory-content-section">
+                    <h3 class="section-title">记忆内容</h3>
+                    <div class="memory-content-text" id="memory-detail-content"></div>
+                </div>
+                
+                <!-- 记忆元信息 -->
+                <div class="memory-meta-section">
+                    <h3 class="section-title">基本信息</h3>
+                    <div class="meta-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">记忆类型</span>
+                            <span class="meta-value memory-type-badge" id="memory-detail-type"></span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">重要性评分</span>
+                            <span class="meta-value importance-score" id="memory-detail-importance"></span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">创建时间</span>
+                            <span class="meta-value" id="memory-detail-created"></span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">所属聊天</span>
+                            <span class="meta-value" id="memory-detail-chat"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 记忆标签 -->
+                <div class="memory-tags-section">
+                    <h3 class="section-title">相关标签</h3>
+                    <div class="memory-tags" id="memory-detail-tags"></div>
+                </div>
+                
+                <!-- 记忆上下文 -->
+                <div class="memory-context-section">
+                    <h3 class="section-title">上下文信息</h3>
+                    <div class="context-info" id="memory-detail-context">
+                        <div class="context-item">
+                            <span class="context-label">发送者类型:</span>
+                            <span class="context-value" id="context-sender"></span>
+                        </div>
+                        <div class="context-item">
+                            <span class="context-label">包含个人信息:</span>
+                            <span class="context-value" id="context-personal"></span>
+                        </div>
+                        <div class="context-item">
+                            <span class="context-label">情感内容:</span>
+                            <span class="context-value" id="context-emotional"></span>
+                        </div>
+                        <div class="context-item">
+                            <span class="context-label">群聊消息:</span>
+                            <span class="context-value" id="context-group"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 记忆设置界面 -->
+        <div id="memory-settings-screen" class="screen">
+            <header class="header" role="banner">
+                <button class="back-btn" data-nav-screen="memory-management-screen" aria-label="返回记忆管理">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">记忆设置</h1>
+                <button class="save-btn btn-primary" id="save-memory-settings-btn" aria-label="保存设置">保存</button>
+            </header>
+            
+            <div class="settings-container">
+                <!-- 基础设置 -->
+                <div class="settings-section">
+                    <h3 class="section-title">基础设置</h3>
+                    <div class="setting-item">
+                        <label for="memory-enabled">启用记忆系统</label>
+                        <input type="checkbox" id="memory-enabled" checked>
+                    </div>
+                    <div class="setting-item">
+                        <label for="max-memories-per-role">每个角色最大记忆数</label>
+                        <input type="number" id="max-memories-per-role" value="1000" min="100" max="5000" step="100">
+                    </div>
+                    <div class="setting-item">
+                        <label for="memory-importance-threshold">记忆重要性阈值</label>
+                        <input type="range" id="memory-importance-threshold" value="0.3" min="0.1" max="0.8" step="0.1">
+                        <span class="range-value" id="importance-threshold-value">0.3</span>
+                    </div>
+                </div>
+                
+                <!-- 压缩设置 -->
+                <div class="settings-section">
+                    <h3 class="section-title">记忆压缩设置</h3>
+                    <div class="setting-item">
+                        <label for="auto-compression-enabled">启用自动压缩</label>
+                        <input type="checkbox" id="auto-compression-enabled" checked>
+                    </div>
+                    <div class="setting-item">
+                        <label for="compression-time-window">时间窗口（天）</label>
+                        <input type="number" id="compression-time-window" value="30" min="7" max="365">
+                    </div>
+                    <div class="setting-item">
+                        <label for="similarity-threshold">相似度阈值</label>
+                        <input type="range" id="similarity-threshold" value="0.7" min="0.5" max="0.9" step="0.1">
+                        <span class="range-value" id="similarity-threshold-value">0.7</span>
+                    </div>
+                </div>
+                
+                <!-- 注入设置 -->
+                <div class="settings-section">
+                    <h3 class="section-title">记忆注入设置</h3>
+                    <div class="setting-item">
+                        <label for="memory-token-budget">记忆Token预算</label>
+                        <input type="number" id="memory-token-budget" value="10000" min="1000" max="50000" step="1000">
+                    </div>
+                    <div class="setting-item">
+                        <label for="memory-token-ratio">记忆占总预算比例</label>
+                        <input type="range" id="memory-token-ratio" value="0.3" min="0.1" max="0.6" step="0.1">
+                        <span class="range-value" id="memory-token-ratio-value">0.3</span>
+                    </div>
+                    <div class="setting-item">
+                        <label for="max-memories-per-context">每次最大记忆数</label>
+                        <input type="number" id="max-memories-per-context" value="20" min="5" max="50">
+                    </div>
+                </div>
+                
+                <!-- 高级选项 -->
+                <div class="settings-section">
+                    <h3 class="section-title">高级选项</h3>
+                    <div class="setting-item">
+                        <button class="action-button" id="manual-compression-btn">手动压缩记忆</button>
+                    </div>
+                    <div class="setting-item">
+                        <button class="action-button" id="export-memories-btn">导出记忆数据</button>
+                    </div>
+                    <div class="setting-item">
+                        <button class="action-button danger" id="clear-all-memories-btn">清空所有记忆</button>
+                    </div>
+                </div>
             </div>
         </div>
 

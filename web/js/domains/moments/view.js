@@ -2,7 +2,7 @@
  * 朋友圈视图层
  */
 
-import { getMomentsPaginated, publishMoment } from './store.js';
+import { getMomentsPaginated, publishMoment, addComment, getComments, toggleReaction, getMomentStats } from './store.js';
 import { addEventListener, byId } from '../../utils/dom.js';
 import { showToast, showError } from '../../utils/notify.js';
 
@@ -59,6 +59,38 @@ function bindEvents() {
     if (elements.momentImageInput) {
         addEventListener(elements.momentImageInput, 'change', handleImageUpload);
     }
+
+    // 事件委托：点赞与评论
+    const list = document.getElementById('moments-list');
+    if (list) {
+        addEventListener(list, 'click', async (event) => {
+            const likeBtn = event.target.closest('[data-action="like"]');
+            const commentBtn = event.target.closest('[data-action="comment"]');
+            const submitBtn = event.target.closest('[data-action="submit-comment"]');
+            const item = event.target.closest('.moment-item');
+            const momentId = item?.dataset?.momentId;
+            if (!momentId) return;
+
+            if (likeBtn) {
+                await toggleReaction(momentId, 'user', 'like');
+                await refreshMomentStats(momentId, item);
+            }
+            if (commentBtn) {
+                const input = item.querySelector('.comment-input');
+                if (input) input.focus();
+            }
+            if (submitBtn) {
+                const input = item.querySelector('.comment-input');
+                const content = input?.value?.trim();
+                if (content) {
+                    await addComment(momentId, content, 'user');
+                    input.value = '';
+                    await renderComments(momentId, item);
+                    await refreshMomentStats(momentId, item);
+                }
+            }
+        });
+    }
 }
 
 /**
@@ -111,13 +143,12 @@ async function handlePublishMoment() {
     }
     
     try {
-        const momentData = {
+        const visibility = document.querySelector('input[name="moment-visibility"]:checked')?.value || 'private';
+        const result = await publishMoment({
             content,
-            visibility: document.querySelector('input[name="moment-visibility"]:checked')?.value || 'user_only',
-            image: null // TODO: 处理图片上传
-        };
-        
-        const result = await publishMoment(momentData);
+            visibility,
+            image: null
+        });
         
         if (result.success) {
             showToast('朋友圈发布成功', 'success');
@@ -156,12 +187,53 @@ function renderMomentsList(moments) {
     }
     
     const momentItems = moments.map(moment => `
-        <div class="moment-item">
+        <div class="moment-item" data-moment-id="${moment.id}">
             <div class="moment-author">${moment.authorId === 'user' ? '我' : moment.authorId}</div>
             <div class="moment-content">${moment.content}</div>
             <div class="moment-time">${moment.formattedTime}</div>
+            <div class="moment-actions" style="margin-top: 6px; display: flex; gap: 12px; align-items: center;">
+                <button class="btn btn-light" data-action="like">👍 点赞 (<span class="likes-count">${moment.likesCount || 0}</span>)</button>
+                <button class="btn btn-light" data-action="comment">💬 评论 (<span class="comments-count">${moment.commentsCount || 0}</span>)</button>
+            </div>
+            <div class="moment-comment-box" style="margin-top: 8px; display: flex; gap: 8px;">
+                <input class="comment-input" placeholder="写下你的评论..." style="flex: 1; padding: 6px 8px;" />
+                <button class="btn btn-primary" data-action="submit-comment">发送</button>
+            </div>
+            <div class="moment-comments" style="margin-top: 8px;"></div>
         </div>
     `).join('');
     
     momentsList.innerHTML = momentItems;
+
+    // 初始加载每条动态的前几条评论
+    moments.forEach(async m => {
+        const item = document.querySelector(`.moment-item[data-moment-id="${m.id}"]`);
+        if (item) {
+            await renderComments(m.id, item);
+        }
+    });
+}
+
+async function renderComments(momentId, itemEl) {
+    const container = itemEl.querySelector('.moment-comments');
+    if (!container) return;
+    const { comments } = await getComments(momentId, 1, 3);
+    if (!comments.length) {
+        container.innerHTML = '';
+        return;
+    }
+    container.innerHTML = comments.map(c => `
+        <div class="comment-item">
+            <span class="comment-author">${c.authorId}：</span>
+            <span class="comment-content">${c.content}</span>
+        </div>
+    `).join('');
+}
+
+async function refreshMomentStats(momentId, itemEl) {
+    const stats = await getMomentStats(momentId);
+    const likes = itemEl.querySelector('.likes-count');
+    const comments = itemEl.querySelector('.comments-count');
+    if (likes) likes.textContent = stats.likes;
+    if (comments) comments.textContent = stats.comments;
 }

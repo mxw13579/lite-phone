@@ -1,14 +1,21 @@
 /**
  * 任务调度器系统
  * 提供定时任务执行、补偿机制和聚合评估功能
+ * 
+ * 功能扩展：
+ * - 支持AI行为决策任务调度
+ * - 定期评估行为机会
+ * - 集成行为服务决策流程
  */
 
 import { eventBus, EventTypes } from './event-bus.js';
+import { getDB } from './db.js';
 
 /**
- * 调度器类
+ * 扩展的调度器类
+ * 支持AI行为决策任务调度
  */
-class Scheduler {
+class EnhancedScheduler {
     constructor() {
         this.tasks = new Map();
         this.intervals = new Map();
@@ -19,6 +26,10 @@ class Scheduler {
         this.tickCounter = 0;
         this.evaluationInterval = 5 * 60 * 1000; // 5分钟聚合评估
         this.lastEvaluationTime = Date.now();
+        
+        // 行为决策相关属性
+        this.behaviorService = null;
+        this.isBehaviorInitialized = false;
     }
 
     /**
@@ -42,6 +53,11 @@ class Scheduler {
         this.evaluationTimer = setInterval(() => {
             this.performEvaluation();
         }, this.evaluationInterval);
+        
+        // 初始化行为决策支持（通过任务系统统一调度）
+        this.initializeBehaviorSupport().catch(error => {
+            console.error('Failed to initialize behavior support:', error);
+        });
 
         console.log('Scheduler started');
         eventBus.emit(EventTypes.SCHEDULER_TICK, { type: 'start', timestamp: Date.now() });
@@ -426,6 +442,297 @@ class Scheduler {
     }
 
     /**
+     * 初始化行为决策支持
+     * @returns {Promise<void>}
+     */
+    async initializeBehaviorSupport() {
+        try {
+            // 动态导入行为服务
+            const { behaviorService } = await import('../services/behavior.js');
+            this.behaviorService = behaviorService;
+            
+            // 初始化行为服务
+            const initResult = await this.behaviorService.initialize();
+            if (!initResult.success) {
+                throw new Error(`Behavior service initialization failed: ${initResult.error}`);
+            }
+            
+            // 注册行为决策任务
+            this.addTask('behavior_evaluation', {
+                name: 'AI行为决策评估',
+                schedule: 'interval',
+                interval: 5 * 60 * 1000, // 5分钟评估一次
+                handler: this.evaluateBehaviorOpportunities.bind(this),
+                priority: 5,
+                maxRetries: 2,
+                timeout: 30000
+            });
+            
+            this.isBehaviorInitialized = true;
+            console.log('✅ Behavior decision support initialized in scheduler');
+            
+        } catch (error) {
+            console.error('❌ Failed to initialize behavior support:', error);
+            this.isBehaviorInitialized = false;
+        }
+    }
+    
+    
+    /**
+     * 评估行为机会
+     * @returns {Promise<void>}
+     */
+    async evaluateBehaviorOpportunities() {
+        if (!this.behaviorService) {
+            console.warn('Behavior service not available for evaluation');
+            return;
+        }
+        
+        try {
+            const db = getDB();
+            const currentTime = Date.now();
+            const evaluationWindow = 24 * 60 * 60 * 1000; // 24小时窗口
+            
+            console.log('🔍 Evaluating behavior opportunities...');
+            
+            // 获取所有活跃的聊天（24小时内有活动）
+            const activeChats = await db.chats
+                .where('updatedAt')
+                .above(currentTime - evaluationWindow)
+                .toArray();
+            
+            console.log(`📊 Found ${activeChats.length} active chats for behavior evaluation`);
+            
+            // 为每个活跃聊天评估行为机会
+            const evaluationPromises = activeChats.map(chat => 
+                this.evaluateChatBehavior(chat).catch(error => {
+                    console.error(`Chat behavior evaluation failed for ${chat.id}:`, error);
+                    return null;
+                })
+            );
+            
+            const results = await Promise.allSettled(evaluationPromises);
+            const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
+            
+            console.log(`✅ Completed behavior evaluation for ${successCount}/${activeChats.length} chats`);
+            
+            // 发送评估结果事件
+            await eventBus.emit('behavior.opportunities-evaluated', {
+                totalChats: activeChats.length,
+                successfulEvaluations: successCount,
+                timestamp: currentTime,
+                evaluationWindow
+            });
+            
+        } catch (error) {
+            console.error('Failed to evaluate behavior opportunities:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * 评估特定聊天的行为机会
+     * @param {Object} chat 聊天对象
+     * @returns {Promise<Object|null>} 评估结果
+     */
+    async evaluateChatBehavior(chat) {
+        if (!this.behaviorService) return null;
+        
+        try {
+            const context = {
+                roleId: chat.id,
+                chatId: chat.id,
+                timeWindow: 4 * 60 * 60 * 1000, // 4小时窗口
+                keywords: await this.extractRecentKeywords(chat.id),
+                userActivityLevel: await this.calculateUserActivityLevel(chat.id)
+            };
+            
+            // 计算行为评分
+            const scoreResult = await this.behaviorService.calculateBehaviorScore(
+                chat.id, context
+            );
+            
+            if (!scoreResult.success) {
+                console.warn(`Behavior score calculation failed for chat ${chat.id}:`, scoreResult.error);
+                return null;
+            }
+            
+            const behaviorScore = scoreResult.data.score;
+            console.log(`📈 Chat ${chat.id} behavior score: ${(behaviorScore * 100).toFixed(1)}%`);
+            
+            // 如果评分足够高，考虑执行行为
+            if (behaviorScore > 0.6) {
+                return await this.considerBehaviorActions(chat, behaviorScore, context);
+            }
+            
+            return { chatId: chat.id, score: behaviorScore, actionConsidered: false };
+            
+        } catch (error) {
+            console.error(`Failed to evaluate chat behavior for ${chat.id}:`, error);
+            return null;
+        }
+    }
+    
+    /**
+     * 考虑执行行为动作
+     * @param {Object} chat 聊天对象
+     * @param {number} score 行为评分
+     * @param {Object} context 上下文
+     * @returns {Promise<Object>} 考虑结果
+     */
+    async considerBehaviorActions(chat, score, context) {
+        const actionTypes = [
+            'chat_reply',
+            'proactive_chat',
+            'moment_post',
+            'moment_comment'
+        ];
+        
+        const consideredActions = [];
+        
+        for (const actionType of actionTypes) {
+            try {
+                // 检查冷却状态
+                const cooldownResult = await this.behaviorService.applyCooldown(
+                    chat.id, actionType
+                );
+                
+                if (!cooldownResult.success || !cooldownResult.data.canExecute) {
+                    console.log(`❄️ Action ${actionType} for chat ${chat.id} is in cooldown`);
+                    continue;
+                }
+                
+                // 评估具体行为概率
+                const probabilityResult = await this.behaviorService.assessActionProbability(
+                    actionType, { ...context, behaviorScore: score }
+                );
+                
+                if (!probabilityResult.success) {
+                    console.warn(`Probability assessment failed for ${actionType}:`, probabilityResult.error);
+                    continue;
+                }
+                
+                const { probability, threshold, shouldExecute } = probabilityResult.data;
+                
+                console.log(`🎯 Action ${actionType}: ${(probability * 100).toFixed(1)}% (threshold: ${(threshold * 100).toFixed(1)}%)`);
+                
+                consideredActions.push({
+                    actionType,
+                    probability,
+                    threshold,
+                    shouldExecute
+                });
+                
+                // 如果应该执行，发送行为建议事件
+                if (shouldExecute) {
+                    await eventBus.emit('behavior.action-suggested', {
+                        chatId: chat.id,
+                        actionType,
+                        probability,
+                        behaviorScore: score,
+                        context,
+                        timestamp: Date.now(),
+                        suggestedBy: 'scheduler'
+                    });
+                    
+                    console.log(`🚀 Suggested action ${actionType} for chat ${chat.id}`);
+                }
+                
+            } catch (error) {
+                console.error(`Failed to consider action ${actionType} for chat ${chat.id}:`, error);
+            }
+        }
+        
+        return {
+            chatId: chat.id,
+            score,
+            actionConsidered: true,
+            consideredActions,
+            suggestedActionsCount: consideredActions.filter(a => a.shouldExecute).length
+        };
+    }
+    
+    /**
+     * 提取最近的关键词
+     * @param {string} chatId 聊天ID
+     * @returns {Promise<Array>} 关键词列表
+     */
+    async extractRecentKeywords(chatId) {
+        try {
+            const db = getDB();
+            const recentTimeWindow = 2 * 60 * 60 * 1000; // 2小时内
+            
+            const chat = await db.chats.get(chatId);
+            const cutoff = Date.now() - recentTimeWindow;
+            const recentMessages = (chat?.messages || [])
+                .filter(m => {
+                    const ts = typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp;
+                    return ts > cutoff;
+                })
+                .slice(-10)
+                .reverse();
+            
+            // 简单的关键词提取
+            const keywords = [];
+            recentMessages.forEach(message => {
+                if (message.content) {
+                    const words = message.content
+                        .replace(/[^\u4e00-\u9fa5\w\s]/g, ' ')
+                        .split(/\s+/)
+                        .filter(word => word.length > 1);
+                    keywords.push(...words);
+                }
+            });
+            
+            // 去重并返回前10个
+            return [...new Set(keywords)].slice(0, 10);
+            
+        } catch (error) {
+            console.error(`Failed to extract keywords for chat ${chatId}:`, error);
+            return [];
+        }
+    }
+    
+    /**
+     * 计算用户活跃度等级
+     * @param {string} chatId 聊天ID
+     * @returns {Promise<string>} 活跃度等级
+     */
+    async calculateUserActivityLevel(chatId) {
+        try {
+            const db = getDB();
+            const timeWindow = 24 * 60 * 60 * 1000; // 24小时窗口
+            
+            const chat = await db.chats.get(chatId);
+            const cutoff = Date.now() - timeWindow;
+            const userMessages = (chat?.messages || []).filter(m => {
+                const ts = typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp;
+                return ts > cutoff && m.senderId !== 'ai';
+            }).length;
+            
+            if (userMessages >= 20) return 'high';
+            if (userMessages >= 5) return 'medium';
+            return 'low';
+            
+        } catch (error) {
+            console.error(`Failed to calculate user activity for chat ${chatId}:`, error);
+            return 'low';
+        }
+    }
+    
+    /**
+     * 获取行为决策状态
+     * @returns {Object} 行为决策状态
+     */
+    getBehaviorStatus() {
+        return {
+            isInitialized: this.isBehaviorInitialized,
+            hasBehaviorService: !!this.behaviorService,
+            behaviorTasksCount: Array.from(this.tasks.values()).filter(task => task.name.includes('行为')).length
+        };
+    }
+    
+    /**
      * 延迟函数
      * @param {number} ms 毫秒数
      * @returns {Promise} Promise
@@ -435,11 +742,11 @@ class Scheduler {
     }
 }
 
-// 创建全局调度器实例
-export const scheduler = new Scheduler();
+// 创建全局增强调度器实例
+export const scheduler = new EnhancedScheduler();
 
-// 导出Scheduler类供自定义实例使用
-export { Scheduler };
+// 导出类供自定义实例使用
+export { EnhancedScheduler as Scheduler, EnhancedScheduler };
 
 // 预定义的常用任务
 export const BuiltInTasks = {
@@ -492,5 +799,18 @@ export const BuiltInTasks = {
             console.log('Event Bus Stats:', stats);
             return stats;
         }
+    },
+    
+    // AI行为决策评估 (现在由增强调度器动态添加)
+    BEHAVIOR_EVALUATION: {
+        name: 'AI行为决策评估',
+        schedule: 'interval',
+        interval: 5 * 60 * 1000, // 5分钟
+        handler: async (context) => {
+            // 这个处理器会被增强调度器的方法替换
+            console.log('Behavior evaluation task triggered', context);
+        },
+        priority: 5,
+        maxRetries: 2
     }
 };

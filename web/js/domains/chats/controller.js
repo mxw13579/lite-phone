@@ -4,36 +4,100 @@
  */
 
 import { getDB } from '../../core/db.js';
-import { getActivePreset } from '../presets/store.js';
+import { eventBus, EventTypes } from '../../core/event-bus.js';
+import { getActivePreset, validatePresetIntegrity, repairPresetWithDefaults } from '../presets/store.js';
 import { getAllWorldBooks } from '../worldbook/store.js';
+import { memoryService } from '../../services/memory.js';
 
 /**
- * 生成系统提示词
+ * 生成系统提示词（记忆增强版）
  * @param {Object} chat 聊天对象
  * @param {string} myAddress 用户地址
  * @param {Object} musicContext 音乐上下文
+ * @param {Object} contextOptions 上下文选项
  * @returns {Promise<string>} 生成的系统提示词
  */
-export async function generateSystemPrompt(chat, myAddress = '位置未知', musicContext = '') {
+export async function generateSystemPrompt(chat, myAddress = '位置未知', musicContext = '', contextOptions = {}) {
     try {
         // 获取活跃预设
         const activePreset = await getActivePreset();
         if (!activePreset) {
-            throw new Error('No active preset found');
+            throw new Error('无法获取活跃预设，请检查预设配置');
+        }
+        
+        // 验证预设完整性
+        const validation = validatePresetIntegrity(activePreset);
+        if (!validation.isValid) {
+            console.warn(`预设完整性检查失败: ${validation.missingFields.join(', ')}缺失`);
+            
+            // 使用默认值补全缺失字段
+            const completePreset = repairPresetWithDefaults(activePreset);
+            return await generatePromptWithPreset(chat, completePreset, myAddress, musicContext, contextOptions);
         }
 
+        return await generatePromptWithPreset(chat, activePreset, myAddress, musicContext, contextOptions);
+        
+    } catch (error) {
+        console.error('Failed to generate system prompt:', error);
+        // 提供更友好的错误信息
+        throw new Error(`生成系统提示词失败: ${error.message}，请检查预设配置`);
+    }
+}
+
+/**
+ * 使用指定预设生成提示词（记忆增强版）
+ * @param {Object} chat 聊天对象
+ * @param {Object} preset 预设对象
+ * @param {string} myAddress 用户地址
+ * @param {Object} musicContext 音乐上下文
+ * @param {Object} contextOptions 上下文选项
+ * @returns {Promise<string>} 生成的系统提示词
+ */
+async function generatePromptWithPreset(chat, preset, myAddress = '位置未知', musicContext = '', contextOptions = {}) {
+    try {
         // 获取世界书内容
         const worldBookContent = await getWorldBookContent(chat);
+        
+        // 提取当前对话上下文用于记忆检索
+        const contextKeywords = extractContextKeywords(chat, musicContext);
+        const chatHistory = getChatHistoryForContext(chat);
+        
+        // 构建记忆注入上下文
+        const memoryContext = {
+            tokenBudget: contextOptions.tokenBudget || 10000,
+            maxMemories: contextOptions.maxMemories || 15,
+            contextKeywords,
+            currentMessage: contextOptions.currentMessage || '',
+            chatHistory,
+            preferredTypes: ['semantic', 'episodic', 'social'], // 优先语义和情节记忆
+            urgencyLevel: contextOptions.urgencyLevel || 'normal'
+        };
+        
+        // 注入相关记忆
+        let memoryContent = '';
+        try {
+            const memoryResult = await memoryService.injectMemoriesIntoPrompt(chat.id, memoryContext);
+            if (memoryResult.success !== false && memoryResult.memoryText) {
+                memoryContent = memoryResult.memoryText;
+                console.log(`记忆注入成功 - 使用 ${memoryResult.usedMemories} 个记忆, ${memoryResult.estimatedTokens} tokens`);
+            } else if (memoryResult.error) {
+                console.warn('记忆注入失败:', memoryResult.error);
+            }
+        } catch (error) {
+            console.warn('记忆服务调用失败:', error);
+            // 记忆功能失败不影响聊天生成，继续正常流程
+        }
         
         // 构建基础提示词变量
         const templateVars = {
             currentTime: new Date().toLocaleString('zh-CN'),
             myAddress: myAddress || '位置未知',
             worldBookContent,
+            memoryContent, // 新增：记忆内容
             musicContext: musicContext || '',
-            aiImageInstructions: activePreset.promptImage || '',
-            aiVoiceInstructions: activePreset.promptVoice || '',
-            transferInstructions: activePreset.promptTransfer || ''
+            aiImageInstructions: preset.promptImage || '',
+            aiVoiceInstructions: preset.promptVoice || '',
+            transferInstructions: preset.promptTransfer || ''
         };
 
         let systemPrompt;
@@ -51,7 +115,7 @@ export async function generateSystemPrompt(chat, myAddress = '位置未知', mus
                 groupAiVoiceInstructions: `\n# 发送语音的能力\n- 群成员同样可以发送"模拟语音消息"。\n- 若要发送语音，请为该角色单独发送一个特殊的对象，格式为：\`{"name": "角色名", "type": "voice_message", "content": "这里是语音的文字内容..."}\`。`
             };
 
-            systemPrompt = replaceTemplateVars(activePreset.promptGroup, {
+            systemPrompt = replaceTemplateVars(preset.promptGroup, {
                 ...groupVars,
                 'chat.settings.myPersona': chat.settings?.myPersona || ''
             });
@@ -64,15 +128,95 @@ export async function generateSystemPrompt(chat, myAddress = '位置未知', mus
                 'chat.settings.myPersona': chat.settings?.myPersona || ''
             };
 
-            systemPrompt = replaceTemplateVars(activePreset.promptSingle, singleVars);
+            systemPrompt = replaceTemplateVars(preset.promptSingle, singleVars);
         }
 
         return systemPrompt;
-
+        
     } catch (error) {
-        console.error('Failed to generate system prompt:', error);
+        console.error('Generate prompt with preset failed:', error);
         throw error;
     }
+}
+
+/**
+ * 提取对话上下文关键词
+ * @param {Object} chat 聊天对象
+ * @param {string} musicContext 音乐上下文
+ * @returns {Array<string>} 关键词列表
+ */
+function extractContextKeywords(chat, musicContext) {
+    const keywords = [];
+    
+    // 从聊天名称提取
+    if (chat.name) {
+        keywords.push(...chat.name.split(/\s+/).filter(word => word.length > 1));
+    }
+    
+    // 从AI人设提取关键词
+    if (chat.settings?.aiPersona) {
+        const personaKeywords = chat.settings.aiPersona
+            .split(/[，。！？\s]+/)
+            .filter(word => word.length > 1)
+            .slice(0, 5); // 最多5个关键词
+        keywords.push(...personaKeywords);
+    }
+    
+    // 从用户人设提取关键词
+    if (chat.settings?.myPersona) {
+        const myPersonaKeywords = chat.settings.myPersona
+            .split(/[，。！？\s]+/)
+            .filter(word => word.length > 1)
+            .slice(0, 3); // 最多3个关键词
+        keywords.push(...myPersonaKeywords);
+    }
+    
+    // 从音乐上下文提取
+    if (musicContext) {
+        const musicKeywords = musicContext
+            .split(/[，。！？\s]+/)
+            .filter(word => word.length > 1)
+            .slice(0, 3);
+        keywords.push(...musicKeywords);
+    }
+    
+    // 从最近的消息中提取（如果有）
+    if (chat.messages && chat.messages.length > 0) {
+        const recentMessages = chat.messages.slice(-3); // 最近3条消息
+        recentMessages.forEach(message => {
+            if (message.content && typeof message.content === 'string') {
+                const messageWords = message.content
+                    .split(/[，。！？\s]+/)
+                    .filter(word => word.length > 1)
+                    .slice(0, 3);
+                keywords.push(...messageWords);
+            }
+        });
+    }
+    
+    // 去重并限制数量
+    return [...new Set(keywords)].slice(0, 15);
+}
+
+/**
+ * 获取用于上下文分析的聊天历史
+ * @param {Object} chat 聊天对象
+ * @returns {Array} 聊天历史
+ */
+function getChatHistoryForContext(chat) {
+    if (!chat.messages || chat.messages.length === 0) {
+        return [];
+    }
+    
+    // 获取最近10条消息作为上下文
+    return chat.messages
+        .slice(-10)
+        .filter(message => message.content && typeof message.content === 'string')
+        .map(message => ({
+            content: message.content,
+            senderId: message.senderId,
+            timestamp: message.timestamp
+        }));
 }
 
 /**
@@ -293,7 +437,7 @@ export async function updateChatSettings(chatId, settings) {
 }
 
 /**
- * 发送消息
+ * 发送消息（记忆增强版）
  * @param {string} chatId 聊天ID
  * @param {Object} message 消息对象
  * @returns {Promise<Object>} 操作结果
@@ -325,6 +469,33 @@ export async function sendMessage(chatId, message) {
             messages: updatedMessages,
             updatedAt: new Date().toISOString()
         });
+
+        // 发送消息事件
+        try {
+            await eventBus.emit(EventTypes.MESSAGE_SENT, {
+                chatId,
+                message: newMessage
+            });
+        } catch (e) {
+            console.warn('Emit MESSAGE_SENT failed:', e);
+        }
+
+        // 消息发送成功后，异步进行记忆抽取
+        setTimeout(async () => {
+            try {
+                console.log(`开始为聊天 ${chatId} 抽取记忆...`);
+                const memoryResult = await memoryService.extractMemoriesFromChat(chatId, 5);
+                
+                if (memoryResult.success && memoryResult.data?.length > 0) {
+                    console.log(`成功抽取 ${memoryResult.data.length} 个记忆:`, memoryResult.message);
+                } else if (memoryResult.error) {
+                    console.warn(`记忆抽取失败: ${memoryResult.error}`);
+                }
+            } catch (error) {
+                console.warn('自动记忆抽取失败:', error);
+                // 记忆抽取失败不影响消息发送的成功状态
+            }
+        }, 1000); // 延迟1秒执行，避免影响消息发送性能
 
         return {
             success: true,

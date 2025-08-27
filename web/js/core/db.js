@@ -23,10 +23,84 @@ export async function initializeDB() {
     try {
         db = new Dexie('GeminiChatDB');
         
+        // 升级到版本12 - Phase 2.2 AI行为算法系统支持
+        db.version(12).stores({
+            // 继承v11所有表
+            chats: '&id, isGroup, updatedAt',
+            apiConfig: '&id',
+            globalSettings: '&id',
+            userStickers: '&id, url, name',
+            worldBooks: '&id, name',
+            musicLibrary: '&id',
+            personaPresets: '&id',
+            presets: '&id, name',
+            memories: '&id, roleId, chatId, type, importance, createdAt, [roleId+createdAt]',
+            moments: '&id, authorId, createdAt, visibility, aiGenerated',
+            comments: '&id, momentId, createdAt, authorId, parentId',
+            reactions: '&id, momentId, userId, type, [momentId+userId]',
+            plugins: '&id, name, enabled, errors, configSnapshot, updatedAt',
+            migrations: '&id, fromVersion, toVersion, appliedAt',
+            
+            // 新增AI行为系统表
+            behaviorLogs: '&id, roleId, actionType, timestamp, success, [roleId+timestamp], [actionType+timestamp]',
+            behaviorScores: '&id, roleId, timestamp, score, breakdown, [roleId+timestamp]'
+        }).upgrade(async tx => {
+            console.log('Upgrading database to version 12 - Adding AI behavior system tables...');
+            
+            // 记录迁移信息
+            await tx.table('migrations').add({
+                id: `migration_v12_${Date.now()}`,
+                fromVersion: 11,
+                toVersion: 12,
+                appliedAt: new Date().toISOString(),
+                description: 'Added AI behavior system tables: behaviorLogs, behaviorScores'
+            });
+            
+            // 初始化默认行为配置到globalSettings
+            const defaultBehaviorConfig = {
+                id: 'behavior_config_default',
+                enabled: true,
+                frequencies: {
+                    chatReply: 1.0,
+                    momentActivity: 1.0,
+                    proactiveChat: 0.3
+                },
+                cooldowns: {
+                    chat_reply: 30 * 60 * 1000,      // 30分钟
+                    moment_post: 120 * 60 * 1000,    // 2小时
+                    moment_comment: 15 * 60 * 1000,  // 15分钟
+                    moment_like: 5 * 60 * 1000,      // 5分钟
+                    proactive_chat: 60 * 60 * 1000   // 1小时
+                },
+                scoreWeights: {
+                    interactionFrequency: 0.4,
+                    timeSinceLastAction: 0.3,
+                    contextRelevance: 0.2,
+                    userActivity: 0.1
+                },
+                probabilityThresholds: {
+                    chat_reply: 0.6,
+                    moment_post: 0.8,
+                    moment_comment: 0.7,
+                    moment_like: 0.5,
+                    proactive_chat: 0.9
+                },
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+            
+            try {
+                await tx.table('globalSettings').put(defaultBehaviorConfig);
+                console.log('✅ Successfully initialized default behavior configuration');
+            } catch (error) {
+                console.error('❌ Failed to initialize behavior configuration:', error);
+            }
+        });
+
         // 升级到版本11 - EPhone v2.0 数据表
         db.version(11).stores({
             // 现有表保持不变
-            chats: '&id, isGroup',
+            chats: '&id, isGroup, updatedAt',
             apiConfig: '&id',
             globalSettings: '&id',
             userStickers: '&id, url, name',

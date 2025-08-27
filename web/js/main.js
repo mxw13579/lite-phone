@@ -15,11 +15,14 @@ import { renderWorldBookScreen, initializeWorldBookView } from './domains/worldb
 import { renderThemesScreen, initializeThemesView } from './domains/themes/view.js';
 import { renderChatListScreen, initializeChatsView } from './domains/chats/view.js';
 import { renderApiSettingsScreen, initializeApiSettingsView } from './domains/api-settings/view.js';
+import { renderMemoryManagementScreen, initializeMemoriesView } from './domains/memories/view.js';
+import { renderBehaviorSettingsScreen, initializeBehaviorSettingsView } from './domains/behavior-settings/view.js';
 import { showToast, showSuccess, showError, showWarning } from './utils/notify.js';
 import { initializeDataManagement, setupBackupEventListeners, getDataStats, displayDataManagementStatus } from './utils/data-management.js';
 import { initializeGlobalNavigation } from './utils/navigation.js';
 import { themeService } from './services/themes.js';
 import { backupService } from './services/backup.js';
+import { memoryService } from './services/memory.js';
 
 // 模块系统状态标志
 let modulesInitialized = false;
@@ -144,8 +147,12 @@ function initializeScreenState(screenId) {
     // 例如：加载数据、设置监听器、启动定时器等
     switch (screenId) {
         case 'memory-management-screen':
-            // 刷新内存管理数据
-            displayDataManagementStatus();
+            // 渲染记忆管理界面
+            renderMemoryManagementScreen();
+            break;
+        case 'behavior-settings-screen':
+            // 渲某AI行为设置界面
+            renderBehaviorSettingsScreen();
             break;
         case 'home-screen':
             // 确保主屏幕状态正确
@@ -205,6 +212,10 @@ async function initializeServices() {
         // 初始化备份服务
         await backupService.initialize();
         console.log('✅ Backup service initialized');
+        
+        // 初始化记忆服务
+        await memoryService.initialize();
+        console.log('✅ Memory service initialized');
         
         console.log('Services layer initialized successfully');
         
@@ -430,6 +441,8 @@ async function initializeDomainViews() {
         initializeThemesView();
         initializeChatsView();
         initializeApiSettingsView();
+        await initializeMemoriesView();
+        await initializeBehaviorSettingsView();
         
         console.log('✅ Domain views initialized');
         
@@ -492,6 +505,9 @@ function initializeCore() {
     window.eventBus = eventBus;
     window.scheduler = scheduler;
     window.EventTypes = EventTypes;
+    
+    // 将记忆服务暴露给全局（用于测试和调试）
+    window.memoryService = memoryService;
     
     console.log('Core modules initialized');
 }

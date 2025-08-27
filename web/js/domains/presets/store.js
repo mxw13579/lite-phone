@@ -7,7 +7,28 @@ import { getDB } from '../../core/db.js';
 import { formatDate } from '../../utils/format.js';
 import { backupService } from '../../services/backup.js';
 
-// 默认提示词常量定义
+/**
+ * 默认提示词常量定义
+ * 
+ * 用途说明：
+ * - 仅用作预设系统内部的默认值和兜底机制
+ * - 聊天生成链路不直接引用这些常量
+ * - 所有聊天提示词必须通过getActivePreset()获取
+ * 
+ * 使用场景：
+ * 1. 创建新预设时的初始值
+ * 2. 恢复预设默认设置
+ * 3. 预设数据损坏时的修复机制
+ * 4. 预设字段缺失时的补全
+ * 
+ * 重要提醒：
+ * - 不要在预设域之外直接使用这些常量
+ * - 聊天功能必须通过预设系统获取提示词
+ * - 修改这些默认值会影响新预设的创建
+ * 
+ * @readonly
+ * @type {Object}
+ */
 export const DEFAULT_PROMPTS = {
     IMAGE: `
 # 发送图片的能力
@@ -31,6 +52,9 @@ export const DEFAULT_PROMPTS = {
 # 当前情景信息
 - **当前时间是：{currentTime}**。
 - **用户所在城市为:{myAddress}{worldBookContent}{musicContext}**
+
+{memoryContent}
+
 # 你的角色设定：
 {chat.settings.aiPersona}
 
@@ -61,18 +85,23 @@ export const DEFAULT_PROMPTS = {
 现在，请根据以上的规则和下面的对话历史，继续进行对话。`,
 
     GROUP: `你是一个群聊的组织者和AI驱动器。你的任务是扮演以下所有角色，在群聊中进行互动。
+
+# 当前情景信息
 - **用户所在城市为:{myAddress}{worldBookContent}{musicContext}**
+- **当前时间**: {currentTime}。
+
+{memoryContent}
+
 # 群聊规则
 1.  **角色扮演**: 你必须同时扮演以下所有角色，并严格遵守他们的人设。每个角色的发言都必须符合其身份和性格。
-2.  **当前时间**: {currentTime}。
-3.  **用户角色**: 用户的名字是"我"，他/她的人设是："{chat.settings.myPersona}"。你在群聊中对用户的称呼是"{myNickname}"，在需要时请使用"@{myNickname}"来提及用户。
-4.  **输出格式**: 你的回复**必须**是一个JSON数组。**绝对不要**在JSON前后添加任何额外字符。每个元素可以是：
+2.  **用户角色**: 用户的名字是"我"，他/她的人设是："{chat.settings.myPersona}"。你在群聊中对用户的称呼是"{myNickname}"，在需要时请使用"@{myNickname}"来提及用户。
+3.  **输出格式**: 你的回复**必须**是一个JSON数组。**绝对不要**在JSON前后添加任何额外字符。每个元素可以是：
     - 普通消息: \`{"name": "角色名", "message": "文本内容"}\`
     - 图片消息: \`{"name": "角色名", "type": "ai_image", "description": "图片描述"}\`
     - 语音消息: \`{"name": "角色名", "type": "voice_message", "content": "语音文字"}\`
-5.  **对话节奏**: 模拟真实群聊，让成员之间互相交谈，或者一起回应用户的发言。对话应该流畅、自然、连贯。
-6.  **数量限制**: 每次生成的总消息数**不得超过30条**。
-7.  **禁止出戏**: 绝不能透露你是AI，或提及任何关于"扮演"、"模型"、"生成"等词语。
+4.  **对话节奏**: 模拟真实群聊，让成员之间互相交谈，或者一起回应用户的发言。对话应该流畅、自然、连贯。
+5.  **数量限制**: 每次生成的总消息数**不得超过30条**。
+6.  **禁止出戏**: 绝不能透露你是AI，或提及任何关于"扮演"、"模型"、"生成"等词语。
 {groupAiImageInstructions}
 {groupAiVoiceInstructions}
 
@@ -81,6 +110,73 @@ export const DEFAULT_PROMPTS = {
 
 现在，请根据以上规则和下面的对话历史，继续这场群聊。`
 };
+
+/**
+ * 验证预设完整性
+ * @param {Object} preset 预设对象
+ * @returns {Object} 验证结果 {isValid: boolean, missingFields: Array, completeness: number}
+ */
+export function validatePresetIntegrity(preset) {
+    const requiredFields = ['promptImage', 'promptVoice', 'promptTransfer', 'promptSingle', 'promptGroup'];
+    const missingFields = [];
+    
+    if (!preset) {
+        return { 
+            isValid: false, 
+            error: 'preset对象为空',
+            missingFields: requiredFields,
+            completeness: 0
+        };
+    }
+    
+    requiredFields.forEach(field => {
+        if (!preset[field] || preset[field].trim() === '') {
+            missingFields.push(field);
+        }
+    });
+    
+    const completeness = ((requiredFields.length - missingFields.length) / requiredFields.length * 100);
+    
+    return {
+        isValid: missingFields.length === 0,
+        missingFields,
+        completeness: Math.round(completeness), // 返回整数百分比 0-100
+        totalFields: requiredFields.length,
+        validFields: requiredFields.length - missingFields.length
+    };
+}
+
+/**
+ * 使用默认值修复不完整的预设
+ * @param {Object} brokenPreset 损坏的预设对象
+ * @returns {Object} 修复后的预设
+ */
+export function repairPresetWithDefaults(brokenPreset) {
+    if (!brokenPreset) {
+        console.warn('Attempting to repair null preset, returning default preset structure');
+        return {
+            promptImage: DEFAULT_PROMPTS.IMAGE,
+            promptVoice: DEFAULT_PROMPTS.VOICE,
+            promptTransfer: DEFAULT_PROMPTS.TRANSFER,
+            promptSingle: DEFAULT_PROMPTS.SINGLE,
+            promptGroup: DEFAULT_PROMPTS.GROUP
+        };
+    }
+    
+    const validation = validatePresetIntegrity(brokenPreset);
+    const repairedPreset = { ...brokenPreset };
+    
+    // 使用DEFAULT_PROMPTS修复缺失字段
+    validation.missingFields.forEach(field => {
+        const defaultKey = field.replace('prompt', '').toUpperCase();
+        if (DEFAULT_PROMPTS[defaultKey]) {
+            console.log(`Repairing preset field '${field}' with default value`);
+            repairedPreset[field] = DEFAULT_PROMPTS[defaultKey];
+        }
+    });
+    
+    return repairedPreset;
+}
 
 /**
  * 确保默认预设存在
@@ -152,10 +248,33 @@ export async function getAllPresets() {
 export async function getActivePreset() {
     try {
         const db = getDB();
-        if (!db) return null;
+        if (!db) {
+            console.warn('Database not available for getActivePreset');
+            return null;
+        }
 
-        const activePreset = await db.presets.where('isActive').equals(true).first();
-        return activePreset || null;
+        const preset = await db.presets.where('isActive').equals(true).first();
+        
+        if (!preset) {
+            console.warn('No active preset found, ensuring default preset exists');
+            await ensureDefaultPreset();
+            return await db.presets.where('isActive').equals(true).first();
+        }
+        
+        // 验证预设完整性
+        const validation = validatePresetIntegrity(preset);
+        if (!validation.isValid) {
+            console.warn(`Active preset incomplete (${validation.completeness} complete):`, {
+                missingFields: validation.missingFields,
+                presetId: preset.id,
+                presetName: preset.name
+            });
+            
+            // 可以选择自动修复或仅警告用户
+            // 这里选择警告但不自动修复，保持现有数据
+        }
+        
+        return preset;
 
     } catch (error) {
         console.error('Failed to get active preset:', error);
@@ -212,6 +331,7 @@ export async function createPreset(presetData) {
         const db = getDB();
         if (!db) throw new Error('Database not available');
 
+        // 创建预设时使用默认提示词作为初始值
         const preset = {
             id: `preset_${Date.now()}`,
             name: presetData.name || '新预设',
@@ -329,6 +449,7 @@ export async function deletePreset(presetId) {
  */
 export async function restorePresetDefaults(presetId) {
     try {
+        // 恢复默认设置时使用默认提示词
         const updateData = {
             promptImage: DEFAULT_PROMPTS.IMAGE,
             promptVoice: DEFAULT_PROMPTS.VOICE,
@@ -365,14 +486,44 @@ export async function exportPresets() {
  * @returns {Promise<Object>} 导入结果
  */
 export async function importPresets(importData) {
-    return await backupService.importData('presets', importData, {
-        transform: (preset, index) => ({
-            ...preset,
-            id: `preset_imported_${Date.now()}_${index}`,
-            isActive: false,
-            isBuiltIn: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        })
-    });
+    try {
+        const result = await backupService.importData('presets', importData, {
+            transform: (preset, index) => {
+                // 在导入预设数据时验证完整性
+                const validation = validatePresetIntegrity(preset);
+                let processedPreset = preset;
+                
+                if (!validation.isValid) {
+                    console.warn(`导入的预设 "${preset.name || 'Unknown'}" 不完整（${validation.completeness}），自动修复中...`);
+                    processedPreset = repairPresetWithDefaults(preset);
+                    
+                    // 再次验证修复结果
+                    const repairedValidation = validatePresetIntegrity(processedPreset);
+                    if (repairedValidation.isValid) {
+                        console.log(`预设 "${preset.name || 'Unknown'}" 修复成功`);
+                    } else {
+                        console.error(`预设 "${preset.name || 'Unknown'}" 修复失败，仍缺少:`, repairedValidation.missingFields);
+                    }
+                }
+                
+                return {
+                    ...processedPreset,
+                    id: `preset_imported_${Date.now()}_${index}`,
+                    isActive: false,
+                    isBuiltIn: false,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+            }
+        });
+        
+        return result;
+        
+    } catch (error) {
+        console.error('Failed to import presets:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
 }

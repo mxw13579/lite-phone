@@ -365,6 +365,9 @@ export const EventTypes = {
     CHAT_DELETED: 'chat.deleted',
     MESSAGE_SENT: 'chat.message.sent',
     MESSAGE_RECEIVED: 'chat.message.received',
+    // 兼容别名（行为/记忆模块使用）
+    CHAT_MESSAGE_SENT: 'chat.message.sent',
+    MEMORY_FORMED: 'memory.formed',
 
     // 预设相关
     PRESET_ACTIVATED: 'preset.activated',
