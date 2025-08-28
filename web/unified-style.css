@@ -232,13 +232,12 @@ body {
 
 /* =============== 状态栏 =============== */
 #status-bar {
-    position: fixed;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 420px;
-    padding: var(--space-sm) var(--space-lg);
+    position: absolute;
+    top: var(--space-sm);
+    left: var(--space-lg);
+    right: var(--space-lg);
+    width: auto;
+    padding: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -285,6 +284,12 @@ body {
     background-color: white;
     border-radius: 1px;
     transition: width var(--transition-base);
+}
+
+/* 🔧 修复：添加电池充电动画 */
+@keyframes battery-charging {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
 }
 
 /* =============== 通知栏 =============== */

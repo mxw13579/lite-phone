@@ -6,6 +6,7 @@
 import { backupService } from '../services/backup.js';
 import { showSuccess, showError, showWarning } from '../utils/notify.js';
 import { eventBus, EventTypes } from '../core/event-bus.js';
+import { escapeHtml } from '../utils/security.js'; // 🔒 安全修复：导入HTML转义函数
 
 // 备份历史记录
 let backupHistory = [];
@@ -305,6 +306,18 @@ function triggerFileInput(inputId) {
  * @returns {Promise<string>} 文件内容
  */
 function readFileContent(file) {
+    // 🔒 安全修复：添加文件大小限制
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB限制
+    if (file.size > MAX_FILE_SIZE) {
+        return Promise.reject(new Error('文件过大，请选择小于50MB的文件'));
+    }
+    
+    // 🔒 安全修复：验证文件类型
+    const allowedTypes = ['application/json', 'text/plain'];
+    if (!allowedTypes.includes(file.type) && !file.name.endsWith('.json')) {
+        return Promise.reject(new Error('不支持的文件类型，请选择JSON文件'));
+    }
+    
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = e => resolve(e.target.result);
@@ -397,12 +410,12 @@ function showSelectiveModal(categories, title) {
             }
         };
         
-        // 创建对话框HTML
+        // 创建对话框HTML - 🔒 安全修复：所有动态内容都进行HTML转义
         const modalHtml = `
             <div id="${modalId}" class="modal selective-modal" style="display: block;">
                 <div class="modal-content" style="max-width: 500px;">
                     <div class="modal-header">
-                        <h3>${title || '选择数据类别'}</h3>
+                        <h3>${escapeHtml(title || '选择数据类别')}</h3>
                         <span class="close" onclick="this.closest('.modal').dispatchEvent(new CustomEvent('cancel'))">&times;</span>
                     </div>
                     <div class="modal-body">
@@ -410,9 +423,9 @@ function showSelectiveModal(categories, title) {
                         <form id="${modalId}-form" style="margin: 15px 0;">
                             ${normalizedCategories.map(category => `
                                 <label style="display: block; margin: 10px 0; cursor: pointer;">
-                                    <input type="checkbox" value="${category.id}" checked style="margin-right: 8px;">
-                                    <strong>${category.name}</strong>
-                                    <div style="margin-left: 24px; color: #666; font-size: 0.9em;">${category.description || '数据类别'}</div>
+                                    <input type="checkbox" value="${escapeHtml(category.id)}" checked style="margin-right: 8px;">
+                                    <strong>${escapeHtml(category.name)}</strong>
+                                    <div style="margin-left: 24px; color: #666; font-size: 0.9em;">${escapeHtml(category.description || '数据类别')}</div>
                                 </label>
                             `).join('')}
                         </form>
@@ -485,19 +498,19 @@ function updateBackupHistory(history) {
     }
     
     const historyHtml = history.map(item => `
-        <div class="backup-history-item" data-id="${item.id}">
+        <div class="backup-history-item" data-id="${escapeHtml(item.id)}">
             <div class="backup-info">
-                <div class="backup-name">${item.name || '未命名备份'}</div>
-                <div class="backup-time">${new Date(item.timestamp).toLocaleString()}</div>
+                <div class="backup-name">${escapeHtml(item.name || '未命名备份')}</div>
+                <div class="backup-time">${escapeHtml(new Date(item.timestamp).toLocaleString())}</div>
                 <div class="backup-details">
-                    <span class="backup-type">${getBackupTypeName(item.type)}</span>
-                    <span class="backup-size">${formatFileSize(item.size)}</span>
-                    ${item.categories ? `<span class="backup-categories">${item.categories.map(getDataCategoryName).join(', ')}</span>` : ''}
+                    <span class="backup-type">${escapeHtml(getBackupTypeName(item.type))}</span>
+                    <span class="backup-size">${escapeHtml(formatFileSize(item.size))}</span>
+                    ${item.categories ? `<span class="backup-categories">${escapeHtml(item.categories.map(getDataCategoryName).join(', '))}</span>` : ''}
                 </div>
             </div>
             <div class="backup-actions">
-                <button class="btn btn-small restore-btn" data-backup-id="${item.id}">恢复</button>
-                <button class="btn btn-small btn-danger delete-btn" data-backup-id="${item.id}">删除</button>
+                <button class="btn btn-small restore-btn" data-backup-id="${escapeHtml(item.id)}">恢复</button>
+                <button class="btn btn-small btn-danger delete-btn" data-backup-id="${escapeHtml(item.id)}">删除</button>
             </div>
         </div>
     `).join('');
@@ -743,12 +756,12 @@ export function displayDataManagementStatus(stats) {
     desc.innerHTML = `
         ${originalText}
         <div class="data-stats" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.05); border-radius: 4px; font-size: 0.9em;">
-            <div><strong>数据大小：</strong>${stats.totalSize}</div>
-            <div><strong>上次备份：</strong>${stats.lastBackup}</div>
+            <div><strong>数据大小：</strong>${escapeHtml(stats.totalSize)}</div>
+            <div><strong>上次备份：</strong>${escapeHtml(stats.lastBackup)}</div>
             <div style="margin-top: 5px; color: #666;">
-                聊天记录: ${stats.tables.chats || 0} 条 | 
-                预设: ${stats.tables.presets || 0} 个 | 
-                世界书: ${stats.tables.worldBooks || 0} 个
+                聊天记录: ${escapeHtml(String(stats.tables.chats || 0))} 条 | 
+                预设: ${escapeHtml(String(stats.tables.presets || 0))} 个 | 
+                世界书: ${escapeHtml(String(stats.tables.worldBooks || 0))} 个
             </div>
         </div>
     `;

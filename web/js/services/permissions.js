@@ -4,7 +4,7 @@
  */
 
 import { createSuccessResponse, createErrorResponse, ErrorTypes } from './contracts.js';
-import { getDB } from '../core/db-v13.js';
+import { getDB } from '../core/db.js';
 import { eventBus, EventTypes } from '../core/event-bus.js';
 import { validateInput } from '../utils/validation.js';
 

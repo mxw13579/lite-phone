@@ -12,6 +12,7 @@ import {
     resetApiConfig 
 } from './store.js';
 import { showSuccess, showError, showWarning } from '../../utils/notify.js';
+import { escapeHtml } from '../../utils/security.js'; // 🔒 安全修复：导入HTML转义函数
 import { getDataStats, displayDataManagementStatus } from '../../utils/data-management.js';
 
 /**
@@ -294,7 +295,7 @@ async function handleRefreshModels() {
     
     try {
         const provider = document.getElementById('api-provider')?.value;
-        const result = await getAvailableModels(provider);
+        const result = await getAvailableModels(provider, true); // 强制刷新
         
         if (result.success) {
             await updateModelOptions(result.models.map(m => m.id));
@@ -324,8 +325,9 @@ async function updateModelOptions(models) {
     
     const currentValue = select.value;
     
+    // 🔒 安全修复：对动态内容进行HTML转义
     select.innerHTML = models.map(model => 
-        `<option value="${model}">${model}</option>`
+        `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`
     ).join('');
     
     // 尝试保留当前选择

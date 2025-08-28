@@ -1,7 +1,11 @@
 /**
  * DOM 操作工具函数
  * 提供常用的 DOM 选择、操作和事件绑定功能
+ * 已加强XSS防护 - 修复安全漏洞
  */
+
+import { escapeHtml, setInnerHTMLSafely, createSafeElement } from './security.js';
+import { MemoryUtils } from './memory-manager.js';
 
 /**
  * 安全的 DOM 元素选择器
@@ -57,7 +61,9 @@ export function createElement(tag, attributes = {}, content = '') {
         if (key === 'className') {
             element.className = value;
         } else if (key === 'innerHTML') {
-            element.innerHTML = value;
+            // 🚨 XSS风险修复：使用安全的HTML设置方法
+            console.warn('使用innerHTML可能存在XSS风险，已自动转换为安全处理');
+            setInnerHTMLSafely(element, value, true); // 允许基础标签
         } else if (key === 'textContent') {
             element.textContent = value;
         } else if (key.startsWith('data-')) {
@@ -86,7 +92,7 @@ export function createElement(tag, attributes = {}, content = '') {
 }
 
 /**
- * 安全的事件绑定
+ * 内存安全的事件绑定
  * @param {Element|string} elementOrSelector 元素或选择器
  * @param {string} eventType 事件类型
  * @param {Function} handler 事件处理函数
@@ -112,12 +118,8 @@ export function addEventListener(elementOrSelector, eventType, handler, options 
             }
         };
         
-        element.addEventListener(eventType, wrappedHandler, options);
-        
-        // 返回清理函数
-        return () => {
-            element.removeEventListener(eventType, wrappedHandler, options);
-        };
+        // 使用内存管理器跟踪事件监听器
+        return MemoryUtils.addEventListener(element, eventType, wrappedHandler, options);
         
     } catch (error) {
         console.error(`Failed to add event listener:`, error);
@@ -279,7 +281,8 @@ export function setContent(elementOrSelector, content, isHTML = false) {
         
     if (element) {
         if (isHTML && typeof content === 'string') {
-            element.innerHTML = content;
+            // 🔒 XSS安全修复：使用安全的HTML设置方法
+            setInnerHTMLSafely(element, content, true);
         } else if (content instanceof Element) {
             empty(element);
             element.appendChild(content);

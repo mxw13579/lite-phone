@@ -1,10 +1,13 @@
 /**
  * 验证工具函数
  * 提供各种数据验证功能
+ * 已加强安全性 - 修复验证不足问题
  */
 
+import { escapeHtml, sanitizeInput, RateLimit } from './security.js';
+
 /**
- * 验证电子邮件格式
+ * 增强的验证电子邮件格式 - 修复正则过于简单的问题
  * @param {string} email 电子邮件地址
  * @returns {boolean} 是否有效
  */
@@ -13,8 +16,44 @@ export function isValidEmail(email) {
         return false;
     }
     
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email.trim());
+    // 🚨 安全修复：使用更严格的邮箱验证正则
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    const trimmedEmail = email.trim();
+    
+    // 长度检查
+    if (trimmedEmail.length > 254) {
+        return false;
+    }
+    
+    // 基础格式检查
+    if (!emailRegex.test(trimmedEmail)) {
+        return false;
+    }
+    
+    // 域名部分检查
+    const parts = trimmedEmail.split('@');
+    if (parts.length !== 2) {
+        return false;
+    }
+    
+    const [localPart, domainPart] = parts;
+    
+    // 本地部分长度检查
+    if (localPart.length > 64 || localPart.length === 0) {
+        return false;
+    }
+    
+    // 域名部分长度检查
+    if (domainPart.length > 253 || domainPart.length === 0) {
+        return false;
+    }
+    
+    // 不允许连续的点
+    if (trimmedEmail.includes('..')) {
+        return false;
+    }
+    
+    return true;
 }
 
 /**
@@ -169,6 +208,135 @@ export function validateNumber(value, fieldName = '数值', min = -Infinity, max
         isValid: true,
         value: num
     };
+}
+
+/**
+ * 安全的API输入验证 - 新增功能
+ * @param {Object} input 输入数据
+ * @param {Object} schema 验证schema
+ * @returns {Object} 验证结果
+ */
+export function validateApiInput(input, schema) {
+    const errors = [];
+    const warnings = [];
+    
+    if (!input || typeof input !== 'object') {
+        return {
+            isValid: false,
+            errors: ['输入数据格式不正确'],
+            warnings
+        };
+    }
+    
+    // 检查必需字段
+    if (schema.required) {
+        for (const field of schema.required) {
+            if (!(field in input) || input[field] === null || input[field] === undefined) {
+                errors.push(`缺少必需字段: ${field}`);
+            }
+        }
+    }
+    
+    // 检查字段类型和长度
+    for (const [field, rules] of Object.entries(schema.fields || {})) {
+        if (field in input) {
+            const value = input[field];
+            
+            // 类型检查
+            if (rules.type && typeof value !== rules.type) {
+                errors.push(`字段 ${field} 类型错误，期望 ${rules.type}，实际 ${typeof value}`);
+                continue;
+            }
+            
+            // 长度检查
+            if (rules.maxLength && typeof value === 'string' && value.length > rules.maxLength) {
+                errors.push(`字段 ${field} 长度超过限制 ${rules.maxLength}`);
+            }
+            
+            if (rules.minLength && typeof value === 'string' && value.length < rules.minLength) {
+                errors.push(`字段 ${field} 长度不足 ${rules.minLength}`);
+            }
+            
+            // 数值范围检查
+            if (rules.min !== undefined && typeof value === 'number' && value < rules.min) {
+                errors.push(`字段 ${field} 值过小，最小值: ${rules.min}`);
+            }
+            
+            if (rules.max !== undefined && typeof value === 'number' && value > rules.max) {
+                errors.push(`字段 ${field} 值过大，最大值: ${rules.max}`);
+            }
+            
+            // 模式匹配
+            if (rules.pattern && typeof value === 'string') {
+                const pattern = new RegExp(rules.pattern);
+                if (!pattern.test(value)) {
+                    errors.push(`字段 ${field} 格式不正确`);
+                }
+            }
+            
+            // 邮箱验证
+            if (rules.email && !isValidEmail(value)) {
+                errors.push(`字段 ${field} 邮箱格式不正确`);
+            }
+            
+            // URL验证
+            if (rules.url) {
+                try {
+                    new URL(value);
+                } catch {
+                    errors.push(`字段 ${field} URL格式不正确`);
+                }
+            }
+        }
+    }
+    
+    // 速率限制检查
+    if (schema.rateLimit) {
+        try {
+            const key = `api_${JSON.stringify(input)}`;
+            RateLimit.check(key, schema.rateLimit.limit || 10, schema.rateLimit.window || 60000);
+        } catch (error) {
+            errors.push(error.message);
+        }
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors,
+        warnings,
+        sanitized: sanitizeApiInput(input, schema)
+    };
+}
+
+/**
+ * 清理API输入数据
+ * @param {Object} input 输入数据
+ * @param {Object} schema 验证schema
+ * @returns {Object} 清理后的数据
+ */
+export function sanitizeApiInput(input, schema) {
+    const sanitized = {};
+    
+    for (const [field, value] of Object.entries(input)) {
+        const rules = schema.fields?.[field] || {};
+        
+        if (typeof value === 'string') {
+            // 根据规则清理字符串
+            if (rules.html) {
+                sanitized[field] = sanitizeInput(value, 'html');
+            } else if (rules.url) {
+                sanitized[field] = sanitizeInput(value, 'url');
+            } else if (rules.filename) {
+                sanitized[field] = sanitizeInput(value, 'filename');
+            } else {
+                sanitized[field] = sanitizeInput(value, 'text');
+            }
+        } else {
+            sanitized[field] = value;
+        }
+    }
+    
+    return sanitized;
 }
 
 /**

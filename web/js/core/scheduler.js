@@ -344,17 +344,30 @@ class EnhancedScheduler {
             try {
                 console.log(`Executing task: ${task.name} (attempt ${attempt + 1})`);
 
-                // 创建超时Promise
+                // 🔒 稳定性修复：使用AbortController确保任务可以真正取消
+                const abortController = new AbortController();
+                let timeoutId = null;
+
+                // 创建超时Promise with cleanup
                 const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('Task timeout')), task.timeout);
+                    timeoutId = setTimeout(() => {
+                        abortController.abort();
+                        reject(new Error('Task timeout'));
+                    }, task.timeout);
                 });
 
-                // 执行任务
+                // 执行任务，传递abort signal
                 const taskPromise = Promise.resolve(task.handler({
                     taskId: task.id,
                     attempt: attempt + 1,
-                    timestamp: startTime
-                }));
+                    timestamp: startTime,
+                    signal: abortController.signal // 允许任务响应取消信号
+                })).finally(() => {
+                    // 清理超时定时器
+                    if (timeoutId) {
+                        clearTimeout(timeoutId);
+                    }
+                });
 
                 await Promise.race([taskPromise, timeoutPromise]);
 

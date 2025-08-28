@@ -11,6 +11,7 @@
 import { eventBus, EventTypes } from '../core/event-bus.js';
 import { showError, showWarning } from '../utils/notify.js';
 import { createSuccessResponse, createErrorResponse, contractCompliant } from './contracts.js';
+import { ApiOp, Logger } from '../utils/common-patterns.js';
 
 /**
  * API配置
@@ -81,7 +82,7 @@ class ApiService {
     async request(options) {
         const requestId = `req_${++requestCounter}`;
         
-        try {
+        return await ApiOp.call(async () => {
             // 检查并发限制
             if (activeRequests.size >= this.config.maxConcurrent) {
                 throw new Error('Too many concurrent requests');
@@ -118,16 +119,16 @@ class ApiService {
             });
 
             return processedResponse;
-
-        } catch (error) {
-            // 处理错误
-            await this.handleError(error, options, requestId);
-            throw error;
-
-        } finally {
+        }, {
+            operationName: 'HTTP Request',
+            retries: this.config.retries,
+            retryDelay: this.config.retryDelay,
+            timeout: this.config.timeout,
+            onError: (error) => this.handleError(error, options, requestId)
+        }).finally(() => {
             // 清理活跃请求
             activeRequests.delete(requestId);
-        }
+        });
     }
 
     /**
@@ -192,23 +193,14 @@ class ApiService {
      * @returns {Promise<Response>} 响应对象
      */
     async executeWithRetry(options) {
-        let lastError;
-
-        for (let attempt = 0; attempt <= this.config.retries; attempt++) {
-            try {
-                return await this.executeRequest(options);
-            } catch (error) {
-                lastError = error;
-                
-                if (attempt < this.config.retries) {
-                    // 等待后重试
-                    await this.sleep(this.config.retryDelay * (attempt + 1));
-                    console.log(`API request retry ${attempt + 1}/${this.config.retries}: ${options.url}`);
-                }
-            }
-        }
-
-        throw lastError;
+        return await ApiOp.call(async () => {
+            return await this.executeRequest(options);
+        }, {
+            operationName: `API Request ${options.method} ${options.url}`,
+            retries: this.config.retries,
+            retryDelay: this.config.retryDelay,
+            timeout: options.timeout || this.config.timeout
+        });
     }
 
     /**
@@ -217,22 +209,27 @@ class ApiService {
      * @returns {Promise<Response>} 响应对象
      */
     async executeRequest(options) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), options.timeout);
+        return await AsyncOp.execute(async () => {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), options.timeout);
 
-        try {
-            const response = await fetch(options.url, {
-                method: options.method,
-                headers: options.headers,
-                body: options.body,
-                signal: controller.signal
-            });
+            try {
+                const response = await fetch(options.url, {
+                    method: options.method,
+                    headers: options.headers,
+                    body: options.body,
+                    signal: controller.signal
+                });
 
-            return response;
-
-        } finally {
-            clearTimeout(timeoutId);
-        }
+                return response;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }, {
+            operationName: `Execute ${options.method} Request`,
+            timeout: options.timeout,
+            logError: false // 让上层处理错误日志
+        });
     }
 
     /**

@@ -7,6 +7,7 @@ import { getDB } from '../../core/db.js';
 import { apiService } from '../../services/api.js';
 import { eventBus, EventTypes } from '../../core/event-bus.js';
 import { showSuccess, showError, showWarning } from '../../utils/notify.js';
+import { AsyncOp, DatabaseOp, Logger } from '../../utils/common-patterns.js';
 
 /**
  * 默认API配置
@@ -51,18 +52,20 @@ const API_PROVIDERS = {
  * @returns {Promise<Object>} API配置
  */
 export async function getApiConfig() {
-    try {
-        const db = getDB();
-        if (!db) return DEFAULT_API_CONFIG;
-
+    const response = await DatabaseOp.read(async (db) => {
         const config = await db.globalSettings.get('main');
         return {
             ...DEFAULT_API_CONFIG,
             ...config?.apiConfig
         };
-
-    } catch (error) {
-        console.error('Failed to get API config:', error);
+    }, {
+        operationName: 'Get API Config'
+    });
+    
+    if (response.success) {
+        return response.data;
+    } else {
+        Logger.error('ApiSettingsStore', 'Failed to get API config:', response.error);
         return DEFAULT_API_CONFIG;
     }
 }
@@ -73,29 +76,36 @@ export async function getApiConfig() {
  * @returns {Promise<Object>} 操作结果
  */
 export async function saveApiConfig(apiConfig) {
-    try {
-        const db = getDB();
-        if (!db) throw new Error('Database not available');
-
+    const response = await AsyncOp.execute(async () => {
         // 验证配置
         const validationResult = validateApiConfig(apiConfig);
         if (!validationResult.valid) {
             throw new Error(validationResult.error);
         }
 
-        let config = await db.globalSettings.get('main');
-        if (!config) {
-            config = { id: 'main' };
+        const saveResult = await DatabaseOp.write(async (db) => {
+            let config = await db.globalSettings.get('main');
+            if (!config) {
+                config = { id: 'main' };
+            }
+
+            // 保存配置
+            config.apiConfig = {
+                ...DEFAULT_API_CONFIG,
+                ...apiConfig,
+                updatedAt: new Date().toISOString()
+            };
+
+            await db.globalSettings.put(config);
+            return config.apiConfig;
+        }, {
+            operationName: 'Save API Config',
+            tables: ['globalSettings']
+        });
+        
+        if (!saveResult.success) {
+            throw new Error(saveResult.error);
         }
-
-        // 保存配置
-        config.apiConfig = {
-            ...DEFAULT_API_CONFIG,
-            ...apiConfig,
-            updatedAt: new Date().toISOString()
-        };
-
-        await db.globalSettings.put(config);
 
         // 发送配置更新事件
         await eventBus.emit(EventTypes.DATA_CHANGED, {
@@ -107,12 +117,18 @@ export async function saveApiConfig(apiConfig) {
             success: true,
             message: 'API配置保存成功'
         };
-
-    } catch (error) {
-        console.error('Failed to save API config:', error);
+    }, {
+        operationName: 'Save API Config',
+        logError: true,
+        showUserError: true
+    });
+    
+    if (response.success) {
+        return response.data;
+    } else {
         return {
             success: false,
-            error: error.message
+            error: response.error
         };
     }
 }
@@ -251,9 +267,10 @@ export async function testApiConnection(config = null) {
 /**
  * 获取可用模型列表
  * @param {string} provider 提供商（可选）
+ * @param {boolean} forceRefresh 强制刷新（跳过缓存）
  * @returns {Promise<Object>} 模型列表结果
  */
-export async function getAvailableModels(provider = null) {
+export async function getAvailableModels(provider = null, forceRefresh = false) {
     try {
         const config = await getApiConfig();
         const targetProvider = provider || config.provider;
@@ -264,8 +281,8 @@ export async function getAvailableModels(provider = null) {
 
         const providerConfig = API_PROVIDERS[targetProvider];
         
-        // 对于已知模型列表，直接返回
-        if (providerConfig.models && providerConfig.models.length > 0) {
+        // 如果不强制刷新且有默认模型列表，直接返回
+        if (!forceRefresh && providerConfig.models && providerConfig.models.length > 0) {
             return {
                 success: true,
                 models: providerConfig.models.map(model => ({
@@ -276,48 +293,77 @@ export async function getAvailableModels(provider = null) {
             };
         }
 
-        // 如果需要动态获取，尝试调用API
+        // 尝试动态获取模型列表
         try {
             const headers = {
                 'Content-Type': 'application/json'
             };
 
-            if (config.apiKey && providerConfig.requiresKey) {
+            // 添加认证头
+            if (providerConfig.requiresKey) {
+                if (!config.apiKey?.trim()) {
+                    throw new Error('API Key未配置，无法获取模型列表');
+                }
+
                 if (targetProvider === 'openai' || targetProvider === 'local') {
                     headers['Authorization'] = `Bearer ${config.apiKey}`;
                 } else if (targetProvider === 'claude') {
                     headers['x-api-key'] = config.apiKey;
+                    headers['anthropic-version'] = '2023-06-01';
                 }
             }
 
-            const response = await apiService.get(
-                `${config.baseURL}/models`,
-                { headers, timeout: 10000 }
-            );
+            const apiUrl = `${config.baseURL || providerConfig.baseURL}/models`;
+            console.log(`Fetching models from: ${apiUrl}`);
+            
+            const response = await apiService.get(apiUrl, { 
+                headers, 
+                timeout: 15000 // 增加超时时间
+            });
 
-            const models = response.data?.map(model => ({
-                id: model.id,
-                name: model.id,
-                provider: targetProvider
-            })) || [];
+            let models = [];
+            if (response && response.data) {
+                models = response.data.map(model => ({
+                    id: model.id || model,
+                    name: model.id || model,
+                    provider: targetProvider
+                }));
+            } else if (Array.isArray(response)) {
+                models = response.map(model => ({
+                    id: model.id || model,
+                    name: model.id || model,
+                    provider: targetProvider
+                }));
+            }
 
-            return {
-                success: true,
-                models
-            };
+            if (models.length > 0) {
+                return {
+                    success: true,
+                    models,
+                    source: 'api'
+                };
+            } else {
+                throw new Error('API返回的模型列表为空');
+            }
 
         } catch (apiError) {
             console.warn('Failed to fetch models from API, using defaults:', apiError);
             
-            // 返回默认模型列表
-            return {
-                success: true,
-                models: providerConfig.models?.map(model => ({
-                    id: model,
-                    name: model,
-                    provider: targetProvider
-                })) || []
-            };
+            // API调用失败，返回默认模型列表
+            if (providerConfig.models && providerConfig.models.length > 0) {
+                return {
+                    success: true,
+                    models: providerConfig.models.map(model => ({
+                        id: model,
+                        name: model,
+                        provider: targetProvider
+                    })),
+                    source: 'default',
+                    warning: `无法从API获取模型列表: ${apiError.message}`
+                };
+            } else {
+                throw apiError;
+            }
         }
 
     } catch (error) {

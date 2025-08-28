@@ -4,6 +4,50 @@
  */
 
 /**
+ * 🔒 安全的通配符匹配函数（防ReDoS）
+ * @param {string} pattern 通配符模式
+ * @param {string} text 待匹配文本
+ * @returns {boolean} 是否匹配
+ */
+function matchWildcardSafely(pattern, text) {
+    // 使用双指针算法实现通配符匹配，避免正则表达式的ReDoS风险
+    let pIndex = 0; // pattern索引
+    let tIndex = 0; // text索引
+    let starIdx = -1; // 最近一个*的位置
+    let match = 0; // *匹配的字符数
+    
+    while (tIndex < text.length) {
+        // 如果当前字符匹配或者pattern是*
+        if (pIndex < pattern.length && (pattern[pIndex] === text[tIndex] || pattern[pIndex] === '*')) {
+            // 如果是*，记录位置并跳过
+            if (pattern[pIndex] === '*') {
+                starIdx = pIndex++;
+                match = tIndex;
+                continue;
+            }
+            // 普通字符匹配
+            pIndex++;
+            tIndex++;
+        } else if (starIdx >= 0) {
+            // 回到最近的*位置，尝试匹配更多字符
+            pIndex = starIdx + 1;
+            tIndex = ++match;
+        } else {
+            // 不匹配且没有*可以回退
+            return false;
+        }
+    }
+    
+    // 跳过pattern末尾的所有*
+    while (pIndex < pattern.length && pattern[pIndex] === '*') {
+        pIndex++;
+    }
+    
+    // 检查是否完全匹配
+    return pIndex === pattern.length;
+}
+
+/**
  * 事件总线类
  */
 class EventBus {
@@ -213,8 +257,9 @@ class EventBus {
      * @returns {boolean} 是否匹配
      */
     matchWildcard(pattern, eventName) {
-        const regex = new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
-        return regex.test(eventName);
+        // 🔒 ReDoS修复：使用更安全的通配符匹配算法
+        // 避免多个连续*导致的正则回溯爆炸
+        return matchWildcardSafely(pattern, eventName);
     }
 
     /**
@@ -227,8 +272,35 @@ class EventBus {
      */
     async executeHandler(eventInfo, eventName, data, timeout) {
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                reject(new Error(`Event handler timeout for ${eventName}`));
+            // 🔒 内存泄漏修复：确保定时器总是被清理
+            let timer = null;
+            let isResolved = false;
+            
+            const cleanup = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+            };
+            
+            const safeResolve = (value) => {
+                if (!isResolved) {
+                    isResolved = true;
+                    cleanup();
+                    resolve(value);
+                }
+            };
+            
+            const safeReject = (error) => {
+                if (!isResolved) {
+                    isResolved = true;
+                    cleanup();
+                    reject(error);
+                }
+            };
+            
+            timer = setTimeout(() => {
+                safeReject(new Error(`Event handler timeout for ${eventName}`));
             }, timeout);
 
             try {
@@ -237,20 +309,16 @@ class EventBus {
                 if (result instanceof Promise) {
                     result
                         .then(res => {
-                            clearTimeout(timer);
-                            resolve(res);
+                            safeResolve(res);
                         })
                         .catch(err => {
-                            clearTimeout(timer);
-                            reject(err);
+                            safeReject(err);
                         });
                 } else {
-                    clearTimeout(timer);
-                    resolve(result);
+                    safeResolve(result);
                 }
             } catch (error) {
-                clearTimeout(timer);
-                reject(error);
+                safeReject(error);
             }
         });
     }
@@ -388,6 +456,13 @@ export const EventTypes = {
     SYSTEM_ERROR: 'system.error',
     SYSTEM_WARNING: 'system.warning',
     MEMORY_LOW: 'system.memory.low',
+    
+    // 内存管理相关
+    MEMORY_MANAGER_READY: 'memory.manager.ready',
+    MEMORY_STATS_UPDATED: 'memory.stats.updated',
+    MEMORY_WARNING: 'memory.warning',
+    MEMORY_CRITICAL: 'memory.critical',
+    MEMORY_CLEANUP_COMPLETED: 'memory.cleanup.completed',
     
     // 定时任务
     SCHEDULER_TICK: 'scheduler.tick',

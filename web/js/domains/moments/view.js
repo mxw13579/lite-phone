@@ -5,6 +5,7 @@
 import { getMomentsPaginated, publishMoment, addComment, getComments, toggleReaction, getMomentStats } from './store.js';
 import { addEventListener, byId } from '../../utils/dom.js';
 import { showToast, showError } from '../../utils/notify.js';
+import { escapeHtml } from '../../utils/security.js'; // 🔒 安全修复：导入HTML转义函数
 
 let elements = {};
 
@@ -222,10 +223,11 @@ async function renderComments(momentId, itemEl) {
         container.innerHTML = '';
         return;
     }
+    // 🔒 安全修复：对评论内容进行HTML转义
     container.innerHTML = comments.map(c => `
         <div class="comment-item">
-            <span class="comment-author">${c.authorId}：</span>
-            <span class="comment-content">${c.content}</span>
+            <span class="comment-author">${escapeHtml(c.authorId)}：</span>
+            <span class="comment-content">${escapeHtml(c.content)}</span>
         </div>
     `).join('');
 }

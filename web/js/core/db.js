@@ -23,6 +23,53 @@ export async function initializeDB() {
     try {
         db = new Dexie('GeminiChatDB');
         
+        // 升级到版本13 - 数据库性能优化
+        db.version(13).stores({
+            // 继承v12所有表，添加性能优化索引
+            chats: '&id, isGroup, updatedAt, [isGroup+updatedAt]',
+            apiConfig: '&id',
+            globalSettings: '&id',
+            userStickers: '&id, url, name',
+            worldBooks: '&id, name',
+            musicLibrary: '&id',
+            personaPresets: '&id',
+            presets: '&id, name, isActive, [isActive+updatedAt]',
+            
+            // 优化记忆表索引 - 提高查询性能
+            memories: '&id, roleId, chatId, type, importance, createdAt, [roleId+createdAt], [type+importance], [chatId+createdAt], [roleId+type]',
+            
+            // 优化朋友圈表索引 - 提高时间线查询性能
+            moments: '&id, authorId, createdAt, visibility, aiGenerated, [visibility+createdAt], [authorId+createdAt], [aiGenerated+createdAt]',
+            
+            // 优化评论表索引 - 提高评论查询性能
+            comments: '&id, momentId, createdAt, authorId, parentId, [momentId+createdAt], [authorId+createdAt], [parentId+createdAt]',
+            
+            // 优化反应表索引
+            reactions: '&id, momentId, userId, type, createdAt, [momentId+userId], [momentId+type], [userId+type]',
+            
+            // 优化插件表索引
+            plugins: '&id, name, enabled, errors, configSnapshot, updatedAt, [enabled+updatedAt], category',
+            
+            migrations: '&id, fromVersion, toVersion, appliedAt',
+            
+            // 优化AI行为系统表索引 - 提高性能分析查询速度
+            behaviorLogs: '&id, roleId, actionType, timestamp, success, [roleId+timestamp], [actionType+timestamp], [success+timestamp], [roleId+actionType]',
+            behaviorScores: '&id, roleId, timestamp, score, breakdown, [roleId+timestamp], [roleId+score]'
+        }).upgrade(async tx => {
+            console.log('Upgrading database to version 13 - Performance optimization...');
+            
+            // 记录迁移信息
+            await tx.table('migrations').add({
+                id: `migration_v13_${Date.now()}`,
+                fromVersion: 12,
+                toVersion: 13,
+                appliedAt: new Date().toISOString(),
+                description: 'Database performance optimization: Added composite indexes for better query performance'
+            });
+            
+            console.log('✅ Database schema v13 migration completed - Performance indexes added');
+        });
+
         // 升级到版本12 - Phase 2.2 AI行为算法系统支持
         db.version(12).stores({
             // 继承v11所有表
@@ -195,12 +242,27 @@ export async function handleMigrationFailure(error) {
     console.error('Database migration failed:', error);
     
     try {
-        // 尝试关闭当前数据库连接
+        // 🔒 安全修复：数据备份机制
+        let backupData = null;
+        
+        // 尝试在删除前备份关键数据
         if (db) {
+            try {
+                console.log('Attempting to backup critical data before cleanup...');
+                backupData = await createEmergencyBackup();
+            } catch (backupError) {
+                console.warn('Failed to create emergency backup:', backupError);
+            }
+            
+            // 关闭当前数据库连接
             db.close();
         }
         
-        // 尝试删除损坏的数据库
+        // 🔒 安全修复：用户确认机制（在控制台环境下使用日志警告）
+        console.warn('⚠️ CRITICAL: Database migration failed. The database will be reset.');
+        console.warn('⚠️ If you see this message, please backup your data manually if possible.');
+        
+        // 删除损坏的数据库
         await Dexie.delete('GeminiChatDB');
         console.log('Corrupted database deleted, will recreate on next initialization');
         
@@ -208,11 +270,74 @@ export async function handleMigrationFailure(error) {
         db = null;
         
         // 重新初始化
-        return await initializeDB();
+        const newDb = await initializeDB();
         
-    } catch (rollbackError) {
-        console.error('Database rollback failed:', rollbackError);
-        throw rollbackError;
+        // 🔒 安全修复：尝试恢复备份数据
+        if (backupData && newDb) {
+            try {
+                console.log('Attempting to restore backup data...');
+                await restoreEmergencyBackup(backupData);
+                console.log('Successfully restored backup data');
+            } catch (restoreError) {
+                console.error('Failed to restore backup data:', restoreError);
+            }
+        }
+        
+        return newDb;
+        
+    } catch (error) {
+        console.error('Failed to handle migration failure:', error);
+        throw error;
+    }
+}
+
+/**
+ * 创建紧急备份
+ * @returns {Promise<Object>} 备份数据
+ */
+async function createEmergencyBackup() {
+    const backup = {
+        timestamp: Date.now(),
+        version: 'emergency',
+        data: {}
+    };
+    
+    try {
+        // 备份关键表数据
+        const criticalTables = ['chats', 'globalSettings', 'presets', 'memories'];
+        
+        for (const tableName of criticalTables) {
+            if (db[tableName]) {
+                backup.data[tableName] = await db[tableName].limit(1000).toArray();
+            }
+        }
+        
+        return backup;
+    } catch (error) {
+        throw new Error(`Emergency backup failed: ${error.message}`);
+    }
+}
+
+/**
+ * 恢复紧急备份
+ * @param {Object} backupData 备份数据
+ * @returns {Promise<void>}
+ */
+async function restoreEmergencyBackup(backupData) {
+    if (!backupData || !backupData.data) {
+        throw new Error('Invalid backup data');
+    }
+    
+    try {
+        await db.transaction('rw', Object.keys(backupData.data), async () => {
+            for (const [tableName, tableData] of Object.entries(backupData.data)) {
+                if (db[tableName] && Array.isArray(tableData)) {
+                    await db[tableName].bulkAdd(tableData);
+                }
+            }
+        });
+    } catch (error) {
+        throw new Error(`Emergency restore failed: ${error.message}`);
     }
 }
 

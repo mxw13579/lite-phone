@@ -13,6 +13,7 @@ import { behaviorSettingsStore } from './store.js';
 import { $, byId, createElement } from '../../utils/dom.js';
 import { showToast, showSuccess, showError, showWarning } from '../../utils/notify.js';
 import { formatDate, formatRelativeTime } from '../../utils/format.js';
+import { escapeHtml } from '../../utils/security.js'; // 🔒 安全修复：导入HTML转义函数
 import { routeManager } from '../../core/router.js';
 import { eventBus, EventTypes } from '../../core/event-bus.js';
 
@@ -649,7 +650,7 @@ function displayTestResults(type, result) {
                     <span class="probability-label">执行概率</span>
                 </div>
                 <div class="result-details">
-                    <p><strong>行为类型:</strong> ${result.actionType}</p>
+                    <p><strong>行为类型:</strong> ${escapeHtml(result.actionType)}</p>
                     <p><strong>概率阈值:</strong> ${(result.threshold * 100).toFixed(1)}%</p>
                     <p><strong>是否应执行:</strong> ${result.shouldExecute ? '是' : '否'}</p>
                 </div>

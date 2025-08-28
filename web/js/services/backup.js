@@ -13,6 +13,7 @@ import { eventBus, EventTypes } from '../core/event-bus.js';
 import { showSuccess, showError, showWarning, showInfo } from '../utils/notify.js';
 import { formatDate } from '../utils/format.js';
 import { createSuccessResponse, createErrorResponse, contractCompliant } from './contracts.js';
+import { AsyncOp, DatabaseOp, Logger } from '../utils/common-patterns.js';
 
 /**
  * 备份配置常量
@@ -73,8 +74,8 @@ class BackupService {
      * @returns {Promise<void>}
      */
     async initialize() {
-        try {
-            console.log('Initializing backup service...');
+        return await AsyncOp.execute(async () => {
+            Logger.info('BackupService', 'Initializing backup service...');
             
             // 检查本地存储权限
             if (typeof localStorage === 'undefined') {
@@ -86,12 +87,15 @@ class BackupService {
                 localStorage.setItem('backupHistory', JSON.stringify([]));
             }
             
-            console.log('Backup service initialized successfully');
+            Logger.info('BackupService', 'Backup service initialized successfully');
             
-        } catch (error) {
-            console.error('Failed to initialize backup service:', error);
-            throw error;
-        }
+            // 🔧 修复：显式返回成功响应
+            return { success: true, message: 'Backup service initialized successfully' };
+        }, {
+            operationName: 'Initialize Backup Service',
+            logError: true,
+            showUserError: false
+        });
     }
 
     /**
@@ -415,12 +419,12 @@ class BackupService {
      */
     async compressBackup(data) {
         // 注意：这里使用简单的JSON压缩
-        // 在实际应用中，可以使用pako或其他压缩库
+        // 使用真正的压缩算法（优先浏览器原生，回退到LZ77）
         
         const jsonString = JSON.stringify(data, null, 0);
         
-        // 模拟压缩（实际中应该使用真正的压缩算法）
-        const compressedString = this.simpleCompress(jsonString);
+        // 异步执行真正的压缩算法
+        const compressedString = await this.simpleCompress(jsonString);
         
         return new Blob([compressedString], { 
             type: 'application/json' 
@@ -428,18 +432,249 @@ class BackupService {
     }
 
     /**
-     * 简单压缩算法（占位，实际应使用专业压缩库）
+     * 真正的数据压缩算法
+     * 优先使用浏览器原生Compression Streams，回退到自实现LZ77算法
      * @param {string} str 输入字符串
-     * @returns {string} 压缩后字符串
+     * @returns {Promise<string>} 压缩后的base64字符串
      */
-    simpleCompress(str) {
-        // 这是一个占位实现
-        // 在生产环境中应该使用pako、lz4或其他压缩库
-        return str.replace(/\s+/g, ' ').trim();
+    async simpleCompress(str) {
+        try {
+            // 尝试使用浏览器原生压缩API
+            if ('CompressionStream' in window) {
+                return await this.nativeCompress(str);
+            }
+            
+            // 回退到自实现的LZ77压缩算法
+            return this.lz77Compress(str);
+            
+        } catch (error) {
+            console.warn('压缩失败，使用原始数据:', error);
+            // 如果压缩失败，返回原始数据（保证功能正常）
+            return btoa(encodeURIComponent(str));
+        }
     }
 
     /**
-     * 解析备份文件
+     * 使用浏览器原生Compression Streams API压缩
+     * @param {string} str 输入字符串
+     * @returns {Promise<string>} 压缩后的base64字符串
+     */
+    async nativeCompress(str) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(str);
+        
+        const compressionStream = new CompressionStream('gzip');
+        const writer = compressionStream.writable.getWriter();
+        const reader = compressionStream.readable.getReader();
+        
+        // 开始压缩
+        writer.write(data);
+        writer.close();
+        
+        // 读取压缩结果
+        const chunks = [];
+        let done = false;
+        
+        while (!done) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            if (value) {
+                chunks.push(value);
+            }
+        }
+        
+        // 合并数据并转为base64
+        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        
+        for (const chunk of chunks) {
+            result.set(chunk, offset);
+            offset += chunk.length;
+        }
+        
+        // 转为base64并添加压缩标识头
+        return 'GZIP:' + btoa(String.fromCharCode(...result));
+    }
+
+    /**
+     * 自实现的LZ77压缩算法（简化版）
+     * @param {string} str 输入字符串
+     * @returns {string} 压缩后的base64字符串
+     */
+    lz77Compress(str) {
+        if (!str || str.length === 0) return '';
+        
+        const result = [];
+        const windowSize = 4096; // 滑动窗口大小
+        const maxMatchLength = 18; // 最大匹配长度
+        let position = 0;
+        
+        while (position < str.length) {
+            let bestMatch = { distance: 0, length: 0 };
+            let bestMatchFound = false;
+            
+            // 在窗口内搜索最长匹配
+            const windowStart = Math.max(0, position - windowSize);
+            
+            for (let i = windowStart; i < position; i++) {
+                let matchLength = 0;
+                
+                // 计算匹配长度
+                while (matchLength < maxMatchLength &&
+                       position + matchLength < str.length &&
+                       str[i + matchLength] === str[position + matchLength]) {
+                    matchLength++;
+                }
+                
+                // 更新最佳匹配
+                if (matchLength >= 3 && matchLength > bestMatch.length) {
+                    bestMatch = {
+                        distance: position - i,
+                        length: matchLength
+                    };
+                    bestMatchFound = true;
+                }
+            }
+            
+            if (bestMatchFound) {
+                // 编码匹配：使用特殊标记 + distance(2字节) + length(1字节)
+                result.push(String.fromCharCode(1)); // 匹配标记
+                result.push(String.fromCharCode(bestMatch.distance >> 8));
+                result.push(String.fromCharCode(bestMatch.distance & 255));
+                result.push(String.fromCharCode(bestMatch.length));
+                position += bestMatch.length;
+            } else {
+                // 编码字面量：使用标记 + 字符
+                result.push(String.fromCharCode(0)); // 字面量标记
+                result.push(str[position]);
+                position++;
+            }
+        }
+        
+        const compressed = result.join('');
+        const compressionRatio = compressed.length / str.length;
+        
+        // 如果压缩效果不好（压缩率>90%），直接返回原始数据
+        if (compressionRatio > 0.9) {
+            return 'RAW:' + btoa(encodeURIComponent(str));
+        }
+        
+        return 'LZ77:' + btoa(compressed);
+    }
+
+    /**
+     * 数据解压缩
+     * @param {string} compressedData 压缩的数据
+     * @returns {Promise<string>} 解压后的字符串
+     */
+    async simpleDecompress(compressedData) {
+        if (!compressedData) return '';
+        
+        try {
+            // 检查压缩类型标识
+            if (compressedData.startsWith('GZIP:')) {
+                return await this.nativeDecompress(compressedData.slice(5));
+            } else if (compressedData.startsWith('LZ77:')) {
+                return this.lz77Decompress(compressedData.slice(5));
+            } else if (compressedData.startsWith('RAW:')) {
+                return decodeURIComponent(atob(compressedData.slice(4)));
+            }
+            
+            // 兼容旧格式（无压缩）
+            try {
+                return JSON.parse(compressedData);
+            } catch {
+                return compressedData;
+            }
+            
+        } catch (error) {
+            console.warn('解压缩失败:', error);
+            throw new Error('数据解压缩失败，备份文件可能已损坏');
+        }
+    }
+
+    /**
+     * 使用浏览器原生API解压缩
+     * @param {string} base64Data base64编码的压缩数据
+     * @returns {Promise<string>} 解压后的字符串
+     */
+    async nativeDecompress(base64Data) {
+        const compressedData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        
+        const decompressionStream = new DecompressionStream('gzip');
+        const writer = decompressionStream.writable.getWriter();
+        const reader = decompressionStream.readable.getReader();
+        
+        // 开始解压
+        writer.write(compressedData);
+        writer.close();
+        
+        // 读取解压结果
+        const chunks = [];
+        let done = false;
+        
+        while (!done) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            if (value) {
+                chunks.push(value);
+            }
+        }
+        
+        // 合并结果
+        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        
+        for (const chunk of chunks) {
+            result.set(chunk, offset);
+            offset += chunk.length;
+        }
+        
+        const decoder = new TextDecoder();
+        return decoder.decode(result);
+    }
+
+    /**
+     * LZ77解压缩
+     * @param {string} base64Data base64编码的压缩数据
+     * @returns {string} 解压后的字符串
+     */
+    lz77Decompress(base64Data) {
+        const compressed = atob(base64Data);
+        const result = [];
+        let position = 0;
+        
+        while (position < compressed.length) {
+            const flag = compressed.charCodeAt(position++);
+            
+            if (flag === 1) {
+                // 匹配模式
+                if (position + 2 >= compressed.length) break;
+                
+                const distanceHigh = compressed.charCodeAt(position++);
+                const distanceLow = compressed.charCodeAt(position++);
+                const distance = (distanceHigh << 8) | distanceLow;
+                const length = compressed.charCodeAt(position++);
+                
+                // 复制匹配的数据
+                const startIndex = result.length - distance;
+                for (let i = 0; i < length; i++) {
+                    result.push(result[startIndex + i]);
+                }
+            } else if (flag === 0) {
+                // 字面量模式
+                if (position >= compressed.length) break;
+                result.push(compressed[position++]);
+            }
+        }
+        
+        return result.join('');
+    }
+
+    /**
+     * 解析备份文件（支持压缩格式）
      * @param {File} file 备份文件
      * @returns {Promise<Object>} 解析后的数据
      */
@@ -451,9 +686,17 @@ class BackupService {
         const text = await file.text();
         
         try {
+            // 首先尝试检测是否为压缩数据
+            if (text.startsWith('GZIP:') || text.startsWith('LZ77:') || text.startsWith('RAW:')) {
+                // 解压缩数据
+                const decompressed = await this.simpleDecompress(text);
+                return JSON.parse(decompressed);
+            }
+            
+            // 兼容旧格式（直接JSON）
             return JSON.parse(text);
         } catch (error) {
-            throw new Error('备份文件格式无效');
+            throw new Error(`备份文件格式无效: ${error.message}`);
         }
     }
 

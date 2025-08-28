@@ -2,7 +2,7 @@
  * 朋友圈管理存储层
  */
 
-import { getDB } from '../../core/db-v13.js';
+import { getDB } from '../../core/db.js';
 import { permissionService, VisibilityLevels, ContentTypes, UserRoles } from '../../services/permissions.js';
 import { eventBus, EventTypes } from '../../core/event-bus.js';
 

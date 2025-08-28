@@ -1,7 +1,10 @@
 /**
  * 通知工具
  * 提供Toast提示功能，替代原始的全局通知系统
+ * 已加强XSS防护 - 修复安全漏洞
  */
+
+import { escapeHtml, createSafeElement } from './security.js';
 
 /**
  * Toast消息类型
@@ -76,7 +79,7 @@ export function showToast(message, type = ToastType.INFO, duration = 3000) {
 }
 
 /**
- * 创建Toast元素
+ * 安全的创建Toast元素 - 修复XSS漏洞
  * @param {string} message 消息内容
  * @param {string} type 消息类型
  * @returns {Element} Toast元素
@@ -88,11 +91,26 @@ function createToastElement(message, type) {
     // 根据类型设置图标和颜色
     const config = getToastConfig(type);
     
-    toast.innerHTML = `
-        <div class="toast-icon">${config.icon}</div>
-        <div class="toast-message">${message}</div>
-        <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
-    `;
+    // 🚨 XSS风险修复：不再使用innerHTML，改用安全的DOM操作
+    const iconDiv = document.createElement('div');
+    iconDiv.className = 'toast-icon';
+    iconDiv.textContent = config.icon; // 安全设置图标文本
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'toast-message';
+    messageDiv.textContent = escapeHtml(message); // 转义消息内容
+    
+    const closeButton = document.createElement('button');
+    closeButton.className = 'toast-close';
+    closeButton.textContent = '×';
+    closeButton.onclick = function() {
+        this.parentElement.remove();
+    };
+    
+    // 组装Toast元素
+    toast.appendChild(iconDiv);
+    toast.appendChild(messageDiv);
+    toast.appendChild(closeButton);
     
     toast.style.cssText = `
         display: flex;

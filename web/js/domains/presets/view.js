@@ -17,6 +17,7 @@ import {
 import { $, byId, createElement, show, hide, setContent, addEventListener } from '../../utils/dom.js';
 import { showToast, showSuccess, showError, showWarning } from '../../utils/notify.js';
 import { validateRequired, validateLength } from '../../utils/validation.js';
+import { escapeHtml } from '../../utils/security.js'; // 🔒 安全修复：导入HTML转义函数
 import { routeManager } from '../../core/router.js';
 
 // 页面元素和状态
@@ -135,35 +136,36 @@ function createPresetItem(preset) {
     const activeClass = preset.isActive ? 'active' : '';
     const builtInBadge = preset.isBuiltIn ? '<span class="built-in-badge">内置</span>' : '';
     
+    // 🔒 安全修复：对所有动态内容进行HTML转义
     return `
-        <div class="preset-item ${activeClass}" data-preset-id="${preset.id}">
+        <div class="preset-item ${activeClass}" data-preset-id="${escapeHtml(preset.id)}">
             <div class="preset-header">
                 <div class="preset-info">
-                    <h3 class="preset-name">${preset.name} ${builtInBadge}</h3>
-                    <p class="preset-remark">${preset.remark || '无描述'}</p>
+                    <h3 class="preset-name">${escapeHtml(preset.name)} ${builtInBadge}</h3>
+                    <p class="preset-remark">${escapeHtml(preset.remark || '无描述')}</p>
                     <div class="preset-meta">
-                        <span class="preset-updated">更新：${preset.formattedUpdatedAt}</span>
+                        <span class="preset-updated">更新：${escapeHtml(preset.formattedUpdatedAt)}</span>
                     </div>
                 </div>
                 <div class="preset-controls">
                     ${preset.isActive ? 
                         '<span class="active-indicator">已激活</span>' : 
-                        `<button class="btn btn-primary activate-btn" data-preset-id="${preset.id}">设为激活</button>`
+                        `<button class="btn btn-primary activate-btn" data-preset-id="${escapeHtml(preset.id)}">设为激活</button>`
                     }
                 </div>
             </div>
             <div class="preset-actions">
-                <button class="btn btn-secondary preset-edit-btn" data-preset-id="${preset.id}" data-action="edit">
+                <button class="btn btn-secondary preset-edit-btn" data-preset-id="${escapeHtml(preset.id)}" data-action="edit">
                     编辑
                 </button>
-                <button class="btn btn-secondary preset-details-btn" data-preset-id="${preset.id}" data-action="details">
+                <button class="btn btn-secondary preset-details-btn" data-preset-id="${escapeHtml(preset.id)}" data-action="details">
                     详情
                 </button>
                 ${!preset.isBuiltIn ? `
-                    <button class="btn btn-secondary duplicate-btn" data-preset-id="${preset.id}">
+                    <button class="btn btn-secondary duplicate-btn" data-preset-id="${escapeHtml(preset.id)}">
                         复制
                     </button>
-                    <button class="btn btn-danger delete-btn" data-preset-id="${preset.id}">
+                    <button class="btn btn-danger delete-btn" data-preset-id="${escapeHtml(preset.id)}">
                         删除
                     </button>
                 ` : ''}
@@ -294,7 +296,7 @@ function createPresetDetailsModal(preset) {
             <div class="modal-backdrop"></div>
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>预设详情：${preset.name}</h2>
+                    <h2>预设详情：${escapeHtml(preset.name)}</h2>
                 </div>
                 <div class="modal-body">
                     <div class="preset-detail-info">

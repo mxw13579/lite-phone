@@ -7,9 +7,9 @@
  */
 
 import { eventBus, EventTypes } from '../core/event-bus.js';
-import { getDB, getMessageService } from '../core/db-v13.js';
+import { getDB } from '../core/db.js';
 import { memoryService } from './memory.js';
-import { getAllChats, createChat } from '../domains/chats/controller-v13.js';
+import { getAllChats, createChat, getChatMessages, sendMessage } from '../domains/chats/controller.js';
 import { publishMoment, addComment } from '../domains/moments/store.js';
 
 /**
@@ -279,20 +279,16 @@ export class BehaviorExecutor {
      */
     async executeChatReply(chatId, context) {
         try {
-            const messageService = getMessageService();
+            // 🔧 修复：直接使用导入的聊天控制器函数
             
             // 获取最近的聊天历史
-            const recentMessages = await messageService.getChatMessages(chatId, { 
-                limit: 5, 
-                order: 'desc' 
-            });
+            const recentMessages = await getChatMessages(chatId, 5);
 
             // 生成回复内容（这里可以集成AI生成逻辑）
             const replyContent = await this.generateChatReply(recentMessages, context);
 
             // 发送回复消息
-            const messageResult = await messageService.addMessage({
-                chatId,
+            const messageResult = await sendMessage(chatId, {
                 senderId: 'ai',
                 senderName: 'AI助手',
                 content: replyContent,
@@ -333,14 +329,13 @@ export class BehaviorExecutor {
      */
     async executeProactiveChat(chatId, context) {
         try {
-            const messageService = getMessageService();
+            // 🔧 修复：直接使用导入的聊天控制器函数
             
             // 生成主动聊天内容
             const proactiveContent = await this.generateProactiveMessage(chatId, context);
 
             // 发送主动消息
-            const messageResult = await messageService.addMessage({
-                chatId,
+            const messageResult = await sendMessage(chatId, {
                 senderId: 'ai',
                 senderName: 'AI助手',
                 content: proactiveContent,
@@ -590,9 +585,10 @@ export class BehaviorExecutor {
             switch (actionType) {
                 case 'chat_reply':
                 case 'proactive_chat':
-                    // 删除发送的消息
-                    const messageService = getMessageService();
-                    return await messageService.deleteMessage(result.messageId);
+                    // 🔧 修复：暂时使用TODO，需要实现单条消息删除功能
+                    // TODO: 需要在聊天控制器中添加 deleteMessage 功能
+                    console.warn('撤销聊天消息功能尚未实现，messageId:', result.messageId);
+                    return false;
 
                 case 'moment_post':
                     // 删除发布的朋友圈

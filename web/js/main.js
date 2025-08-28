@@ -20,6 +20,8 @@ import { renderBehaviorSettingsScreen, initializeBehaviorSettingsView } from './
 import { showToast, showSuccess, showError, showWarning } from './utils/notify.js';
 import { initializeDataManagement, setupBackupEventListeners, getDataStats, displayDataManagementStatus } from './utils/data-management.js';
 import { initializeGlobalNavigation } from './utils/navigation.js';
+import { memoryManager } from './utils/memory-manager.js';
+import { databaseOptimizer } from './utils/db-optimizer.js';
 import { themeService } from './services/themes.js';
 import { backupService } from './services/backup.js';
 import { memoryService } from './services/memory.js';
@@ -205,6 +207,14 @@ async function initializeServices() {
     try {
         console.log('Initializing services...');
         
+        // 首先初始化内存管理器（优先级最高）
+        await memoryManager.initialize();
+        console.log('✅ Memory manager initialized');
+        
+        // 初始化数据库优化器（第二优先级）
+        await databaseOptimizer.initialize();
+        console.log('✅ Database optimizer initialized');
+        
         // 初始化主题服务
         await themeService.initialize();
         console.log('✅ Theme service initialized');
@@ -216,6 +226,10 @@ async function initializeServices() {
         // 初始化记忆服务
         await memoryService.initialize();
         console.log('✅ Memory service initialized');
+        
+        // 预热数据库查询缓存
+        await databaseOptimizer.warmupCache();
+        console.log('✅ Database cache warmed up');
         
         console.log('Services layer initialized successfully');
         
@@ -283,6 +297,9 @@ async function initializeEventSystem() {
 
         eventBus.on(EventTypes.APP_READY, (data) => {
             console.log('Application ready', data);
+            
+            // 🔧 修复：启动时间更新功能
+            initializeTimeDisplay();
         });
 
         eventBus.on(EventTypes.APP_ERROR, (data) => {
@@ -547,6 +564,109 @@ async function renderWallpaperScreen() {
     console.log('壁纸设置屏幕已激活');
     // 占位：页面切换由路由管理器处理，这里可添加特定的初始化逻辑
     // 例如：加载壁纸列表、初始化上传功能等
+}
+
+/**
+ * 🔧 修复：初始化时间显示功能
+ * 定时更新状态栏和主屏时间显示
+ */
+function initializeTimeDisplay() {
+    function updateTime() {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        
+        // 更新状态栏时间
+        const statusBarTime = document.getElementById('status-bar-time');
+        if (statusBarTime) {
+            statusBarTime.textContent = timeString;
+        }
+        
+        // 更新主屏时间
+        const mainTime = document.getElementById('main-time');
+        if (mainTime) {
+            mainTime.textContent = timeString;
+        }
+        
+        // 更新日期（主屏）
+        const dateString = now.toLocaleDateString('zh-CN', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric'
+        });
+        const mainDate = document.getElementById('main-date');
+        if (mainDate) {
+            mainDate.textContent = dateString;
+        }
+        
+        // 🔧 修复：更新电量显示
+        updateBatteryDisplay();
+    }
+    
+    // 立即更新一次
+    updateTime();
+    
+    // 每秒更新时间
+    setInterval(updateTime, 1000);
+    
+    console.log('✅ 时间显示功能已启动');
+}
+
+/**
+ * 🔧 修复：更新电量显示
+ * 模拟电池电量显示（在浏览器环境中）
+ */
+function updateBatteryDisplay() {
+    // 检查浏览器是否支持 Battery API
+    if ('getBattery' in navigator) {
+        navigator.getBattery().then(function(battery) {
+            const level = Math.round(battery.level * 100);
+            updateBatteryUI(level, battery.charging);
+        }).catch(() => {
+            // Battery API 不可用，使用模拟电量
+            updateBatteryUI(85, false);
+        });
+    } else {
+        // 不支持 Battery API，使用模拟电量
+        updateBatteryUI(85, false);
+    }
+}
+
+/**
+ * 更新电池UI显示
+ * @param {number} level 电量百分比 (0-100)
+ * @param {boolean} charging 是否在充电
+ */
+function updateBatteryUI(level, charging) {
+    const batteryText = document.querySelector('.battery-text');
+    const batteryLevel = document.querySelector('.battery-level');
+    
+    if (batteryText) {
+        batteryText.textContent = `${level}%`;
+    }
+    
+    if (batteryLevel) {
+        batteryLevel.style.width = `${level}%`;
+        
+        // 根据电量设置颜色
+        if (level <= 20) {
+            batteryLevel.style.backgroundColor = '#ff4444';
+        } else if (level <= 50) {
+            batteryLevel.style.backgroundColor = '#ffaa00';
+        } else {
+            batteryLevel.style.backgroundColor = '#00aa00';
+        }
+        
+        // 充电时的样式
+        if (charging) {
+            batteryLevel.style.animation = 'battery-charging 2s infinite';
+        } else {
+            batteryLevel.style.animation = '';
+        }
+    }
 }
 
 // 导出主要函数供其他模块使用

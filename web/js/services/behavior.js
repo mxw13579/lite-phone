@@ -13,6 +13,7 @@
 import { getDB } from '../core/db.js';
 import { eventBus, EventTypes } from '../core/event-bus.js';
 import { createSuccessResponse, createErrorResponse, ErrorTypes } from './contracts.js';
+import { AsyncOp, DatabaseOp, Logger } from '../utils/common-patterns.js';
 
 // 行为类型枚举
 export const BehaviorActionTypes = {
@@ -96,7 +97,7 @@ class BehaviorService {
      * @returns {Promise<ServiceResponse>}
      */
     async initialize() {
-        try {
+        const response = await AsyncOp.execute(async () => {
             // 加载默认配置
             await this.loadDefaultConfig();
             
@@ -107,11 +108,21 @@ class BehaviorService {
             this.setupEventListeners();
             
             this.isInitialized = true;
-            return createSuccessResponse(null, '行为服务初始化成功');
+            Logger.info('BehaviorService', 'Behavior service initialized successfully');
             
-        } catch (error) {
-            console.error('Behavior service initialization failed:', error);
-            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
+            // 🔧 修复：返回成功响应而不是null
+            return { success: true, message: 'Behavior service initialized successfully' };
+        }, {
+            operationName: 'Initialize Behavior Service',
+            errorType: 'BEHAVIOR_INIT_ERROR',
+            logError: true,
+            showUserError: false
+        });
+        
+        if (response.success) {
+            return createSuccessResponse(null, '行为服务初始化成功');
+        } else {
+            return createErrorResponse(response.error, ErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -1092,3 +1103,47 @@ export const behaviorService = new BehaviorService();
 
 // 导出服务类
 export { BehaviorService };
+
+// ===== 命名别名导出（与执行手册对齐） =====
+
+/**
+ * 记录行为执行（别名）
+ * @param {string} roleId 角色ID
+ * @param {string} actionType 行为类型
+ * @param {Object} actionData 行为数据
+ */
+export const recordBehaviorExecution = (roleId, actionType, actionData) => {
+    return behaviorService.recordBehaviorExecution(roleId, actionType, actionData);
+};
+
+/**
+ * 聚合评分（别名）
+ * @param {string} roleId 角色ID
+ * @param {Object} timeRange 时间范围
+ */
+export const aggregateScores = async (roleId, timeRange = {}) => {
+    const result = await behaviorService.getBehaviorStats(roleId, timeRange);
+    if (result.success) {
+        return result.data.scoreStats;
+    }
+    return null;
+};
+
+/**
+ * 计算冷却时间（别名）
+ * @param {string} roleId 角色ID
+ * @param {string} actionType 行为类型
+ */
+export const computeCooldown = (roleId, actionType) => {
+    return behaviorService.checkCooldown(roleId, actionType);
+};
+
+/**
+ * 判断是否应该触发（别名）
+ * @param {string} roleId 角色ID
+ * @param {string} actionType 行为类型
+ * @param {Object} context 上下文
+ */
+export const shouldTrigger = (roleId, actionType, context) => {
+    return behaviorService.assessActionProbability(roleId, actionType, context);
+};

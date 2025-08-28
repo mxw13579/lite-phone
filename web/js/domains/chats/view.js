@@ -16,6 +16,7 @@ import {
 import { $, byId, createElement, show, hide, setContent, addEventListener } from '../../utils/dom.js';
 import { validateRequired } from '../../utils/validation.js';
 import { showToast, showSuccess, showError, showWarning } from '../../utils/notify.js';
+import { escapeHtml } from '../../utils/security.js'; // 🔒 安全修复：导入HTML转义函数
 import { routeManager } from '../../core/router.js';
 
 // 页面元素和状态
@@ -154,24 +155,25 @@ function renderChatsList(chats) {
  * @returns {string} HTML字符串
  */
 function createChatItem(chat) {
-    const unreadBadge = chat.unreadCount > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : '';
+    // 🔒 安全修复：对所有动态内容进行HTML转义
+    const unreadBadge = chat.unreadCount > 0 ? `<span class="unread-badge">${escapeHtml(String(chat.unreadCount))}</span>` : '';
     const groupIcon = chat.isGroup ? '👥' : '💬';
     
     return `
-        <div class="chat-item" data-chat-id="${chat.id}">
+        <div class="chat-item" data-chat-id="${escapeHtml(chat.id)}">
             <div class="chat-avatar">
                 <span class="chat-icon">${groupIcon}</span>
             </div>
             <div class="chat-info">
                 <div class="chat-header">
-                    <h3 class="chat-name">${chat.name}</h3>
-                    <span class="chat-time">${chat.formattedTime}</span>
+                    <h3 class="chat-name">${escapeHtml(chat.name)}</h3>
+                    <span class="chat-time">${escapeHtml(chat.formattedTime)}</span>
                     ${unreadBadge}
                 </div>
-                <p class="chat-preview">${chat.lastMessagePreview}</p>
+                <p class="chat-preview">${escapeHtml(chat.lastMessagePreview)}</p>
             </div>
             <div class="chat-actions">
-                <button class="chat-action-btn delete-chat-btn" data-chat-id="${chat.id}" title="删除聊天">
+                <button class="chat-action-btn delete-chat-btn" data-chat-id="${escapeHtml(chat.id)}" title="删除聊天">
                     <span>🗑️</span>
                 </button>
             </div>

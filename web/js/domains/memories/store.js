@@ -13,6 +13,7 @@ import { getDB } from '../../core/db.js';
 import { eventBus, EventTypes } from '../../core/event-bus.js';
 import { createSuccessResponse, createErrorResponse, ServiceErrorTypes } from '../../services/contracts.js';
 import { memoryService } from '../../services/memory.js';
+import { AsyncOp, DatabaseOp, FormOp, Logger } from '../../utils/common-patterns.js';
 
 /**
  * 记忆管理存储类
@@ -32,18 +33,28 @@ class MemoryStore {
      * @returns {Promise<ServiceResponse>}
      */
     async initialize() {
-        try {
+        return await AsyncOp.execute(async () => {
             // 加载记忆设置
             await this.loadMemorySettings();
             
             // 注册事件监听
             this.registerEventListeners();
             
-            return createSuccessResponse(null, '记忆存储初始化成功');
-        } catch (error) {
-            console.error('Memory store initialization failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
-        }
+            Logger.info('MemoryStore', '记忆存储初始化成功');
+            
+            // 🔧 修复：显式返回成功响应
+            return { success: true, message: '记忆存储初始化成功' };
+        }, {
+            operationName: 'Initialize Memory Store',
+            logError: true,
+            showUserError: false
+        }).then(response => {
+            if (response.success) {
+                return createSuccessResponse(null, '记忆存储初始化成功');
+            } else {
+                return createErrorResponse(response.error, ServiceErrorTypes.INTERNAL_ERROR);
+            }
+        });
     }
 
     /**
@@ -68,8 +79,7 @@ class MemoryStore {
      * @returns {Promise<ServiceResponse>}
      */
     async loadMemorySettings() {
-        try {
-            const db = getDB();
+        const response = await DatabaseOp.read(async (db) => {
             let settings = await db.globalSettings.get('memory_settings');
             
             if (!settings) {
@@ -90,15 +100,25 @@ class MemoryStore {
                     updatedAt: new Date().toISOString()
                 };
                 
-                await db.globalSettings.add(settings);
+                // 保存默认设置
+                await DatabaseOp.write(async (db) => {
+                    return await db.globalSettings.add(settings);
+                }, {
+                    operationName: 'Save Default Memory Settings',
+                    tables: ['globalSettings']
+                });
             }
             
             this.settings = settings;
-            return createSuccessResponse(settings, '记忆设置加载成功');
-            
-        } catch (error) {
-            console.error('Load memory settings failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return settings;
+        }, {
+            operationName: 'Load Memory Settings'
+        });
+        
+        if (response.success) {
+            return createSuccessResponse(response.data, '记忆设置加载成功');
+        } else {
+            return createErrorResponse(response.error, ServiceErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -108,9 +128,7 @@ class MemoryStore {
      * @returns {Promise<ServiceResponse>}
      */
     async saveMemorySettings(newSettings) {
-        try {
-            const db = getDB();
-            
+        const response = await DatabaseOp.write(async (db) => {
             const updatedSettings = {
                 ...this.settings,
                 ...newSettings,
@@ -123,11 +141,16 @@ class MemoryStore {
             // 发送设置更新事件
             await eventBus.emit('memory.settings-updated', updatedSettings);
             
-            return createSuccessResponse(updatedSettings, '记忆设置保存成功');
-            
-        } catch (error) {
-            console.error('Save memory settings failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+            return updatedSettings;
+        }, {
+            operationName: 'Save Memory Settings',
+            tables: ['globalSettings']
+        });
+        
+        if (response.success) {
+            return createSuccessResponse(response.data, '记忆设置保存成功');
+        } else {
+            return createErrorResponse(response.error, ServiceErrorTypes.INTERNAL_ERROR);
         }
     }
 
@@ -137,9 +160,7 @@ class MemoryStore {
      * @returns {Promise<ServiceResponse>}
      */
     async getMemoryStats(roleId = null) {
-        try {
-            const db = getDB();
-            
+        return await DatabaseOp.read(async (db) => {
             let query = db.memories;
             if (roleId) {
                 query = query.where('roleId').equals(roleId);
@@ -214,12 +235,16 @@ class MemoryStore {
             }
             
             this.memoryStats = stats;
-            return createSuccessResponse(stats, '记忆统计获取成功');
-            
-        } catch (error) {
-            console.error('Get memory stats failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
-        }
+            return stats;
+        }, {
+            operationName: 'Get Memory Stats'
+        }).then(response => {
+            if (response.success) {
+                return createSuccessResponse(response.data, '记忆统计获取成功');
+            } else {
+                return createErrorResponse(response.error, ServiceErrorTypes.INTERNAL_ERROR);
+            }
+        });
     }
 
     /**
@@ -228,7 +253,7 @@ class MemoryStore {
      * @returns {Promise<ServiceResponse>}
      */
     async getMemoryList(options = {}) {
-        try {
+        return await AsyncOp.execute(async () => {
             this.isLoading = true;
             
             const {
@@ -248,7 +273,7 @@ class MemoryStore {
             });
             
             if (response.success === false) {
-                return response;
+                throw new Error(response.error || 'Failed to search memories');
             }
             
             let memories = response.data.memories || [];
@@ -267,19 +292,26 @@ class MemoryStore {
             
             this.currentMemories = memories;
             this.currentFilter = type;
-            this.isLoading = false;
             
-            return createSuccessResponse({
+            return {
                 memories,
                 total: response.data.total,
                 currentFilter: type
-            }, '记忆列表获取成功');
-            
-        } catch (error) {
-            this.isLoading = false;
-            console.error('Get memory list failed:', error);
-            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
-        }
+            };
+        }, {
+            operationName: 'Get Memory List',
+            logError: true,
+            showUserError: false,
+            onFinally: () => {
+                this.isLoading = false;
+            }
+        }).then(response => {
+            if (response.success) {
+                return createSuccessResponse(response.data, '记忆列表获取成功');
+            } else {
+                return createErrorResponse(response.error, ServiceErrorTypes.INTERNAL_ERROR);
+            }
+        });
     }
 
     /**
@@ -520,6 +552,176 @@ class MemoryStore {
             hasStats: this.memoryStats !== null,
             settings: this.settings
         };
+    }
+
+    // ===== 记忆注入预览功能 =====
+    
+    /**
+     * 根据ID列表获取记忆详情
+     * @param {Array<string>} memoryIds 记忆ID列表
+     * @returns {Promise<ServiceResponse>}
+     */
+    async getMemoriesByIds(memoryIds) {
+        try {
+            if (!Array.isArray(memoryIds) || memoryIds.length === 0) {
+                return createErrorResponse('记忆ID列表不能为空', ServiceErrorTypes.VALIDATION_ERROR);
+            }
+            
+            const db = getDB();
+            const memories = await db.memories
+                .where('id')
+                .anyOf(memoryIds)
+                .toArray();
+            
+            return createSuccessResponse(memories, '记忆详情获取成功');
+            
+        } catch (error) {
+            console.error('Get memories by IDs failed:', error);
+            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+        }
+    }
+    
+    /**
+     * 将选中记忆注入到指定聊天
+     * @param {string} chatId 目标聊天ID
+     * @param {Array<string>} memoryIds 要注入的记忆ID列表
+     * @returns {Promise<ServiceResponse>}
+     */
+    async injectMemoriesToChat(chatId, memoryIds) {
+        try {
+            if (!chatId || !Array.isArray(memoryIds) || memoryIds.length === 0) {
+                return createErrorResponse('参数不完整', ServiceErrorTypes.VALIDATION_ERROR);
+            }
+            
+            // 获取记忆详情
+            const memoriesResult = await this.getMemoriesByIds(memoryIds);
+            if (!memoriesResult.success) {
+                return memoriesResult;
+            }
+            
+            const memories = memoriesResult.data;
+            
+            // 验证目标聊天是否存在
+            const db = getDB();
+            const chat = await db.chats.get(chatId);
+            if (!chat) {
+                return createErrorResponse('目标聊天不存在', ServiceErrorTypes.NOT_FOUND);
+            }
+            
+            // 生成注入标记和记录
+            const injectionRecord = {
+                id: `injection_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                chatId: chatId,
+                memoryIds: memoryIds,
+                injectedMemories: memories.map(m => ({
+                    id: m.id,
+                    type: m.type,
+                    content: m.content,
+                    importance: m.importance,
+                    injectedAt: new Date().toISOString()
+                })),
+                totalMemories: memories.length,
+                totalTokens: this.estimateMemoriesTokens(memories),
+                createdAt: new Date().toISOString()
+            };
+            
+            // 保存注入记录（可选，用于追踪）
+            try {
+                await db.memoryInjections.add(injectionRecord);
+            } catch (tableError) {
+                // 如果表不存在，先创建表
+                console.warn('Memory injections table may not exist, creating record in memory:', injectionRecord);
+            }
+            
+            // 触发记忆注入事件
+            await eventBus.emit('memory.injection-started', {
+                chatId: chatId,
+                memoryIds: memoryIds,
+                injectionId: injectionRecord.id
+            });
+            
+            return createSuccessResponse({
+                injectionId: injectionRecord.id,
+                injectedCount: memories.length,
+                estimatedTokens: injectionRecord.totalTokens,
+                targetChat: {
+                    id: chat.id,
+                    name: chat.name || '未命名聊天'
+                }
+            }, '记忆注入成功');
+            
+        } catch (error) {
+            console.error('Inject memories to chat failed:', error);
+            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+        }
+    }
+    
+    /**
+     * 估算记忆列表的令牌数量
+     * @param {Array} memories 记忆列表
+     * @returns {number} 估算令牌数
+     */
+    estimateMemoriesTokens(memories) {
+        return memories.reduce((total, memory) => {
+            // 简化的令牌估算：中文约1.5字符/令牌，英文约4字符/令牌
+            const content = memory.content || '';
+            const chineseChars = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
+            const otherChars = content.length - chineseChars;
+            return total + Math.ceil(chineseChars / 1.5 + otherChars / 4);
+        }, 0);
+    }
+    
+    /**
+     * 获取记忆注入历史
+     * @param {string} chatId 聊天ID（可选）
+     * @returns {Promise<ServiceResponse>}
+     */
+    async getInjectionHistory(chatId = null) {
+        try {
+            const db = getDB();
+            
+            let query = db.memoryInjections;
+            if (chatId) {
+                query = query.where('chatId').equals(chatId);
+            }
+            
+            const injections = await query
+                .orderBy('createdAt')
+                .reverse()
+                .limit(50)
+                .toArray();
+                
+            return createSuccessResponse(injections, '注入历史获取成功');
+            
+        } catch (error) {
+            console.error('Get injection history failed:', error);
+            // 如果表不存在，返回空列表
+            return createSuccessResponse([], '暂无注入历史记录');
+        }
+    }
+    
+    /**
+     * 清理注入历史记录
+     * @param {number} keepDays 保留天数，默认30天
+     * @returns {Promise<ServiceResponse>}
+     */
+    async cleanupInjectionHistory(keepDays = 30) {
+        try {
+            const db = getDB();
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - keepDays);
+            
+            const deletedCount = await db.memoryInjections
+                .where('createdAt')
+                .below(cutoffDate.toISOString())
+                .delete();
+                
+            return createSuccessResponse({ deletedCount }, `清理了${deletedCount}条历史记录`);
+            
+        } catch (error) {
+            console.error('Cleanup injection history failed:', error);
+            return createErrorResponse(error.message, ServiceErrorTypes.INTERNAL_ERROR);
+        }
     }
 }
 

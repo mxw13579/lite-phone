@@ -17,6 +17,7 @@ import { getDB } from '../core/db.js';
 import { eventBus, EventTypes } from '../core/event-bus.js';
 import { createSuccessResponse, createErrorResponse, ErrorTypes } from './contracts.js';
 import { getChatMessages } from '../domains/chats/controller.js';
+import { AsyncOp, DatabaseOp, Logger } from '../utils/common-patterns.js';
 
 /**
  * 记忆服务配置常量
@@ -71,8 +72,8 @@ class MemoryService {
      * @returns {Promise<void>}
      */
     async initialize() {
-        try {
-            console.log('Initializing memory service...');
+        return await AsyncOp.execute(async () => {
+            Logger.info('MemoryService', 'Initializing memory service...');
             
             // 确保数据库表结构正确
             const db = getDB();
@@ -83,11 +84,15 @@ class MemoryService {
             // 注册事件监听器
             this.registerEventListeners();
             
-            console.log('Memory service initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize memory service:', error);
-            throw error;
-        }
+            Logger.info('MemoryService', 'Memory service initialized successfully');
+            
+            // 🔧 修复：显式返回成功响应
+            return { success: true, message: 'Memory service initialized successfully' };
+        }, {
+            operationName: 'Initialize Memory Service',
+            logError: true,
+            showUserError: false
+        });
     }
 
     /**
@@ -123,23 +128,26 @@ class MemoryService {
      * @returns {Promise<ServiceResponse>}
      */
     async extractMemoriesFromChat(chatId, messageCount = 50) {
-        try {
+        const response = await AsyncOp.execute(async () => {
             if (!chatId) {
-                return createErrorResponse('chatId不能为空', ErrorTypes.VALIDATION_ERROR);
+                throw new Error('chatId不能为空');
             }
 
             // 获取聊天消息
             const messages = await getChatMessages(chatId, messageCount);
             if (!messages || messages.length === 0) {
-                return createSuccessResponse([], '无消息可处理');
+                return { memories: [], message: '无消息可处理' };
             }
 
             // 获取聊天基本信息
-            const db = getDB();
-            const chat = await db.chats.get(chatId);
-            if (!chat) {
-                return createErrorResponse('聊天不存在', ErrorTypes.NOT_FOUND);
+            const chatResult = await DatabaseOp.read(async (db) => {
+                return await db.chats.get(chatId);
+            }, { operationName: 'Get Chat Info' });
+            
+            if (!chatResult.success || !chatResult.data) {
+                throw new Error('聊天不存在');
             }
+            const chat = chatResult.data;
 
             // 抽取记忆
             const extractedMemories = await this.extractionManager.extractFromMessages(
@@ -164,8 +172,13 @@ class MemoryService {
                     updatedAt: new Date().toISOString()
                 };
 
-                await db.memories.add(memory);
-                savedMemories.push(memory);
+                const insertResult = await DatabaseOp.write(async (db) => {
+                    return await db.memories.add(memory);
+                }, { operationName: 'Insert Memory', tables: ['memories'] });
+                
+                if (insertResult.success) {
+                    savedMemories.push(memory);
+                }
             }
 
             // 发送记忆形成事件
@@ -177,11 +190,21 @@ class MemoryService {
                 });
             }
 
-            return createSuccessResponse(savedMemories, `成功抽取${savedMemories.length}个记忆`);
-
-        } catch (error) {
-            console.error('Extract memories from chat failed:', error);
-            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
+            return { memories: savedMemories, message: `成功抽取${savedMemories.length}个记忆` };
+        }, {
+            operationName: 'Extract Memories From Chat',
+            errorType: 'MEMORY_EXTRACTION_ERROR',
+            logError: true,
+            showUserError: false
+        });
+        
+        if (response.success) {
+            return createSuccessResponse(response.data.memories, response.data.message);
+        } else {
+            const errorType = response.data?.message?.includes('不存在') ? ErrorTypes.NOT_FOUND :
+                             response.data?.message?.includes('不能为空') ? ErrorTypes.VALIDATION_ERROR :
+                             ErrorTypes.INTERNAL_ERROR;
+            return createErrorResponse(response.error, errorType);
         }
     }
 
@@ -191,23 +214,22 @@ class MemoryService {
      * @returns {Promise<ServiceResponse>}
      */
     async createMemory(memoryData) {
-        try {
+        const response = await AsyncOp.execute(async () => {
             const { roleId, chatId, content, type, importance, context, tags } = memoryData;
 
             // 参数验证
             if (!roleId || !content) {
-                return createErrorResponse('roleId和content不能为空', ErrorTypes.VALIDATION_ERROR);
+                throw new Error('roleId和content不能为空');
             }
 
             if (!Object.values(MEMORY_CONFIG.memoryTypes).includes(type)) {
-                return createErrorResponse('无效的记忆类型', ErrorTypes.VALIDATION_ERROR);
+                throw new Error('无效的记忆类型');
             }
 
             if (importance < 0 || importance > 1) {
-                return createErrorResponse('重要性评分必须在0-1之间', ErrorTypes.VALIDATION_ERROR);
+                throw new Error('重要性评分必须在0-1之间');
             }
 
-            const db = getDB();
             const memory = {
                 id: `memory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 roleId,
@@ -221,7 +243,16 @@ class MemoryService {
                 updatedAt: new Date().toISOString()
             };
 
-            await db.memories.add(memory);
+            const insertResult = await DatabaseOp.write(async (db) => {
+                return await db.memories.add(memory);
+            }, {
+                operationName: 'Create Memory',
+                tables: ['memories']
+            });
+            
+            if (!insertResult.success) {
+                throw new Error('Failed to insert memory: ' + insertResult.error);
+            }
 
             // 发送记忆创建事件
             await eventBus.emit('memory.created', {
@@ -229,11 +260,20 @@ class MemoryService {
                 roleId
             });
 
-            return createSuccessResponse(memory, '记忆创建成功');
-
-        } catch (error) {
-            console.error('Create memory failed:', error);
-            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
+            return memory;
+        }, {
+            operationName: 'Create Memory',
+            errorType: 'MEMORY_CREATE_ERROR',
+            logError: true,
+            showUserError: false
+        });
+        
+        if (response.success) {
+            return createSuccessResponse(response.data, '记忆创建成功');
+        } else {
+            const errorType = response.error?.includes('不能为空') || response.error?.includes('无效') || response.error?.includes('必须') ?
+                             ErrorTypes.VALIDATION_ERROR : ErrorTypes.INTERNAL_ERROR;
+            return createErrorResponse(response.error, errorType);
         }
     }
 
@@ -244,9 +284,9 @@ class MemoryService {
      * @returns {Promise<ServiceResponse>}
      */
     async compressMemoriesByImportance(roleId, options = {}) {
-        try {
+        const response = await AsyncOp.execute(async () => {
             if (!roleId) {
-                return createErrorResponse('roleId不能为空', ErrorTypes.VALIDATION_ERROR);
+                throw new Error('roleId不能为空');
             }
 
             const result = await this.compressionManager.compressMemories(roleId, options);
@@ -257,11 +297,20 @@ class MemoryService {
                 ...result
             });
 
-            return createSuccessResponse(result, '记忆压缩完成');
-
-        } catch (error) {
-            console.error('Compress memories failed:', error);
-            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
+            return result;
+        }, {
+            operationName: 'Compress Memories By Importance',
+            errorType: 'MEMORY_COMPRESSION_ERROR',
+            logError: true,
+            showUserError: false
+        });
+        
+        if (response.success) {
+            return createSuccessResponse(response.data, '记忆压缩完成');
+        } else {
+            const errorType = response.error?.includes('不能为空') ?
+                             ErrorTypes.VALIDATION_ERROR : ErrorTypes.INTERNAL_ERROR;
+            return createErrorResponse(response.error, errorType);
         }
     }
 
@@ -272,18 +321,26 @@ class MemoryService {
      * @returns {Promise<ServiceResponse>}
      */
     async injectMemoriesIntoPrompt(roleId, context) {
-        try {
+        const response = await AsyncOp.execute(async () => {
             if (!roleId) {
-                return createErrorResponse('roleId不能为空', ErrorTypes.VALIDATION_ERROR);
+                throw new Error('roleId不能为空');
             }
 
             const result = await this.injectionManager.injectMemories(roleId, context);
-            
-            return createSuccessResponse(result, '记忆注入成功');
-
-        } catch (error) {
-            console.error('Inject memories failed:', error);
-            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
+            return result;
+        }, {
+            operationName: 'Inject Memories Into Prompt',
+            errorType: 'MEMORY_INJECTION_ERROR',
+            logError: true,
+            showUserError: false
+        });
+        
+        if (response.success) {
+            return createSuccessResponse(response.data, '记忆注入成功');
+        } else {
+            const errorType = response.error?.includes('不能为空') ?
+                             ErrorTypes.VALIDATION_ERROR : ErrorTypes.INTERNAL_ERROR;
+            return createErrorResponse(response.error, errorType);
         }
     }
 
@@ -294,8 +351,7 @@ class MemoryService {
      * @returns {Promise<ServiceResponse>}
      */
     async searchRelevantMemories(query, filters = {}) {
-        try {
-            const db = getDB();
+        return await DatabaseOp.read(async (db) => {
             let baseQuery = db.memories.orderBy('importance').reverse();
 
             // 应用过滤条件
@@ -326,17 +382,21 @@ class MemoryService {
             const offset = filters.offset || 0;
             const paginatedMemories = filteredMemories.slice(offset, offset + limit);
 
-            return createSuccessResponse({
+            return {
                 memories: paginatedMemories,
                 total: filteredMemories.length,
                 query,
                 filters
-            }, `找到${filteredMemories.length}个相关记忆`);
-
-        } catch (error) {
-            console.error('Search memories failed:', error);
-            return createErrorResponse(error.message, ErrorTypes.INTERNAL_ERROR);
-        }
+            };
+        }, {
+            operationName: 'Search Relevant Memories'
+        }).then(result => {
+            if (result.success) {
+                return createSuccessResponse(result.data, `找到${result.data.total}个相关记忆`);
+            } else {
+                return createErrorResponse(result.error, ErrorTypes.INTERNAL_ERROR);
+            }
+        });
     }
 
     // ===== 辅助方法 =====
@@ -492,7 +552,7 @@ class MemoryExtractionManager {
         let score = 0;
         const contentLower = content.toLowerCase();
 
-        // 1. 重要性指示词权重 (0.25)
+        // 1. 重要性指示词权重 (0.4)
         const importanceIndicators = {
             critical: ['重要', '千万', '一定要', '必须', '务必'],
             memory: ['记住', '别忘了', '要记得', '牢记'],
@@ -502,13 +562,13 @@ class MemoryExtractionManager {
         let importanceScore = 0;
         Object.entries(importanceIndicators).forEach(([category, keywords]) => {
             const matches = keywords.filter(keyword => content.includes(keyword)).length;
-            if (category === 'critical') importanceScore += matches * 0.12;
-            else if (category === 'memory') importanceScore += matches * 0.10;
-            else importanceScore += matches * 0.08;
+            if (category === 'critical') importanceScore += matches * 0.2; // 提高权重
+            else if (category === 'memory') importanceScore += matches * 0.15; // 提高权重  
+            else importanceScore += matches * 0.1; // 提高权重
         });
-        score += Math.min(importanceScore, 0.25);
+        score += Math.min(importanceScore, 0.4);
 
-        // 2. 个人信息识别权重 (0.3)
+        // 2. 个人信息识别权重 (0.4)
         const personalInfoPatterns = {
             identity: ['名字', '姓名', '叫什么', '叫做', '我是'],
             contact: ['电话', '手机', '微信', '联系方式', '地址'],
@@ -522,13 +582,17 @@ class MemoryExtractionManager {
             const matches = keywords.filter(keyword => content.includes(keyword)).length;
             if (matches > 0) {
                 if (category === 'identity' || category === 'contact') {
-                    personalScore += 0.08; // 身份和联系方式最重要
+                    personalScore += 0.15; // 再次提高身份和联系方式权重
+                } else if (category === 'preference') {
+                    personalScore += 0.12; // 提高兴趣偏好权重
+                } else if (category === 'work') {
+                    personalScore += 0.12; // 工作信息也很重要  
                 } else {
-                    personalScore += 0.06; // 其他个人信息
+                    personalScore += 0.1; // 其他个人信息
                 }
             }
         });
-        score += Math.min(personalScore, 0.3);
+        score += Math.min(personalScore, 0.4);
 
         // 3. 情感和交互强度权重 (0.2)
         let emotionScore = 0;
@@ -548,24 +612,24 @@ class MemoryExtractionManager {
         
         score += Math.min(emotionScore, 0.2);
 
-        // 4. 对话结构权重 (0.15)
+        // 4. 对话结构权重 (0.2)
         let structureScore = 0;
         
-        // 问句识别
+        // 问句识别 - 提高权重，问句通常很重要
         if (content.includes('?') || content.includes('？') || 
             /什么|怎么|为什么|哪里|谁|何时|如何/.test(content)) {
-            structureScore += 0.05;
+            structureScore += 0.08; // 从0.05提高到0.08
         }
         
         // 陈述句完整性
         if (content.length > 20 && /[。！？]$/.test(content)) {
-            structureScore += 0.03;
+            structureScore += 0.04; // 从0.03提高到0.04
         }
         
         // 引用和回复
         if (content.includes('@') || content.includes('回复') || 
             content.includes('你说的') || content.includes('刚才')) {
-            structureScore += 0.04;
+            structureScore += 0.05; // 从0.04提高到0.05
         }
         
         // 时态识别（计划或回忆）
@@ -574,7 +638,7 @@ class MemoryExtractionManager {
             structureScore += 0.03;
         }
         
-        score += Math.min(structureScore, 0.15);
+        score += Math.min(structureScore, 0.2);
 
         // 5. 上下文关联权重 (0.1)
         let contextScore = 0;
@@ -657,13 +721,15 @@ class MemoryExtractionManager {
             relationshipMarkers: ['朋友', '家人', '同事', '同学', '邻居', '亲戚'],
             socialActions: ['认识', '介绍', '见面', '聚会', '约会', '合作'],
             groupMarkers: ['我们', '大家', '团队', '一起', '共同'],
-            communicationMarkers: ['说', '告诉', '聊天', '交流', '沟通']
+            communicationMarkers: ['说', '告诉', '聊天', '交流', '沟通'],
+            interestInquiry: ['喜欢', '爱好', '兴趣', '偏好', '喜好', '讨厌'], // 新增兴趣询问
+            socialQuestions: ['你', '什么音乐', '什么电影', '什么书', '什么运动'] // 新增社交问句
         };
         
         Object.values(socialPatterns).forEach(patterns => {
             patterns.forEach(pattern => {
                 if (content.includes(pattern)) {
-                    typeScores[MEMORY_CONFIG.memoryTypes.SOCIAL] += 0.2;
+                    typeScores[MEMORY_CONFIG.memoryTypes.SOCIAL] += 0.25; // 提高权重
                 }
             });
         });
@@ -675,7 +741,7 @@ class MemoryExtractionManager {
 
         // 找出得分最高的类型
         const maxScore = Math.max(...Object.values(typeScores));
-        if (maxScore < 0.3) {
+        if (maxScore < 0.2) { // 降低阈值从0.3到0.2，让更多内容得到具体分类
             return MEMORY_CONFIG.memoryTypes.GENERAL; // 如果没有明显特征，归类为一般记忆
         }
         
