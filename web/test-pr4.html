@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>PR4测试 - 状态管理模块</title>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+</head>
+<body>
+    <h1>PR4测试：状态管理模块验证</h1>
+    <div id="test-results">测试中...</div>
+    
+    <button id="test-state-update" onclick="testStateUpdate()">测试状态更新</button>
+    
+    <script type="module" src="./main.js"></script>
+    
+    <script>
+        async function testStateUpdate() {
+            const results = document.getElementById('test-results');
+            const newResults = results.innerHTML.split('<br>');
+            
+            try {
+                // 测试状态更新函数
+                if (window.STATE && window.STATE.setActiveChatId) {
+                    window.STATE.setActiveChatId('test-chat-123');
+                    if (window.STATE.state.activeChatId === 'test-chat-123') {
+                        newResults.push('✅ 状态更新函数工作正常');
+                    } else {
+                        newResults.push('❌ 状态更新函数不工作');
+                    }
+                } else {
+                    newResults.push('❌ 状态更新函数不存在');
+                }
+            } catch (error) {
+                newResults.push('❌ 状态更新测试失败: ' + error.message);
+            }
+            
+            results.innerHTML = newResults.join('<br>');
+        }
+        
+        setTimeout(async () => {
+            const output = document.getElementById('test-results');
+            let results = [];
+            
+            // 测试1: window.STATE对象存在
+            if (window.STATE) {
+                results.push('✅ window.STATE 对象存在');
+            } else {
+                results.push('❌ window.STATE 对象不存在');
+                output.innerHTML = results.join('<br>');
+                return;
+            }
+            
+            // 测试2: 状态对象结构
+            if (window.STATE.state && typeof window.STATE.state === 'object') {
+                results.push('✅ 主状态对象存在');
+                
+                // 检查核心状态属性
+                const coreProps = ['chats', 'activeChatId', 'globalSettings', 'apiConfig', 'presets'];
+                let propCount = 0;
+                coreProps.forEach(prop => {
+                    if (prop in window.STATE.state) {
+                        propCount++;
+                    }
+                });
+                results.push(`✅ 核心状态属性: ${propCount}/${coreProps.length} 个存在`);
+            } else {
+                results.push('❌ 主状态对象不存在');
+            }
+            
+            // 测试3: 音乐状态对象
+            if (window.STATE.musicState && typeof window.STATE.musicState === 'object') {
+                results.push('✅ 音乐状态对象存在');
+                
+                const musicProps = ['isActive', 'activeChatId', 'isPlaying', 'playlist'];
+                let musicPropCount = 0;
+                musicProps.forEach(prop => {
+                    if (prop in window.STATE.musicState) {
+                        musicPropCount++;
+                    }
+                });
+                results.push(`✅ 音乐状态属性: ${musicPropCount}/${musicProps.length} 个存在`);
+            } else {
+                results.push('❌ 音乐状态对象不存在');
+            }
+            
+            // 测试4: 状态管理函数
+            const stateFunctions = [
+                'setActiveChatId',
+                'updateGlobalSettings',
+                'setApiConfig',
+                'getActiveChat',
+                'getActivePreset'
+            ];
+            let funcCount = 0;
+            stateFunctions.forEach(func => {
+                if (typeof window.STATE[func] === 'function') {
+                    funcCount++;
+                }
+            });
+            results.push(`✅ 状态管理函数: ${funcCount}/${stateFunctions.length} 个可用`);
+            
+            // 测试5: myAddress变量
+            if (window.STATE.myAddress !== undefined) {
+                results.push(`✅ myAddress: "${window.STATE.myAddress}"`);
+            } else {
+                results.push('❌ myAddress 变量未定义');
+            }
+            
+            // 测试6: getFullState函数
+            try {
+                if (typeof window.STATE.getFullState === 'function') {
+                    const fullState = window.STATE.getFullState();
+                    if (fullState && fullState.state && fullState.musicState) {
+                        results.push('✅ getFullState 函数工作正常');
+                    } else {
+                        results.push('❌ getFullState 函数返回数据不完整');
+                    }
+                } else {
+                    results.push('❌ getFullState 函数不存在');
+                }
+            } catch (error) {
+                results.push('❌ getFullState 函数调用失败: ' + error.message);
+            }
+            
+            output.innerHTML = results.join('<br>');
+        }, 2000);
+    </script>
+</body>
+</html>

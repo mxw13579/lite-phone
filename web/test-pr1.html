@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PR1测试 - ESM兼容层</title>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+</head>
+<body>
+    <h1>PR1测试页面</h1>
+    <p>测试ESM入口是否正常工作</p>
+    
+    <button onclick="testShowScreen()">测试showScreen函数</button>
+    <button onclick="testProxyFunctions()">测试代理函数</button>
+    
+    <div id="test-results"></div>
+    
+    <script type="module" src="./main.js"></script>
+    <script>
+        function testShowScreen() {
+            const results = document.getElementById('test-results');
+            try {
+                if (typeof showScreen === 'function') {
+                    results.innerHTML += '<p>✅ showScreen函数存在</p>';
+                    console.log('showScreen测试通过');
+                } else {
+                    results.innerHTML += '<p>❌ showScreen函数不存在</p>';
+                }
+            } catch (e) {
+                results.innerHTML += '<p>❌ 测试showScreen时出错: ' + e.message + '</p>';
+            }
+        }
+        
+        function testProxyFunctions() {
+            const results = document.getElementById('test-results');
+            const proxies = [
+                'renderChatListProxy',
+                'renderApiSettingsProxy', 
+                'renderWallpaperScreenProxy',
+                'renderWorldBookScreenProxy',
+                'renderPresetListProxy',
+                'updateListenTogetherIconProxy'
+            ];
+            
+            let passedCount = 0;
+            proxies.forEach(proxy => {
+                if (typeof window[proxy] === 'function') {
+                    results.innerHTML += '<p>✅ ' + proxy + ' 存在</p>';
+                    passedCount++;
+                } else {
+                    results.innerHTML += '<p>❌ ' + proxy + ' 不存在</p>';
+                }
+            });
+            
+            results.innerHTML += '<p><strong>代理函数测试结果: ' + passedCount + '/' + proxies.length + '</strong></p>';
+        }
+        
+        // 页面加载完成后自动运行基本测试
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                testShowScreen();
+                testProxyFunctions();
+            }, 100);
+        });
+    </script>
+</body>
+</html>

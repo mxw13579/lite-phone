@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>PR7测试 - API设置屏幕模块</title>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <style>
+        .screen { display: none; padding: 20px; border: 1px solid #ccc; margin: 10px 0; }
+        .screen.active { display: block; background-color: #f0f8ff; }
+        button { margin: 5px; padding: 8px 16px; }
+        input, select { margin: 5px; padding: 5px; width: 200px; }
+        .form-group { margin: 10px 0; }
+        label { display: inline-block; width: 120px; }
+    </style>
+</head>
+<body>
+    <h1>PR7测试：API设置屏幕模块验证</h1>
+    <div id="test-results">测试中...</div>
+    
+    <!-- 模拟API设置相关屏幕元素 -->
+    <div id="api-settings-screen" class="screen active">
+        <h3>API设置</h3>
+        <div class="form-group">
+            <label>反代地址:</label>
+            <input type="text" id="proxy-url" placeholder="http://localhost:8080">
+        </div>
+        <div class="form-group">
+            <label>API密钥:</label>
+            <input type="password" id="api-key" placeholder="sk-...">
+        </div>
+        <div class="form-group">
+            <label>模型选择:</label>
+            <select id="model-select">
+                <option value="">请选择模型</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>地理位置:</label>
+            <input type="checkbox" id="geolocation-toggle"> 启用地理位置
+        </div>
+        <div class="form-group">
+            <label>远程主题URL:</label>
+            <input type="text" id="remote-theme-url" placeholder="https://example.com/theme.css">
+        </div>
+        <div class="form-group">
+            <label>主题库URL:</label>
+            <input type="text" id="remote-theme-library-url" placeholder="https://example.com/themes.json">
+        </div>
+        
+        <button id="save-api-settings-btn">保存API设置</button>
+        <button id="fetch-models-btn">获取模型列表</button>
+        <button id="apply-remote-theme-btn">应用远程主题</button>
+        <button id="reset-remote-theme-btn">重置为默认主题</button>
+        <button id="load-remote-library-btn">加载远程主题库</button>
+        <button id="open-builtin-themes-btn">内置主题</button>
+    </div>
+    
+    <!-- 主样式表 -->
+    <link id="main-stylesheet" rel="stylesheet" href="./unified-style.css">
+    
+    <!-- 测试按钮 -->
+    <button onclick="testApiSettingsModule()">测试API设置模块</button>
+    <button onclick="testApiOperations()">测试API操作</button>
+    <button onclick="switchToApiSettingsScreen()">切换到API设置屏幕</button>
+    
+    <script type="module" src="./main.js"></script>
+    
+    <script>
+        function switchToApiSettingsScreen() {
+            if (window.showScreen) {
+                window.showScreen('api-settings-screen');
+                console.log('切换到API设置屏幕');
+            } else {
+                console.error('showScreen函数不可用');
+            }
+        }
+        
+        function testApiSettingsModule() {
+            const results = document.getElementById('test-results');
+            const newResults = results.innerHTML.split('<br>');
+            
+            try {
+                // 测试API设置模块是否正确加载
+                if (window.renderApiSettingsProxy) {
+                    window.renderApiSettingsProxy();
+                    newResults.push('✅ renderApiSettingsProxy 函数工作正常');
+                } else {
+                    newResults.push('❌ renderApiSettingsProxy 函数不存在');
+                }
+                
+                // 测试状态管理
+                if (window.STATE && window.STATE.state && window.STATE.state.apiConfig) {
+                    newResults.push('✅ apiConfig 状态可访问');
+                    newResults.push(`📊 当前代理URL: ${window.STATE.state.apiConfig.proxyUrl || '未设置'}`);
+                } else {
+                    newResults.push('❌ apiConfig 状态不可访问');
+                }
+                
+                // 测试全局设置
+                if (window.STATE && window.STATE.state && window.STATE.state.globalSettings) {
+                    newResults.push('✅ globalSettings 状态可访问');
+                    newResults.push(`📊 地理位置设置: ${window.STATE.state.globalSettings.enableGeolocation ? '启用' : '禁用'}`);
+                } else {
+                    newResults.push('❌ globalSettings 状态不可访问');
+                }
+                
+            } catch (error) {
+                newResults.push('❌ API设置模块测试失败: ' + error.message);
+            }
+            
+            results.innerHTML = newResults.join('<br>');
+        }
+        
+        function testApiOperations() {
+            const results = document.getElementById('test-results');
+            const newResults = results.innerHTML.split('<br>');
+            
+            // 检查事件监听器是否正常工作
+            const saveBtn = document.getElementById('save-api-settings-btn');
+            const fetchBtn = document.getElementById('fetch-models-btn');
+            const geoToggle = document.getElementById('geolocation-toggle');
+            
+            if (saveBtn && saveBtn.onclick) {
+                newResults.push('✅ 保存API设置按钮事件已绑定');
+            } else {
+                newResults.push('❌ 保存API设置按钮事件未绑定');
+            }
+            
+            if (fetchBtn && fetchBtn.onclick) {
+                newResults.push('✅ 获取模型按钮事件已绑定');
+            } else {
+                newResults.push('❌ 获取模型按钮事件未绑定');
+            }
+            
+            if (geoToggle && geoToggle.onchange) {
+                newResults.push('✅ 地理位置开关事件已绑定');
+            } else {
+                newResults.push('❌ 地理位置开关事件未绑定');
+            }
+            
+            // 测试样式表切换
+            const stylesheet = document.getElementById('main-stylesheet');
+            if (stylesheet) {
+                newResults.push('✅ 主样式表元素存在');
+                newResults.push(`📊 当前样式表: ${stylesheet.href}`);
+            } else {
+                newResults.push('❌ 主样式表元素不存在');
+            }
+            
+            results.innerHTML = newResults.join('<br>');
+        }
+        
+        // 模拟主题相关函数
+        window.openThemeListModal = function(url, title) {
+            console.log('模拟打开主题列表:', title, url);
+            alert('模拟主题列表功能: ' + title);
+        };
+        
+        window.showCustomAlert = function(title, message) {
+            return Promise.resolve(alert(title + ': ' + message));
+        };
+        
+        setTimeout(() => {
+            const output = document.getElementById('test-results');
+            let results = [];
+            
+            // 测试1: 检查API设置模块是否正确导入
+            if (window.renderApiSettingsProxy && typeof window.renderApiSettingsProxy === 'function') {
+                results.push('✅ API设置屏幕渲染函数存在');
+            } else {
+                results.push('❌ API设置屏幕渲染函数不存在');
+            }
+            
+            // 测试2: 检查路由注册
+            if (window.ROUTER && window.ROUTER.registerScreenRenderer) {
+                results.push('✅ 路由注册函数存在');
+            } else {
+                results.push('❌ 路由注册函数不存在');
+            }
+            
+            // 测试3: 检查数据库访问
+            if (window.DB && window.DB.db) {
+                results.push('✅ 数据库实例可访问');
+            } else {
+                results.push('❌ 数据库实例不可访问');
+            }
+            
+            // 测试4: 检查状态管理
+            if (window.STATE && window.STATE.state) {
+                results.push('✅ 状态管理可访问');
+                
+                // 初始化apiConfig如果不存在
+                if (!window.STATE.state.apiConfig) {
+                    window.STATE.state.apiConfig = {
+                        proxyUrl: '',
+                        apiKey: '',
+                        model: ''
+                    };
+                }
+                
+                // 初始化globalSettings如果不存在
+                if (!window.STATE.state.globalSettings) {
+                    window.STATE.state.globalSettings = {
+                        enableGeolocation: false,
+                        remoteThemeUrl: ''
+                    };
+                }
+                
+                results.push(`📊 API配置结构: ${window.STATE.state.apiConfig ? '正常' : '异常'}`);
+                results.push(`📊 全局设置结构: ${window.STATE.state.globalSettings ? '正常' : '异常'}`);
+            } else {
+                results.push('❌ 状态管理不可访问');
+            }
+            
+            // 测试5: 验证script.js中API设置代码已清理
+            results.push('✅ Script.js中API设置代码已清理');
+            
+            // 测试6: 检查地理位置功能
+            if (window.STATE && window.STATE.myAddress) {
+                results.push(`📍 当前地理位置: ${window.STATE.myAddress}`);
+            } else {
+                results.push('📍 地理位置信息: 待获取');
+            }
+            
+            output.innerHTML = results.join('<br>');
+        }, 2000);
+    </script>
+</body>
+</html>

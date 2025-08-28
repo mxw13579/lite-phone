@@ -2,5 +2,8 @@
 /.claude/
 /.idea/
 /docs/
-*claude
-*Claude
+*claude*
+*Claude*
+/AGENTS.md
+/web/VALIDATION_REPORT.md
+/web/REFACTOR_COMPLETION_REPORT.md

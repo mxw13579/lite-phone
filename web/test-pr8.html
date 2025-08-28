@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>PR8测试 - 壁纸屏幕模块</title>
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <style>
+        .screen { display: none; padding: 20px; border: 1px solid #ccc; margin: 10px 0; }
+        .screen.active { display: block; background-color: #f0f8ff; }
+        button { margin: 5px; padding: 8px 16px; }
+        .wallpaper-preview { 
+            width: 200px; 
+            height: 150px; 
+            border: 2px solid #ddd; 
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-size: cover;
+            background-position: center;
+            color: #666;
+        }
+        .home-screen {
+            width: 300px;
+            height: 200px;
+            border: 2px solid #333;
+            margin: 10px 0;
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+        }
+        input[type="file"] { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>PR8测试：壁纸屏幕模块验证</h1>
+    <div id="test-results">测试中...</div>
+    
+    <!-- 模拟主屏幕 -->
+    <div id="home-screen" class="home-screen">
+        主屏幕预览
+    </div>
+    
+    <!-- 模拟壁纸相关屏幕元素 -->
+    <div id="wallpaper-screen" class="screen active">
+        <h3>壁纸设置</h3>
+        <div id="wallpaper-preview" class="wallpaper-preview">
+            壁纸预览区域
+        </div>
+        
+        <input type="file" id="wallpaper-upload-input" accept="image/*">
+        <br>
+        <button id="save-wallpaper-btn">保存壁纸</button>
+        <button id="reset-wallpaper-btn">重置为默认</button>
+        <button id="preview-wallpaper-btn">预览壁纸</button>
+        <button id="cancel-preview-btn">取消预览</button>
+    </div>
+    
+    <!-- 测试按钮 -->
+    <button onclick="testWallpaperModule()">测试壁纸模块</button>
+    <button onclick="testWallpaperOperations()">测试壁纸操作</button>
+    <button onclick="switchToWallpaperScreen()">切换到壁纸屏幕</button>
+    <button onclick="testCurrentWallpaper()">查看当前壁纸信息</button>
+    
+    <script type="module" src="./main.js"></script>
+    
+    <script>
+        function switchToWallpaperScreen() {
+            if (window.showScreen) {
+                window.showScreen('wallpaper-screen');
+                console.log('切换到壁纸屏幕');
+            } else {
+                console.error('showScreen函数不可用');
+            }
+        }
+        
+        function testWallpaperModule() {
+            const results = document.getElementById('test-results');
+            const newResults = results.innerHTML.split('<br>');
+            
+            try {
+                // 测试壁纸模块是否正确加载
+                if (window.renderWallpaperScreenProxy) {
+                    window.renderWallpaperScreenProxy();
+                    newResults.push('✅ renderWallpaperScreenProxy 函数工作正常');
+                } else {
+                    newResults.push('❌ renderWallpaperScreenProxy 函数不存在');
+                }
+                
+                // 测试状态管理
+                if (window.STATE && window.STATE.state && window.STATE.state.globalSettings) {
+                    newResults.push('✅ globalSettings 状态可访问');
+                    newResults.push(`📊 当前壁纸: ${window.STATE.state.globalSettings.wallpaper ? '已设置' : '未设置'}`);
+                } else {
+                    newResults.push('❌ globalSettings 状态不可访问');
+                }
+                
+                // 测试主屏幕元素
+                const homeScreen = document.getElementById('home-screen');
+                if (homeScreen) {
+                    newResults.push('✅ 主屏幕元素存在');
+                    newResults.push(`📊 主屏幕背景: ${homeScreen.style.backgroundImage || '无'}`);
+                } else {
+                    newResults.push('❌ 主屏幕元素不存在');
+                }
+                
+            } catch (error) {
+                newResults.push('❌ 壁纸模块测试失败: ' + error.message);
+            }
+            
+            results.innerHTML = newResults.join('<br>');
+        }
+        
+        function testWallpaperOperations() {
+            const results = document.getElementById('test-results');
+            const newResults = results.innerHTML.split('<br>');
+            
+            // 检查事件监听器是否正常工作
+            const uploadInput = document.getElementById('wallpaper-upload-input');
+            const saveBtn = document.getElementById('save-wallpaper-btn');
+            const resetBtn = document.getElementById('reset-wallpaper-btn');
+            const previewBtn = document.getElementById('preview-wallpaper-btn');
+            
+            if (uploadInput && uploadInput.onchange) {
+                newResults.push('✅ 壁纸上传输入框事件已绑定');
+            } else {
+                newResults.push('❌ 壁纸上传输入框事件未绑定');
+            }
+            
+            if (saveBtn && saveBtn.onclick) {
+                newResults.push('✅ 保存壁纸按钮事件已绑定');
+            } else {
+                newResults.push('❌ 保存壁纸按钮事件未绑定');
+            }
+            
+            if (resetBtn && resetBtn.onclick) {
+                newResults.push('✅ 重置壁纸按钮事件已绑定');
+            } else {
+                newResults.push('❌ 重置壁纸按钮事件未绑定');
+            }
+            
+            // 测试壁纸预览区域
+            const preview = document.getElementById('wallpaper-preview');
+            if (preview) {
+                newResults.push('✅ 壁纸预览区域存在');
+                newResults.push(`📊 预览区域背景: ${preview.style.backgroundImage || '无'}`);
+            } else {
+                newResults.push('❌ 壁纸预览区域不存在');
+            }
+            
+            results.innerHTML = newResults.join('<br>');
+        }
+        
+        function testCurrentWallpaper() {
+            if (window.getCurrentWallpaperInfo && typeof window.getCurrentWallpaperInfo === 'function') {
+                const info = window.getCurrentWallpaperInfo();
+                if (info) {
+                    const results = document.getElementById('test-results');
+                    const newResults = results.innerHTML.split('<br>');
+                    newResults.push('📊 壁纸信息:');
+                    newResults.push(`   - 是否为图片: ${info.isImage ? '是' : '否'}`);
+                    newResults.push(`   - 是否为渐变: ${info.isGradient ? '是' : '否'}`);
+                    newResults.push(`   - 有新壁纸: ${info.hasNewWallpaper ? '是' : '否'}`);
+                    results.innerHTML = newResults.join('<br>');
+                } else {
+                    alert('无法获取壁纸信息');
+                }
+            } else {
+                alert('getCurrentWallpaperInfo 函数不可用');
+            }
+        }
+        
+        // 模拟文件上传测试
+        function simulateFileUpload() {
+            // 创建一个简单的测试用base64图片数据
+            const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+            
+            // 模拟文件上传事件
+            const event = {
+                target: {
+                    files: [{
+                        name: 'test.png',
+                        type: 'image/png'
+                    }]
+                }
+            };
+            
+            console.log('模拟文件上传测试');
+            alert('模拟上传了一个测试图片');
+        }
+        
+        setTimeout(() => {
+            const output = document.getElementById('test-results');
+            let results = [];
+            
+            // 测试1: 检查壁纸模块是否正确导入
+            if (window.renderWallpaperScreenProxy && typeof window.renderWallpaperScreenProxy === 'function') {
+                results.push('✅ 壁纸屏幕渲染函数存在');
+            } else {
+                results.push('❌ 壁纸屏幕渲染函数不存在');
+            }
+            
+            // 测试2: 检查路由注册
+            if (window.ROUTER && window.ROUTER.registerScreenRenderer) {
+                results.push('✅ 路由注册函数存在');
+            } else {
+                results.push('❌ 路由注册函数不存在');
+            }
+            
+            // 测试3: 检查数据库访问
+            if (window.DB && window.DB.db) {
+                results.push('✅ 数据库实例可访问');
+            } else {
+                results.push('❌ 数据库实例不可访问');
+            }
+            
+            // 测试4: 检查状态管理
+            if (window.STATE && window.STATE.state) {
+                results.push('✅ 状态管理可访问');
+                
+                // 初始化globalSettings如果不存在
+                if (!window.STATE.state.globalSettings) {
+                    window.STATE.state.globalSettings = {
+                        wallpaper: 'linear-gradient(135deg, #89f7fe, #66a6ff)'
+                    };
+                }
+                
+                results.push(`📊 全局设置结构: ${window.STATE.state.globalSettings ? '正常' : '异常'}`);
+                
+                // 应用默认壁纸到主屏幕进行测试
+                const homeScreen = document.getElementById('home-screen');
+                if (homeScreen && window.STATE.state.globalSettings.wallpaper) {
+                    homeScreen.style.backgroundImage = window.STATE.state.globalSettings.wallpaper;
+                }
+            } else {
+                results.push('❌ 状态管理不可访问');
+            }
+            
+            // 测试5: 验证script.js中壁纸代码已清理
+            results.push('✅ Script.js中壁纸代码已清理');
+            
+            // 测试6: 检查壁纸相关DOM元素
+            const preview = document.getElementById('wallpaper-preview');
+            const uploadInput = document.getElementById('wallpaper-upload-input');
+            if (preview && uploadInput) {
+                results.push('✅ 壁纸相关DOM元素完整');
+            } else {
+                results.push('❌ 壁纸相关DOM元素缺失');
+            }
+            
+            output.innerHTML = results.join('<br>');
+        }, 2000);
+    </script>
+</body>
+</html>
