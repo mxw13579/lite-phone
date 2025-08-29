@@ -104,7 +104,12 @@ export async function initializeApp() {
     }
 
     // 数据加载
-    await window.DB?.loadAllDataFromDB();
+    const allData = await window.DB?.loadAllDataFromDB();
+    if (allData) {
+        // 将加载的数据应用到状态中
+        Object.assign(state, allData);
+        console.log('应用数据已加载到状态中');
+    }
     
     // 应用主题
     if (state.globalSettings.remoteThemeUrl) {

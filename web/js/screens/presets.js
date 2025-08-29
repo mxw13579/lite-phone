@@ -5,7 +5,7 @@
 let editingPresetId = null;
 
 // 渲染预设列表屏幕
-export function renderPresetListScreen() {
+export async function renderPresetListScreen() {
     const listEl = document.getElementById('preset-list');
     const state = window.STATE?.state;
     
@@ -17,8 +17,13 @@ export function renderPresetListScreen() {
     listEl.innerHTML = '';
     
     if (state.presets.length === 0) {
-        listEl.innerHTML = '<p style="text-align:center; color: #8a8a8a; margin-top: 50px;">点击右上角 "+" 创建你的第一个预设</p>';
-        return;
+        // 如果没有预设，先尝试初始化默认预设
+        await initPresetsData();
+        // 初始化后重新检查
+        if (state.presets.length === 0) {
+            listEl.innerHTML = '<p style="text-align:center; color: #8a8a8a; margin-top: 50px;">点击右上角 "+" 创建你的第一个预设</p>';
+            return;
+        }
     }
     
     state.presets.forEach(preset => {
@@ -39,6 +44,7 @@ export function renderPresetListScreen() {
             <div class="preset-actions">
                 <button class="action-btn-small edit-preset-btn" data-preset-id="${preset.id}">编辑</button>
                 <button class="action-btn-small set-active-preset-btn" data-preset-id="${preset.id}" ${isActive ? 'disabled' : ''}>设为当前</button>
+                ${state.presets.length > 1 ? `<button class="action-btn-small delete-preset-list-btn" data-preset-id="${preset.id}" style="color: #d9534f;">删除</button>` : ''}
             </div>
         `;
         listEl.appendChild(item);
@@ -135,7 +141,7 @@ export async function savePreset() {
         }
         
         editingPresetId = null;
-        renderPresetListScreen();
+        await renderPresetListScreen();
         
         if (window.showScreen) {
             window.showScreen('preset-list-screen');
@@ -173,15 +179,26 @@ export async function deletePreset() {
     
     try {
         await db.presets.delete(editingPresetId);
+        
+        // 如果删除的是当前激活的预设，先选择一个新的激活预设
+        const needNewActivePreset = state.globalSettings.activePresetId === editingPresetId;
+        let newActivePresetId = null;
+        
+        if (needNewActivePreset) {
+            // 找到第一个不是要删除的预设
+            newActivePresetId = state.presets.find(p => p.id !== editingPresetId)?.id;
+        }
+        
+        // 从状态中移除预设
         state.presets = state.presets.filter(p => p.id !== editingPresetId);
         
-        // 如果删除的是当前激活的预设，则自动激活列表中的第一个
-        if (state.globalSettings.activePresetId === editingPresetId) {
-            await setActivePreset(state.presets[0].id);
+        // 如果需要，设置新的激活预设
+        if (needNewActivePreset && newActivePresetId) {
+            await setActivePreset(newActivePresetId);
         }
 
         editingPresetId = null;
-        renderPresetListScreen();
+        await renderPresetListScreen();
         
         if (window.showScreen) {
             window.showScreen('preset-list-screen');
@@ -190,7 +207,78 @@ export async function deletePreset() {
         console.log('预设删除成功：', preset.name);
     } catch (error) {
         console.error('删除预设失败：', error);
-        alert('删除失败，请重试');
+        if (window.showCustomAlert) {
+            window.showCustomAlert('删除失败', '删除预设时发生错误，请重试。');
+        } else {
+            alert('删除失败，请重试');
+        }
+    }
+}
+
+// 从列表页面删除预设（不需要editingPresetId）
+async function deletePresetFromList(presetId) {
+    const state = window.STATE?.state;
+    const db = window.DB?.db;
+    
+    if (!state || !db || !presetId) {
+        console.error('删除预设失败：缺少必要参数');
+        return;
+    }
+    
+    if (state.presets.length <= 1) {
+        if (window.showCustomAlert) {
+            window.showCustomAlert('无法删除', '至少需要保留一个预设！');
+        } else {
+            alert('不能删除唯一的预设！');
+        }
+        return;
+    }
+    
+    const preset = state.presets.find(p => p.id === presetId);
+    if (!preset) {
+        console.error('删除预设失败：预设不存在');
+        return;
+    }
+    
+    const confirmed = await showCustomConfirm('删除预设', `确定要删除预设 "${preset.name}" 吗？此操作不可撤销。`, { confirmButtonClass: 'btn-danger' });
+    if (!confirmed) return;
+    
+    try {
+        await db.presets.delete(presetId);
+        
+        // 如果删除的是当前激活的预设，先选择一个新的激活预设
+        const needNewActivePreset = state.globalSettings.activePresetId === presetId;
+        let newActivePresetId = null;
+        
+        if (needNewActivePreset) {
+            // 找到第一个不是要删除的预设
+            newActivePresetId = state.presets.find(p => p.id !== presetId)?.id;
+        }
+        
+        // 从状态中移除预设
+        state.presets = state.presets.filter(p => p.id !== presetId);
+        
+        // 如果需要，设置新的激活预设
+        if (needNewActivePreset && newActivePresetId) {
+            await setActivePreset(newActivePresetId);
+        }
+
+        // 重新渲染列表
+        await renderPresetListScreen();
+        
+        console.log('预设删除成功：', preset.name);
+        
+        // 显示成功消息
+        if (window.showCustomAlert) {
+            window.showCustomAlert('删除成功', `预设 "${preset.name}" 已删除`);
+        }
+    } catch (error) {
+        console.error('删除预设失败：', error);
+        if (window.showCustomAlert) {
+            window.showCustomAlert('删除失败', '删除预设时发生错误，请重试。');
+        } else {
+            alert('删除失败，请重试');
+        }
     }
 }
 
@@ -207,7 +295,7 @@ export async function setActivePreset(presetId) {
     try {
         state.globalSettings.activePresetId = presetId;
         await db.globalSettings.put(state.globalSettings);
-        renderPresetListScreen();
+        await renderPresetListScreen();
         
         console.log('激活预设成功：', presetId);
     } catch (error) {
@@ -387,14 +475,17 @@ export function initPresetsListeners() {
     // 预设列表委托事件处理
     const presetList = document.getElementById('preset-list');
     if (presetList) {
-        presetList.addEventListener('click', (e) => {
+        presetList.addEventListener('click', async (e) => {
             const editBtn = e.target.closest('.edit-preset-btn');
             const setActiveBtn = e.target.closest('.set-active-preset-btn');
+            const deleteBtn = e.target.closest('.delete-preset-list-btn');
             
             if (editBtn) {
                 openPresetEditor(editBtn.dataset.presetId);
             } else if (setActiveBtn && !setActiveBtn.disabled) {
                 setActivePreset(setActiveBtn.dataset.presetId);
+            } else if (deleteBtn) {
+                await deletePresetFromList(deleteBtn.dataset.presetId);
             }
         });
     }

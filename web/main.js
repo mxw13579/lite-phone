@@ -232,7 +232,9 @@ window.showScreen = showScreen;
         window.renderWorldBookScreenProxy = renderWorldBookScreen;
         window.renderApiSettingsProxy = renderApiSettingsScreen;
         window.renderWallpaperScreenProxy = renderWallpaperScreen;
-        window.renderPresetListProxy = renderPresetListScreen;
+        window.renderPresetListProxy = () => {
+            renderPresetListScreen().catch(console.error);
+        };
         window.renderChatListProxy = renderChatList;
         
         // 暴露聊天相关函数到全局作用域
