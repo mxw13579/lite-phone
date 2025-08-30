@@ -4,7 +4,7 @@
 // 导入类型定义
 import type { WorldBook, Preset, ApiConfig, GlobalSettings } from '../state';
 
-// 聊天模块导入
+// 聊天模块导入 - 使用拆分后的模块
 import { chatScreenModule, ChatScreenModule } from './chat';
 import { aiResponseModule } from './aiResponse';
 
