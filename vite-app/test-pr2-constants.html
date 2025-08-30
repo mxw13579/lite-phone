@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PR2 测试 - 常量模块</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Taurus, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .test-result {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        
+        .success {
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .error {
+            border-left: 4px solid #f44336;
+        }
+        
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .status {
+            text-align: center;
+            font-size: 24px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 PR2 测试: 常量模块迁移验证</h1>
+    
+    <div class="status" id="status">
+        ⏳ 正在加载常量模块...
+    </div>
+
+    <div class="test-section">
+        <h2>📊 基础验证</h2>
+        <div id="basic-tests"></div>
+        <button onclick="runBasicTests()">运行基础测试</button>
+    </div>
+
+    <div class="test-section">
+        <h2>🔗 window.CONSTANTS 注入验证</h2>
+        <div id="window-tests"></div>
+        <button onclick="runWindowTests()">测试window注入</button>
+    </div>
+
+    <div class="test-section">
+        <h2>📝 AI提示词验证</h2>
+        <div id="prompt-tests"></div>
+        <button onclick="runPromptTests()">测试AI提示词</button>
+    </div>
+
+    <div class="test-section">
+        <h2>🖼️ 默认头像验证</h2>
+        <div id="avatar-tests"></div>
+        <button onclick="runAvatarTests()">测试默认头像</button>
+    </div>
+
+    <div class="test-section">
+        <h2>🎯 TypeScript类型验证</h2>
+        <div id="type-tests"></div>
+        <button onclick="runTypeTests()">测试类型定义</button>
+    </div>
+
+    <script type="module">
+        let CONSTANTS_MODULE;
+        
+        // 动态导入常量模块
+        try {
+            const module = await import('./src/constants/index.ts');
+            CONSTANTS_MODULE = module.CONSTANTS;
+            
+            document.getElementById('status').innerHTML = '✅ 常量模块加载成功!';
+            console.log('Constants module loaded:', CONSTANTS_MODULE);
+            
+            // 自动运行所有测试
+            setTimeout(() => {
+                runBasicTests();
+                runWindowTests();
+                runPromptTests();
+                runAvatarTests();
+                runTypeTests();
+            }, 1000);
+            
+        } catch (error) {
+            document.getElementById('status').innerHTML = '❌ 常量模块加载失败!';
+            console.error('Failed to load constants:', error);
+        }
+
+        // 测试工具函数
+        function createTestResult(name, success, details) {
+            return `<div class="test-result ${success ? 'success' : 'error'}">
+                <strong>${success ? '✅' : '❌'} ${name}</strong>
+                ${details ? `\n${details}` : ''}
+            </div>`;
+        }
+
+        // 基础验证测试
+        window.runBasicTests = function() {
+            let html = '';
+            
+            try {
+                // 测试模块存在性
+                const exists = !!CONSTANTS_MODULE;
+                html += createTestResult('模块导入', exists, exists ? '常量模块成功导入' : '常量模块导入失败');
+                
+                // 测试必要常量存在性
+                const requiredKeys = [
+                    'DEFAULT_PROMPT_IMAGE',
+                    'DEFAULT_PROMPT_VOICE', 
+                    'DEFAULT_PROMPT_TRANSFER',
+                    'DEFAULT_PROMPT_SINGLE',
+                    'DEFAULT_PROMPT_GROUP',
+                    'DEFAULT_AVATAR',
+                    'STICKER_REGEX',
+                    'MESSAGE_RENDER_WINDOW'
+                ];
+                
+                let missingKeys = [];
+                requiredKeys.forEach(key => {
+                    if (!(key in CONSTANTS_MODULE)) {
+                        missingKeys.push(key);
+                    }
+                });
+                
+                const allKeysExist = missingKeys.length === 0;
+                html += createTestResult(
+                    '必要常量检查', 
+                    allKeysExist, 
+                    allKeysExist ? '所有必要常量都存在' : `缺失常量: ${missingKeys.join(', ')}`
+                );
+                
+                // 测试常量类型
+                const typeChecks = [
+                    { key: 'MESSAGE_RENDER_WINDOW', expectedType: 'number' },
+                    { key: 'DEFAULT_AVATAR', expectedType: 'string' },
+                    { key: 'STICKER_REGEX', expectedType: 'object' } // RegExp is object type
+                ];
+                
+                let typeErrors = [];
+                typeChecks.forEach(({ key, expectedType }) => {
+                    const actualType = typeof CONSTANTS_MODULE[key];
+                    if (actualType !== expectedType) {
+                        typeErrors.push(`${key}: expected ${expectedType}, got ${actualType}`);
+                    }
+                });
+                
+                const typesCorrect = typeErrors.length === 0;
+                html += createTestResult(
+                    '类型检查',
+                    typesCorrect,
+                    typesCorrect ? '所有常量类型正确' : typeErrors.join('\n')
+                );
+                
+            } catch (error) {
+                html += createTestResult('基础测试异常', false, error.message);
+            }
+            
+            document.getElementById('basic-tests').innerHTML = html;
+        };
+
+        // window注入验证测试
+        window.runWindowTests = function() {
+            let html = '';
+            
+            try {
+                // 测试window.CONSTANTS存在
+                const windowExists = !!(window.CONSTANTS);
+                html += createTestResult(
+                    'window.CONSTANTS存在性', 
+                    windowExists, 
+                    windowExists ? 'window.CONSTANTS已成功注入' : 'window.CONSTANTS注入失败'
+                );
+                
+                // 测试内容一致性
+                if (windowExists && CONSTANTS_MODULE) {
+                    const keys1 = Object.keys(window.CONSTANTS).sort();
+                    const keys2 = Object.keys(CONSTANTS_MODULE).sort();
+                    const keysMatch = JSON.stringify(keys1) === JSON.stringify(keys2);
+                    
+                    html += createTestResult(
+                        '注入内容一致性',
+                        keysMatch,
+                        keysMatch ? 
+                            'window.CONSTANTS与模块导出内容一致' : 
+                            `键不匹配:\nwindow: ${keys1.join(', ')}\nmodule: ${keys2.join(', ')}`
+                    );
+                    
+                    // 测试具体值一致性
+                    let valueErrors = [];
+                    keys1.forEach(key => {
+                        if (window.CONSTANTS[key] !== CONSTANTS_MODULE[key]) {
+                            valueErrors.push(`${key}: 值不一致`);
+                        }
+                    });
+                    
+                    const valuesMatch = valueErrors.length === 0;
+                    html += createTestResult(
+                        '值一致性检查',
+                        valuesMatch,
+                        valuesMatch ? '所有值完全一致' : valueErrors.join('\n')
+                    );
+                }
+                
+            } catch (error) {
+                html += createTestResult('window测试异常', false, error.message);
+            }
+            
+            document.getElementById('window-tests').innerHTML = html;
+        };
+
+        // AI提示词验证测试
+        window.runPromptTests = function() {
+            let html = '';
+            
+            try {
+                const prompts = [
+                    'DEFAULT_PROMPT_IMAGE',
+                    'DEFAULT_PROMPT_VOICE', 
+                    'DEFAULT_PROMPT_TRANSFER',
+                    'DEFAULT_PROMPT_SINGLE',
+                    'DEFAULT_PROMPT_GROUP'
+                ];
+                
+                prompts.forEach(promptKey => {
+                    const prompt = CONSTANTS_MODULE[promptKey];
+                    const isValid = typeof prompt === 'string' && prompt.length > 100;
+                    
+                    html += createTestResult(
+                        promptKey,
+                        isValid,
+                        isValid ? 
+                            `长度: ${prompt.length}字符，前50字符: "${prompt.substring(0, 50)}..."` :
+                            '提示词过短或类型错误'
+                    );
+                });
+                
+                // 测试模板变量存在性
+                const singlePrompt = CONSTANTS_MODULE.DEFAULT_PROMPT_SINGLE;
+                const hasTemplateVars = singlePrompt.includes('{chat.name}') && 
+                                      singlePrompt.includes('{currentTime}') && 
+                                      singlePrompt.includes('{myAddress}');
+                
+                html += createTestResult(
+                    '模板变量检查',
+                    hasTemplateVars,
+                    hasTemplateVars ? '单聊提示词包含必要的模板变量' : '缺少必要的模板变量'
+                );
+                
+            } catch (error) {
+                html += createTestResult('提示词测试异常', false, error.message);
+            }
+            
+            document.getElementById('prompt-tests').innerHTML = html;
+        };
+
+        // 默认头像验证测试
+        window.runAvatarTests = function() {
+            let html = '';
+            
+            try {
+                const avatars = [
+                    'DEFAULT_AVATAR',
+                    'DEFAULT_MY_GROUP_AVATAR',
+                    'DEFAULT_GROUP_MEMBER_AVATAR',
+                    'DEFAULT_GROUP_AVATAR'
+                ];
+                
+                avatars.forEach(avatarKey => {
+                    const avatar = CONSTANTS_MODULE[avatarKey];
+                    const isValidUrl = typeof avatar === 'string' && 
+                                     (avatar.startsWith('https://') || avatar.startsWith('http://'));
+                    
+                    html += createTestResult(
+                        avatarKey,
+                        isValidUrl,
+                        isValidUrl ? `URL: ${avatar}` : '不是有效的URL'
+                    );
+                });
+                
+            } catch (error) {
+                html += createTestResult('头像测试异常', false, error.message);
+            }
+            
+            document.getElementById('avatar-tests').innerHTML = html;
+        };
+
+        // TypeScript类型验证测试
+        window.runTypeTests = function() {
+            let html = '';
+            
+            try {
+                // 测试正则表达式
+                const regex = CONSTANTS_MODULE.STICKER_REGEX;
+                const isRegExp = regex instanceof RegExp;
+                
+                html += createTestResult(
+                    'STICKER_REGEX类型',
+                    isRegExp,
+                    isRegExp ? `正则表达式: ${regex.toString()}` : '不是RegExp对象'
+                );
+                
+                if (isRegExp) {
+                    // 测试正则表达式功能
+                    const testUrls = [
+                        'https://i.postimg.cc/test/image.jpg',
+                        'data:image/png;base64,iVBORw0KGgoAAAANSU',
+                        'https://example.com/image.jpg'
+                    ];
+                    
+                    const results = testUrls.map(url => ({
+                        url,
+                        matches: regex.test(url)
+                    }));
+                    
+                    const expectedMatches = [true, true, false];
+                    const actualMatches = results.map(r => r.matches);
+                    const regexWorks = JSON.stringify(expectedMatches) === JSON.stringify(actualMatches);
+                    
+                    html += createTestResult(
+                        '正则表达式功能',
+                        regexWorks,
+                        `测试结果: ${results.map(r => `${r.url.substring(0, 30)}... -> ${r.matches}`).join('\n')}`
+                    );
+                }
+                
+                // 测试MESSAGE_RENDER_WINDOW
+                const renderWindow = CONSTANTS_MODULE.MESSAGE_RENDER_WINDOW;
+                const isValidNumber = typeof renderWindow === 'number' && renderWindow > 0;
+                
+                html += createTestResult(
+                    'MESSAGE_RENDER_WINDOW',
+                    isValidNumber,
+                    isValidNumber ? `值: ${renderWindow}` : '不是有效的正数'
+                );
+                
+            } catch (error) {
+                html += createTestResult('类型测试异常', false, error.message);
+            }
+            
+            document.getElementById('type-tests').innerHTML = html;
+        };
+        
+        // 全局错误处理
+        window.onerror = function(msg, url, line, col, error) {
+            console.error('Global error:', { msg, url, line, col, error });
+            document.getElementById('status').innerHTML = '❌ 测试过程中发生错误!';
+        };
+    </script>
+</body>
+</html>

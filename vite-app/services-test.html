@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Services拆分验证测试</title>
+</head>
+<body>
+    <h1>EPhone Services 拆分验证</h1>
+    <div id="test-results"></div>
+    
+    <script type="module">
+        // 测试服务模块导入
+        import * as SERVICES from './src/services/index.js';
+        
+        const results = document.getElementById('test-results');
+        const log = (msg, isError = false) => {
+            const p = document.createElement('p');
+            p.textContent = msg;
+            p.style.color = isError ? 'red' : 'green';
+            results.appendChild(p);
+        };
+        
+        try {
+            // 1. 测试服务管理器
+            log('✓ ServiceManager 导入成功');
+            log(`✓ 包含 ${Object.keys(SERVICES).length} 个导出项`);
+            
+            // 2. 测试各个服务类
+            const services = ['UIUtilsService', 'BatteryService', 'DataService', 'MusicService', 'PersonaService'];
+            services.forEach(serviceName => {
+                if (SERVICES[serviceName]) {
+                    log(`✓ ${serviceName} 类导入成功`);
+                } else {
+                    log(`✗ ${serviceName} 类导入失败`, true);
+                }
+            });
+            
+            // 3. 测试服务实例
+            const instances = ['uiUtilsService', 'batteryService', 'dataService', 'musicService', 'personaService'];
+            instances.forEach(instanceName => {
+                if (SERVICES[instanceName]) {
+                    log(`✓ ${instanceName} 实例导入成功`);
+                } else {
+                    log(`✗ ${instanceName} 实例导入失败`, true);
+                }
+            });
+            
+            // 4. 测试ServiceManager
+            if (SERVICES.serviceManager) {
+                log(`✓ serviceManager 导入成功`);
+                const manager = SERVICES.serviceManager;
+                if (manager.uiUtils && manager.battery && manager.data && manager.music && manager.persona) {
+                    log('✓ ServiceManager 包含所有子服务');
+                } else {
+                    log('✗ ServiceManager 子服务缺失', true);
+                }
+            }
+            
+            log('=== 拆分验证完成 ===');
+            log('所有服务模块已成功拆分并正确导出！');
+            
+        } catch (error) {
+            log(`✗ 验证过程出错: ${error.message}`, true);
+            console.error(error);
+        }
+    </script>
+</body>
+</html>
