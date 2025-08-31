@@ -72,10 +72,20 @@ export class PersonaService {
     const grid = document.getElementById('persona-library-grid');
     if (!grid) return;
 
-    grid.innerHTML = '';
+    // 安全：清空grid内容
+    while (grid.firstChild) {
+      grid.removeChild(grid.firstChild);
+    }
 
     if (state.state.personaPresets.length === 0) {
-      grid.innerHTML = '<p style="color: var(--text-secondary); grid-column: 1 / -1; text-align: center; margin-top: 20px;">空空如也~ 点击右上角"添加"来创建你的第一个人设预设吧！</p>';
+      // 安全：使用DOM构建代替innerHTML
+      const emptyP = document.createElement('p');
+      emptyP.style.color = 'var(--text-secondary)';
+      emptyP.style.gridColumn = '1 / -1';
+      emptyP.style.textAlign = 'center';
+      emptyP.style.marginTop = '20px';
+      emptyP.textContent = '空空如也~ 点击右上角"添加"来创建你的第一个人设预设吧！';
+      grid.appendChild(emptyP);
       return;
     }
 
@@ -307,27 +317,42 @@ export class PersonaService {
     const win = window as any;
     const defaultGroupMemberAvatar = win.CONSTANTS?.DEFAULT_GROUP_MEMBER_AVATAR || 'https://i.postimg.cc/VkQfgzGJ/1.jpg';
     
-    container.innerHTML = '';
+    // 安全：清空容器内容
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
     
     members.forEach(member => {
       const item = document.createElement('div');
       item.className = 'member-editor';
       item.dataset.memberId = member.id;
 
-      item.innerHTML = `
-        <div class="member-avatar-container">
-            <img src="${member.avatar || defaultGroupMemberAvatar}" alt="${member.name}">
-            <div class="delete-member-btn" title="删除该成员">&times;</div>
-        </div>
-        <span class="member-name">${member.name}</span>
-      `;
+      // 安全：使用DOM构建代替innerHTML
+      const memberAvatarContainer = document.createElement('div');
+      memberAvatarContainer.className = 'member-avatar-container';
+      
+      const avatarImg = document.createElement('img');
+      avatarImg.src = member.avatar || defaultGroupMemberAvatar;
+      avatarImg.alt = member.name;
+      memberAvatarContainer.appendChild(avatarImg);
+      
+      const deleteBtn = document.createElement('div');
+      deleteBtn.className = 'delete-member-btn';
+      deleteBtn.title = '删除该成员';
+      deleteBtn.innerHTML = '&times;'; // 这个HTML实体是安全的
+      memberAvatarContainer.appendChild(deleteBtn);
+      
+      const memberNameSpan = document.createElement('span');
+      memberNameSpan.className = 'member-name';
+      memberNameSpan.textContent = member.name;
+      
+      item.appendChild(memberAvatarContainer);
+      item.appendChild(memberNameSpan);
 
       // 头像点击编辑
-      const avatarImg = item.querySelector('img') as HTMLImageElement;
       avatarImg.addEventListener('click', () => this.openMemberEditor(member.id));
 
       // 删除按钮
-      const deleteBtn = item.querySelector('.delete-member-btn') as HTMLElement;
       deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const confirmed = await this.showCustomConfirm(

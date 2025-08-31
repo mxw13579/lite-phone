@@ -300,10 +300,19 @@ export class MusicService {
     const playlistBody = document.getElementById('playlist-body');
     if (!playlistBody) return;
 
-    playlistBody.innerHTML = '';
+    // 安全：清空播放列表
+    while (playlistBody.firstChild) {
+      playlistBody.removeChild(playlistBody.firstChild);
+    }
 
     if (musicState.playlist.length === 0) {
-      playlistBody.innerHTML = '<p style="text-align:center; padding: 20px; color: #888;">播放列表是空的~</p>';
+      // 安全：使用DOM构建代替innerHTML
+      const emptyP = document.createElement('p');
+      emptyP.style.textAlign = 'center';
+      emptyP.style.padding = '20px';
+      emptyP.style.color = '#888';
+      emptyP.textContent = '播放列表是空的~';
+      playlistBody.appendChild(emptyP);
       return;
     }
 
@@ -312,16 +321,30 @@ export class MusicService {
       item.className = 'playlist-item';
       if (index === musicState.currentIndex) item.classList.add('playing');
       
-      item.innerHTML = `
-        <div class="playlist-item-info">
-            <div class="title">${track.name}</div>
-            <div class="artist">${track.artist}</div>
-        </div>
-        <span class="delete-track-btn" data-index="${index}">&times;</span>
-      `;
+      // 安全：使用DOM构建代替innerHTML
+      const playlistItemInfo = document.createElement('div');
+      playlistItemInfo.className = 'playlist-item-info';
+      
+      const titleDiv = document.createElement('div');
+      titleDiv.className = 'title';
+      titleDiv.textContent = track.name;
+      playlistItemInfo.appendChild(titleDiv);
+      
+      const artistDiv = document.createElement('div');
+      artistDiv.className = 'artist';
+      artistDiv.textContent = track.artist;
+      playlistItemInfo.appendChild(artistDiv);
+      
+      const deleteBtn = document.createElement('span');
+      deleteBtn.className = 'delete-track-btn';
+      deleteBtn.dataset.index = index.toString();
+      deleteBtn.innerHTML = '&times;'; // HTML实体是安全的
+      
+      item.appendChild(playlistItemInfo);
+      item.appendChild(deleteBtn);
 
-      item.querySelector('.playlist-item-info')!.addEventListener('click', () => this.playSong(index));
-      item.querySelector('.delete-track-btn')!.addEventListener('click', async (e) => {
+      playlistItemInfo.addEventListener('click', () => this.playSong(index));
+      deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const confirmed = await this.showCustomConfirm('删除歌曲', `确定要从播放列表中删除《${track.name}》吗？`);
         if (confirmed) this.deleteTrack(index);

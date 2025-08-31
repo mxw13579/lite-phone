@@ -65,7 +65,11 @@ export class UIUtilsService {
       }
       
       modalTitle.textContent = title;
-      modalBody.innerHTML = `<p>${message}</p>`;
+      // 安全：使用DOM构建代替innerHTML
+      modalBody.textContent = ''; // 清空
+      const messageP = document.createElement('p');
+      messageP.textContent = message;
+      modalBody.appendChild(messageP);
       modalCancelBtn.style.display = 'block';
       modalConfirmBtn.textContent = options.confirmText || '确定';
       
@@ -103,7 +107,13 @@ export class UIUtilsService {
       }
       
       modalTitle.textContent = title;
-      modalBody.innerHTML = `<p style="text-align: left; white-space: pre-wrap;">${message}</p>`;
+      // 安全：使用DOM构建代替innerHTML
+      modalBody.textContent = ''; // 清空
+      const messageP = document.createElement('p');
+      messageP.style.textAlign = 'left';
+      messageP.style.whiteSpace = 'pre-wrap';
+      messageP.textContent = message;
+      modalBody.appendChild(messageP);
       modalCancelBtn.style.display = 'none';
       modalConfirmBtn.textContent = '好的';
       
@@ -134,9 +144,15 @@ export class UIUtilsService {
       }
       
       modalTitle.textContent = title;
-      modalBody.innerHTML = `<input type="${type}" id="custom-prompt-input" placeholder="${placeholder}" value="${initialValue}">`;
+      // 安全：使用DOM构建代替innerHTML
+      modalBody.textContent = ''; // 清空
+      const input = document.createElement('input');
+      input.type = type;
+      input.id = 'custom-prompt-input';
+      input.placeholder = placeholder;
+      input.value = initialValue;
+      modalBody.appendChild(input);
       
-      const input = document.getElementById('custom-prompt-input') as HTMLInputElement;
       modalConfirmBtn.textContent = '确定';
       
       modalConfirmBtn.onclick = () => {
@@ -232,7 +248,10 @@ export class UIUtilsService {
       themeListModal.classList.remove('visible');
     }
     if (themeListContainer) {
-      themeListContainer.innerHTML = ''; // 关闭时清空内容
+      // 安全：清空内容
+      while (themeListContainer.firstChild) {
+        themeListContainer.removeChild(themeListContainer.firstChild);
+      }
     }
   }
 
@@ -248,7 +267,11 @@ export class UIUtilsService {
     }
     
     themeListModal.classList.add('visible');
-    themeListContainer.innerHTML = '<p>正在加载主题列表...</p>';
+    // 安全：使用DOM构建代替innerHTML
+    themeListContainer.textContent = '';
+    const loadingP = document.createElement('p');
+    loadingP.textContent = '正在加载主题列表...';
+    themeListContainer.appendChild(loadingP);
     
     try {
       const response = await fetch(jsonUrl);
@@ -258,31 +281,67 @@ export class UIUtilsService {
       
       const themes = await response.json();
       if (!Array.isArray(themes) || themes.length === 0) {
-        themeListContainer.innerHTML = '<p>未找到有效的主题或列表为空。</p>';
+        // 安全：使用DOM构建代替innerHTML
+        themeListContainer.textContent = '';
+        const emptyP = document.createElement('p');
+        emptyP.textContent = '未找到有效的主题或列表为空。';
+        themeListContainer.appendChild(emptyP);
         return;
       }
       
-      themeListContainer.innerHTML = ''; // 清空加载提示
+      // 安全：清空加载提示
+      while (themeListContainer.firstChild) {
+        themeListContainer.removeChild(themeListContainer.firstChild);
+      }
       themes.forEach((theme: any, index: number) => {
         const themeId = `theme-option-${index}`;
         const themeItem = document.createElement('div');
         themeItem.className = 'theme-item';
-        themeItem.innerHTML = `
-          <div class="theme-item-header">
-              <input type="radio" id="${themeId}" name="theme-selection" value="${theme.css_url}">
-              <label for="${themeId}">${theme.description || '无标题'}</label>
-          </div>
-          <div class="theme-item-details">
-              <span>作者: ${theme.author || '未知'}</span>
-              <span>版本: ${theme.version || '未知'}</span>
-          </div>
-          <p class="theme-item-remark">${theme.remark || '无备注'}</p>
-        `;
+        
+        // 安全：使用DOM构建代替innerHTML
+        const themeItemHeader = document.createElement('div');
+        themeItemHeader.className = 'theme-item-header';
+        
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.id = themeId;
+        radio.name = 'theme-selection';
+        radio.value = theme.css_url || '';
+        themeItemHeader.appendChild(radio);
+        
+        const label = document.createElement('label');
+        label.htmlFor = themeId;
+        label.textContent = theme.description || '无标题';
+        themeItemHeader.appendChild(label);
+        
+        const themeItemDetails = document.createElement('div');
+        themeItemDetails.className = 'theme-item-details';
+        
+        const authorSpan = document.createElement('span');
+        authorSpan.textContent = `作者: ${theme.author || '未知'}`;
+        themeItemDetails.appendChild(authorSpan);
+        
+        const versionSpan = document.createElement('span');
+        versionSpan.textContent = `版本: ${theme.version || '未知'}`;
+        themeItemDetails.appendChild(versionSpan);
+        
+        const remarkP = document.createElement('p');
+        remarkP.className = 'theme-item-remark';
+        remarkP.textContent = theme.remark || '无备注';
+        
+        themeItem.appendChild(themeItemHeader);
+        themeItem.appendChild(themeItemDetails);
+        themeItem.appendChild(remarkP);
         themeListContainer.appendChild(themeItem);
       });
     } catch (error: any) {
       console.error("加载主题列表失败:", error);
-      themeListContainer.innerHTML = `<p style="color: red;">加载失败: ${error.message}</p>`;
+      // 安全：使用DOM构建代替innerHTML
+      themeListContainer.textContent = '';
+      const errorP = document.createElement('p');
+      errorP.style.color = 'red';
+      errorP.textContent = `加载失败: ${error.message}`;
+      themeListContainer.appendChild(errorP);
     }
   }
 

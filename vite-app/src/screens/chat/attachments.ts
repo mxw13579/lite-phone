@@ -124,13 +124,11 @@ export class AttachmentHandlerModule {
     if (!chat) return;
     
     const msg: Message = {
+      id: Date.now().toString(),
+      sender: 'user',
       role: 'user',
-      content: [{
-        type: 'image_url',
-        image_url: {
-          url: imageDataUrl
-        }
-      }],
+      content: imageDataUrl,
+      type: 'image',
       timestamp: Date.now()
     };
     

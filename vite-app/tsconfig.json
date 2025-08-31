@@ -9,6 +9,8 @@
     "strictFunctionTypes": false,
     "strictNullChecks": false,
     "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "noResolve": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",

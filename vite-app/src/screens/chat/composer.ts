@@ -54,6 +54,8 @@ export class MessageComposerModule {
     if (!chat) return;
     
     const msg: Message = {
+      id: Date.now().toString(),
+      sender: 'user',
       role: 'user',
       content,
       timestamp: Date.now()
@@ -111,6 +113,8 @@ export class MessageComposerModule {
     const patMessageContent = `${patterName}拍了拍${patteeName}${patteeSuffix || ''}`;
 
     const patMessage: Message = {
+      id: Date.now().toString(),
+      sender: 'user',
       type: 'pat',
       content: patMessageContent,
       timestamp: Date.now(),
@@ -173,10 +177,18 @@ export class MessageComposerModule {
     const grid = document.getElementById('sticker-grid');
     if (!grid) return;
     
-    grid.innerHTML = '';
+    // 安全：清空表情包网格内容
+    while (grid.firstChild) {
+      grid.removeChild(grid.firstChild);
+    }
     
     if (state.state.userStickers.length === 0) {
-      grid.innerHTML = '<p style="text-align:center; color: var(--text-secondary); grid-column: 1 / -1;">大人请点击右上角"添加"或"上传"来添加你的第一个表情吧！</p>';
+      const emptyMsg = document.createElement('p');
+      emptyMsg.style.textAlign = 'center';
+      emptyMsg.style.color = 'var(--text-secondary)';
+      emptyMsg.style.gridColumn = '1 / -1';
+      emptyMsg.textContent = '大人请点击右上角"添加"或"上传"来添加你的第一个表情吧！';
+      grid.appendChild(emptyMsg);
       return;
     }
     
@@ -205,6 +217,8 @@ export class MessageComposerModule {
     
     const chat = state.state.chats[state.state.activeChatId];
     const msg: Message = {
+      id: Date.now().toString(),
+      sender: 'user',
       role: 'user', 
       content: sticker.url, 
       meaning: sticker.name, 
@@ -309,7 +323,7 @@ export class MessageComposerModule {
       if (chat) {
         document.querySelectorAll('.message-bubble .content.editable').forEach(contentEl => {
           const timestamp = parseInt((contentEl.closest('.message-bubble') as HTMLElement).dataset.timestamp!, 10);
-          const newContent = (contentEl as HTMLElement).innerHTML;
+          const newContent = (contentEl as HTMLElement).textContent || '';
 
           const message = chat.history.find(msg => msg.timestamp === timestamp);
           if (message && message.content !== newContent) {

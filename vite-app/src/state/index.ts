@@ -251,6 +251,23 @@ export function setApiConfig(config: Partial<ApiConfig>): void {
   console.log('状态更新：API配置已更新');
 }
 
+// 更新API配置（同时更新内存状态和数据库）
+export async function updateApiConfig(newConfig: Partial<ApiConfig>): Promise<void> {
+  Object.assign(state.apiConfig, newConfig);
+  
+  // 保存到数据库
+  const saveApiConfig = (window as any).saveApiConfig;
+  if (saveApiConfig) {
+    try {
+      await saveApiConfig(newConfig);
+    } catch (error) {
+      console.error('保存API配置到数据库失败:', error);
+    }
+  }
+  
+  console.log('状态更新：API配置已更新并保存');
+}
+
 // 更新聊天数据
 export function updateChat(chatId: string, chatData: Partial<Chat>): void {
   if (state.chats[chatId]) {
@@ -439,60 +456,54 @@ export function getFullState() {
   };
 }
 
-// === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    state: typeof state;
-    setActiveChatId: typeof setActiveChatId;
-    updateGlobalSettings: typeof updateGlobalSettings;
-    getActiveChat: typeof getActiveChat;
-    isGroupChat: typeof isGroupChat;
-    getFullState: typeof getFullState;
-    [key: string]: any;
+// === 向后兼容：window对象注入（类型声明移至init/compat.ts） ===
+
+// === 向后兼容：window对象注入 ===
+export function injectStateToWindow(): void {
+  if (typeof window !== 'undefined') {
+    // 核心状态对象
+    window.state = state;
+    
+    // 主要状态更新函数
+    window.setActiveChatId = setActiveChatId;
+    window.updateGlobalSettings = updateGlobalSettings;
+    window.getActiveChat = getActiveChat;
+    window.isGroupChat = isGroupChat;
+    window.getFullState = getFullState;
+    
+    // 扩展状态管理函数
+    Object.assign(window, {
+      myAddress: () => myAddress,
+      setMyAddress,
+      musicState,
+      setMusicActive,
+      setMusicInactive,
+      updateChat,
+      removeChat,
+      setUserStickers,
+      addUserSticker,
+      removeUserSticker,
+      setWorldBooks,
+      addWorldBook,
+      updateWorldBook,
+      removeWorldBook,
+      setPresets,
+      addPreset,
+      updatePreset,
+      removePreset,
+      setPersonaPresets,
+      removePersonaPreset,
+      setApiConfig,
+      updateApiConfig,
+      getActivePreset,
+      setMessageEditMode,
+      setEditingPresetId,
+      setSelectionMode
+    });
   }
 }
 
-// 注入核心状态管理到window对象
-if (typeof window !== 'undefined') {
-  // 核心状态对象
-  window.state = state;
-  
-  // 主要状态更新函数
-  window.setActiveChatId = setActiveChatId;
-  window.updateGlobalSettings = updateGlobalSettings;
-  window.getActiveChat = getActiveChat;
-  window.isGroupChat = isGroupChat;
-  window.getFullState = getFullState;
-  
-  // 扩展状态管理函数
-  Object.assign(window, {
-    myAddress: () => myAddress,
-    setMyAddress,
-    musicState,
-    setMusicActive,
-    setMusicInactive,
-    updateChat,
-    removeChat,
-    setUserStickers,
-    addUserSticker,
-    removeUserSticker,
-    setWorldBooks,
-    addWorldBook,
-    updateWorldBook,
-    removeWorldBook,
-    setPresets,
-    addPreset,
-    updatePreset,
-    removePreset,
-    setPersonaPresets,
-    removePersonaPreset,
-    setApiConfig,
-    getActivePreset,
-    setMessageEditMode,
-    setEditingPresetId,
-    setSelectionMode
-  });
-}
+// 注意：不再自动注入，由init/compat.ts统一管理全局注入
 
 export default {
   state,
@@ -502,6 +513,7 @@ export default {
   setActiveChatId,
   updateGlobalSettings,
   setApiConfig,
+  updateApiConfig,
   updateChat,
   removeChat,
   setUserStickers,

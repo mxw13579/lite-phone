@@ -52,6 +52,8 @@ export class VoicePlaybackModule {
     if (!chat) return;
     
     const msg: Message = {
+      id: Date.now().toString(),
+      sender: 'user',
       role: 'user',
       type: 'voice_message',
       content,

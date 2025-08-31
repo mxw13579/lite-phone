@@ -318,93 +318,63 @@ export async function loadAllDataFromDB(): Promise<DatabaseData> {
   };
 }
 
-// === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    db: typeof db;
-    Dexie: typeof Dexie;
-    initializeDatabase: typeof initializeDatabase;
-    ensureDbInitialized: typeof ensureDbInitialized;
-    loadAllDataFromDB: typeof loadAllDataFromDB;
-    // CRUD 函数
-    getAllChats: typeof getAllChats;
-    getChatById: typeof getChatById;
-    saveChat: typeof saveChat;
-    deleteChat: typeof deleteChat;
-    getApiConfig: typeof getApiConfig;
-    saveApiConfig: typeof saveApiConfig;
-    getGlobalSettings: typeof getGlobalSettings;
-    saveGlobalSettings: typeof saveGlobalSettings;
-    getAllUserStickers: typeof getAllUserStickers;
-    saveUserSticker: typeof saveUserSticker;
-    deleteUserSticker: typeof deleteUserSticker;
-    getAllWorldBooks: typeof getAllWorldBooks;
-    getWorldBookById: typeof getWorldBookById;
-    saveWorldBook: typeof saveWorldBook;
-    deleteWorldBook: typeof deleteWorldBook;
-    getMusicLibrary: typeof getMusicLibrary;
-    saveMusicLibrary: typeof saveMusicLibrary;
-    getAllPersonaPresets: typeof getAllPersonaPresets;
-    savePersonaPreset: typeof savePersonaPreset;
-    deletePersonaPreset: typeof deletePersonaPreset;
-    getAllPresets: typeof getAllPresets;
-    getPresetById: typeof getPresetById;
-    savePreset: typeof savePreset;
-    deletePreset: typeof deletePreset;
+// === 向后兼容：window对象注入（类型声明移至init/compat.ts）===
+
+// === 向后兼容：window对象注入 ===
+export function injectDatabaseToWindow(): void {
+  if (typeof window !== 'undefined') {
+    // 核心对象
+    window.db = db;
+    window.Dexie = Dexie;
+    
+    // 初始化函数
+    window.initializeDatabase = initializeDatabase;
+    window.ensureDbInitialized = ensureDbInitialized;
+    window.loadAllDataFromDB = loadAllDataFromDB;
+    
+    // 聊天 CRUD
+    window.getAllChats = getAllChats;
+    window.getChatById = getChatById;
+    window.saveChat = saveChat;
+    window.deleteChat = deleteChat;
+    
+    // API 配置 CRUD
+    window.getApiConfig = getApiConfig;
+    window.saveApiConfig = saveApiConfig;
+    
+    // 全局设置 CRUD
+    window.getGlobalSettings = getGlobalSettings;
+    window.saveGlobalSettings = saveGlobalSettings;
+    
+    // 用户贴纸 CRUD
+    window.getAllUserStickers = getAllUserStickers;
+    window.saveUserSticker = saveUserSticker;
+    window.deleteUserSticker = deleteUserSticker;
+    
+    // 世界书 CRUD
+    window.getAllWorldBooks = getAllWorldBooks;
+    window.getWorldBookById = getWorldBookById;
+    window.saveWorldBook = saveWorldBook;
+    window.deleteWorldBook = deleteWorldBook;
+    
+    // 音乐库 CRUD
+    window.getMusicLibrary = getMusicLibrary;
+    window.saveMusicLibrary = saveMusicLibrary;
+    
+    // 角色预设 CRUD
+    window.getAllPersonaPresets = getAllPersonaPresets;
+    window.savePersonaPreset = savePersonaPreset;
+    window.deletePersonaPreset = deletePersonaPreset;
+    
+    // 预设 CRUD
+    window.getAllPresets = getAllPresets;
+    window.getPresetById = getPresetById;
+    window.savePreset = savePreset;
+    window.deletePreset = deletePreset;
   }
 }
 
-// 注入到window对象，保持向后兼容性
-if (typeof window !== 'undefined') {
-  // 核心对象
-  window.db = db;
-  window.Dexie = Dexie;
-  
-  // 初始化函数
-  window.initializeDatabase = initializeDatabase;
-  window.ensureDbInitialized = ensureDbInitialized;
-  window.loadAllDataFromDB = loadAllDataFromDB;
-  
-  // 聊天 CRUD
-  window.getAllChats = getAllChats;
-  window.getChatById = getChatById;
-  window.saveChat = saveChat;
-  window.deleteChat = deleteChat;
-  
-  // API 配置 CRUD
-  window.getApiConfig = getApiConfig;
-  window.saveApiConfig = saveApiConfig;
-  
-  // 全局设置 CRUD
-  window.getGlobalSettings = getGlobalSettings;
-  window.saveGlobalSettings = saveGlobalSettings;
-  
-  // 用户贴纸 CRUD
-  window.getAllUserStickers = getAllUserStickers;
-  window.saveUserSticker = saveUserSticker;
-  window.deleteUserSticker = deleteUserSticker;
-  
-  // 世界书 CRUD
-  window.getAllWorldBooks = getAllWorldBooks;
-  window.getWorldBookById = getWorldBookById;
-  window.saveWorldBook = saveWorldBook;
-  window.deleteWorldBook = deleteWorldBook;
-  
-  // 音乐库 CRUD
-  window.getMusicLibrary = getMusicLibrary;
-  window.saveMusicLibrary = saveMusicLibrary;
-  
-  // 角色预设 CRUD
-  window.getAllPersonaPresets = getAllPersonaPresets;
-  window.savePersonaPreset = savePersonaPreset;
-  window.deletePersonaPreset = deletePersonaPreset;
-  
-  // 预设 CRUD
-  window.getAllPresets = getAllPresets;
-  window.getPresetById = getPresetById;
-  window.savePreset = savePreset;
-  window.deletePreset = deletePreset;
-}
+// 注意：不再自动注入，由init/compat.ts统一管理全局注入
 
 // 默认导出
 export default {

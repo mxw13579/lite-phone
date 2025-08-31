@@ -21,6 +21,7 @@ import { aiResponseModule } from './screens/aiResponse';
 
 // === 初始化模块导入 ===
 import { initializationModule } from './init';
+import { injectCompatibilityAPIs } from './init/compat';
 
 // === 服务层导入 ===
 import * as SERVICES from './services';
@@ -34,93 +35,12 @@ console.log('  - ROUTER loaded:', Object.keys(ROUTER).length, 'functions');
 console.log('  - SCREENS loaded:', Object.keys(SCREENS).length, 'modules');
 console.log('  - SERVICES loaded:', Object.keys(SERVICES).length, 'services');
 
-// === 全局类型声明 ===
-declare global {
-  interface Window {
-    // 核心模块
-    CONSTANTS: typeof CONSTANTS;
-    STATE: typeof STATE;
-    DB: typeof DB;
-    ROUTER: typeof ROUTER;
-    
-    // 向后兼容的状态管理API
-    state: typeof STATE.state;
-    musicState: typeof STATE.musicState;
-    myAddress: typeof STATE.myAddress;
-    setActiveChatId: typeof STATE.setActiveChatId;
-    updateGlobalSettings: typeof STATE.updateGlobalSettings;
-    setApiConfig: typeof STATE.setApiConfig;
-    setMyAddress: typeof STATE.setMyAddress;
-    getActiveChat: typeof STATE.getActiveChat;
-    getActivePreset: typeof STATE.getActivePreset;
-    isGroupChat: typeof STATE.isGroupChat;
-    getFullState: typeof STATE.getFullState;
-    
-    // 向后兼容的数据库API
-    db: typeof DB.db;
-    Dexie: any;
-    loadAllDataFromDB: typeof DB.loadAllDataFromDB;
-    initializeDatabase: typeof DB.initializeDatabase;
-    
-    // 向后兼容的路由API
-    SCREEN_IDS: typeof ROUTER.SCREEN_IDS;
-    showScreen: typeof ROUTER.showScreen;
-    navigateToChat: typeof ROUTER.navigateToChat;
-    navigateToChatList: typeof ROUTER.navigateToChatList;
-    getCurrentScreen: typeof ROUTER.getCurrentScreen;
-    initRouter: typeof ROUTER.initRouter;
-    
-    // 屏幕模块
-    SCREENS: typeof SCREENS;
-    ChatModule: typeof SCREENS.chatScreenModule;
-    renderWorldBookScreenProxy: () => void;
-    renderApiSettingsProxy: () => void;
-    renderWallpaperScreenProxy: () => void;
-    renderPresetListProxy: () => void;
-    renderChatListProxy: () => void;
-    
-    // 服务层
-    ServiceManager: typeof SERVICES.serviceManager;
-    UIService: typeof SERVICES.uiUtilsService;
-    BatteryService: typeof SERVICES.batteryService;
-    DataService: typeof SERVICES.dataService;
-    MusicService: typeof SERVICES.musicService;
-    PersonaService: typeof SERVICES.personaService;
-    
-    // 向后兼容的服务API
-    showCustomModal: () => void;
-    hideCustomModal: () => void;
-    showCustomConfirm: (title: string, message: string, options?: any) => Promise<boolean>;
-    showCustomAlert: (title: string, message: string) => Promise<boolean>;
-    showCustomPrompt: (title: string, placeholder: string, initialValue?: string, type?: string) => Promise<string | null>;
-    showNotification: (chatId: string, messageContent: string) => void;
-    updateClock: () => void;
-    initClock: () => void;
-    exportData: () => Promise<void>;
-    importData: (file: File) => Promise<void>;
-    handleImportDataEvent: (event: Event) => void;
-    initBatteryManager: () => Promise<void>;
-    updateListenTogetherIcon: (chatId?: string | null, forceReset?: boolean) => void;
-    updateListenTogetherIconProxy: (chatId?: string | null, forceReset?: boolean) => void;
-    endListenTogetherSession: (saveState?: boolean) => Promise<void>;
-    
-    // 消息编辑函数
-    exitMessageEditMode: (shouldSave?: boolean) => void;
-    toggleMessageEditMode: () => void;
-    
-    // 内部状态追踪
-    _editingMemberId: string | null;
-    
-    // 其他扩展属性
-    [key: string]: any;
-  }
-}
-
 // === EPhone应用初始化类 ===
 class EPhoneApplication {
   private initialized = false;
-  private selectedMessages = new Set<number>();
   private editingMemberId: string | null = null;
+
+  // 注意： selectedMessages 状态管理已转移到 init/index.ts，避免重复
 
   /**
    * 应用主初始化流程
@@ -178,93 +98,12 @@ class EPhoneApplication {
    * 注入全局API到window对象，保持向后兼容
    */
   private injectGlobalAPIs(): void {
-    // 核心模块注入
-    window.CONSTANTS = CONSTANTS;
-    window.STATE = STATE;
-    window.DB = DB;
-    window.ROUTER = ROUTER;
-    window.SCREENS = { ...SCREENS, aiResponseModule };
+    console.log('🔧 使用统一兼容性模块注入全局API...');
     
-    // 向后兼容的状态管理API
-    window.state = STATE.state;
-    window.musicState = STATE.musicState;
-    window.myAddress = () => (typeof STATE.myAddress === 'function' ? STATE.myAddress() : STATE.myAddress);
-    window.setActiveChatId = STATE.setActiveChatId.bind(STATE);
-    window.updateGlobalSettings = STATE.updateGlobalSettings.bind(STATE);
-    window.setApiConfig = STATE.setApiConfig.bind(STATE);
-    window.setMyAddress = STATE.setMyAddress.bind(STATE);
-    window.getActiveChat = STATE.getActiveChat.bind(STATE);
-    window.getActivePreset = STATE.getActivePreset.bind(STATE);
-    window.isGroupChat = STATE.isGroupChat.bind(STATE);
-    window.getFullState = STATE.getFullState.bind(STATE);
+    // 委托给统一的兼容性注入模块
+    injectCompatibilityAPIs();
     
-    // 向后兼容的数据库API
-    window.db = DB.db;
-    window.Dexie = (window as any).Dexie || DB.db.constructor;
-    window.loadAllDataFromDB = DB.loadAllDataFromDB.bind(DB);
-    window.initializeDatabase = DB.initializeDatabase.bind(DB);
-    
-    // 向后兼容的路由API
-    window.SCREEN_IDS = ROUTER.SCREEN_IDS;
-    window.showScreen = ROUTER.showScreen.bind(ROUTER);
-    window.navigateToChat = ROUTER.navigateToChat.bind(ROUTER);
-    window.navigateToChatList = ROUTER.navigateToChatList.bind(ROUTER);
-    window.getCurrentScreen = ROUTER.getCurrentScreen.bind(ROUTER);
-    window.initRouter = ROUTER.initRouter.bind(ROUTER);
-    
-    // 服务层注入
-    window.ServiceManager = SERVICES.serviceManager;
-    window.UIService = SERVICES.uiUtilsService;
-    window.BatteryService = SERVICES.batteryService;
-    window.DataService = SERVICES.dataService;
-    window.MusicService = SERVICES.musicService;
-    window.PersonaService = SERVICES.personaService;
-    
-    // 向后兼容的服务API
-    window.showCustomModal = () => SERVICES.uiUtilsService.showCustomModal();
-    window.hideCustomModal = () => SERVICES.uiUtilsService.hideCustomModal();
-    window.showCustomConfirm = SERVICES.uiUtilsService.showCustomConfirm.bind(SERVICES.uiUtilsService);
-    window.showCustomAlert = SERVICES.uiUtilsService.showCustomAlert.bind(SERVICES.uiUtilsService);
-    window.showCustomPrompt = SERVICES.uiUtilsService.showCustomPrompt.bind(SERVICES.uiUtilsService);
-    window.showNotification = SERVICES.uiUtilsService.showNotification.bind(SERVICES.uiUtilsService);
-    window.updateClock = () => SERVICES.uiUtilsService.updateClock();
-    window.initClock = () => SERVICES.uiUtilsService.initClock();
-    window.exportData = () => SERVICES.dataService.exportData();
-    window.importData = SERVICES.dataService.importData.bind(SERVICES.dataService);
-    window.handleImportDataEvent = SERVICES.dataService.handleImportDataEvent.bind(SERVICES.dataService);
-    window.initBatteryManager = () => SERVICES.batteryService.initBatteryManager();
-    window.updateListenTogetherIcon = (chatId?: string | null, forceReset?: boolean) => SERVICES.musicService.updateListenTogetherIcon(chatId || null, forceReset);
-    window.updateListenTogetherIconProxy = (chatId?: string | null, forceReset?: boolean) => SERVICES.musicService.updateListenTogetherIcon(chatId || null, forceReset);
-    window.endListenTogetherSession = SERVICES.musicService.endListenTogetherSession.bind(SERVICES.musicService);
-    
-    // AI响应模块全局函数 - 使用聊天模块中的实现
-    window.triggerAiResponse = () => SCREENS.chatScreenModule.triggerAiResponse();
-    window.parseAiResponse = (content: string) => aiResponseModule.parseAiResponse(content);
-    
-    // 聊天模块
-    window.ChatModule = SCREENS.chatScreenModule;
-    
-    // 屏幕代理函数注入
-    window.renderWorldBookScreenProxy = SCREENS.worldBookScreenModule.renderWorldBookScreen.bind(SCREENS.worldBookScreenModule);
-    window.renderApiSettingsProxy = SCREENS.apiSettingsScreenModule.renderApiSettingsScreen.bind(SCREENS.apiSettingsScreenModule);
-    window.renderWallpaperScreenProxy = SCREENS.wallpaperScreenModule.renderWallpaperScreen.bind(SCREENS.wallpaperScreenModule);
-    window.renderPresetListProxy = () => {
-      SCREENS.presetScreenModule.renderPresetListScreen().catch(console.error);
-    };
-    window.renderChatListProxy = SCREENS.chatScreenModule.renderChatList.bind(SCREENS.chatScreenModule);
-    
-    // 消息编辑函数注入
-    window.exitMessageEditMode = (shouldSave = false) => {
-      return SCREENS.chatScreenModule.exitMessageEditMode(shouldSave);
-    };
-    window.toggleMessageEditMode = () => {
-      return SCREENS.chatScreenModule.toggleMessageEditMode();
-    };
-    
-    // 内部状态追踪
-    window._editingMemberId = null;
-    
-    console.log('全局API注入完成 - 向后兼容性保持100%');
+    console.log('✅ 全局API注入完成 - 通过统一兼容性模块');
   }
 
   /**
@@ -359,14 +198,9 @@ class EPhoneApplication {
    * 聊天界面基础事件监听器
    */
   private registerChatInterfaceListeners(): void {
-    // 返回聊天列表
-    document.getElementById('back-to-list-btn')?.addEventListener('click', () => {
-      SCREENS.chatScreenModule.exitMessageEditMode(false);
-      this.exitSelectionMode();
-      STATE.setActiveChatId(null);
-      ROUTER.showScreen('chat-list-screen');
-    });
-
+    // 注意：聊天界面的具体事件由 init/index.ts 处理，避免重复绑定
+    // 这里只处理需要在应用层面的聊天相关功能
+    
     // 创建新聊天
     document.getElementById('add-chat-btn')?.addEventListener('click', async () => {
       const name = await SERVICES.uiUtilsService.showCustomPrompt('创建新聊天', '请输入Ta的名字');
@@ -456,16 +290,8 @@ class EPhoneApplication {
     ROUTER.showScreen('home-screen');
   }
 
-  /**
-   * 退出选择模式
-   */
-  private exitSelectionMode(): void {
-    this.selectedMessages.clear();
-    document.getElementById('chat-interface-screen')?.classList.remove('selection-mode');
-    document.querySelectorAll('.message-bubble.selected').forEach(bubble => {
-      bubble.classList.remove('selected');
-    });
-  }
+  // 注意： exitSelectionMode 方法已转移到 init/index.ts，避免重复定义
+  // 如果需要在这里调用，请使用 initializationModule 的接口
 }
 
 // 应用实例

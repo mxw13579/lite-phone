@@ -47,10 +47,19 @@ export class WorldBookScreen implements ScreenModule {
       return;
     }
     
-    listEl.innerHTML = '';
+    // 安全：清空列表内容
+    while (listEl.firstChild) {
+      listEl.removeChild(listEl.firstChild);
+    }
     
     if (state.worldBooks.length === 0) {
-      listEl.innerHTML = '<p style="text-align:center; color: #8a8a8a; margin-top: 50px;">点击右上角 "+" 创建你的第一本世界书</p>';
+      // 安全：使用DOM构建替代innerHTML
+      const emptyMsg = document.createElement('p');
+      emptyMsg.style.textAlign = 'center';
+      emptyMsg.style.color = '#8a8a8a';
+      emptyMsg.style.marginTop = '50px';
+      emptyMsg.textContent = '点击右上角 "+" 创建你的第一本世界书';
+      listEl.appendChild(emptyMsg);
       return;
     }
     
@@ -58,7 +67,10 @@ export class WorldBookScreen implements ScreenModule {
       const item = document.createElement('div');
       item.className = 'list-item';
       item.dataset.bookId = book.id;
-      item.innerHTML = `<span>${book.name}</span>`;
+      
+      const span = document.createElement('span');
+      span.textContent = book.name; // 安全：使用textContent避免XSS
+      item.appendChild(span);
       
       // 点击事件：打开编辑器
       item.addEventListener('click', () => this.openWorldBookEditor(book.id));
@@ -278,14 +290,23 @@ export class PresetScreen implements ScreenModule {
       return;
     }
     
-    listEl.innerHTML = '';
+    // 安全：清空预设列表内容
+    while (listEl.firstChild) {
+      listEl.removeChild(listEl.firstChild);
+    }
     
     if (state.presets.length === 0) {
       // 如果没有预设，先尝试初始化默认预设
       await this.initPresetsData();
       // 初始化后重新检查
       if (state.presets.length === 0) {
-        listEl.innerHTML = '<p style="text-align:center; color: #8a8a8a; margin-top: 50px;">点击右上角 "+" 创建你的第一个预设</p>';
+        // 安全：使用DOM构建替代innerHTML
+        const emptyMsg = document.createElement('p');
+        emptyMsg.style.textAlign = 'center';
+        emptyMsg.style.color = '#8a8a8a';
+        emptyMsg.style.marginTop = '50px';
+        emptyMsg.textContent = '点击右上角 "+" 创建你的第一个预设';
+        listEl.appendChild(emptyMsg);
         return;
       }
     }
@@ -297,20 +318,64 @@ export class PresetScreen implements ScreenModule {
       if (isActive) {
         item.classList.add('active');
       }
-      item.innerHTML = `
-        <div class="preset-info" data-preset-id="${preset.id}">
-          <div class="preset-name">
-            ${isActive ? '<span class="active-indicator">★</span>' : ''}
-            ${preset.name}
-          </div>
-          <div class="preset-remark">${preset.remark || '无备注'}</div>
-        </div>
-        <div class="preset-actions">
-          <button class="action-btn-small edit-preset-btn" data-preset-id="${preset.id}">编辑</button>
-          <button class="action-btn-small set-active-preset-btn" data-preset-id="${preset.id}" ${isActive ? 'disabled' : ''}>设为当前</button>
-          ${state.presets.length > 1 ? `<button class="action-btn-small delete-preset-list-btn" data-preset-id="${preset.id}" style="color: #d9534f;">删除</button>` : ''}
-        </div>
-      `;
+      
+      // 安全：使用DOM构建替代innerHTML模板
+      const presetInfo = document.createElement('div');
+      presetInfo.className = 'preset-info';
+      presetInfo.dataset.presetId = preset.id;
+      
+      const presetNameDiv = document.createElement('div');
+      presetNameDiv.className = 'preset-name';
+      
+      if (isActive) {
+        const activeIndicator = document.createElement('span');
+        activeIndicator.className = 'active-indicator';
+        activeIndicator.textContent = '★';
+        presetNameDiv.appendChild(activeIndicator);
+      }
+      
+      const nameText = document.createTextNode(preset.name);
+      presetNameDiv.appendChild(nameText);
+      
+      const presetRemarkDiv = document.createElement('div');
+      presetRemarkDiv.className = 'preset-remark';
+      presetRemarkDiv.textContent = preset.remark || '无备注';
+      
+      presetInfo.appendChild(presetNameDiv);
+      presetInfo.appendChild(presetRemarkDiv);
+      
+      const presetActions = document.createElement('div');
+      presetActions.className = 'preset-actions';
+      
+      // 编辑按钮
+      const editBtn = document.createElement('button');
+      editBtn.className = 'action-btn-small edit-preset-btn';
+      editBtn.dataset.presetId = preset.id;
+      editBtn.textContent = '编辑';
+      presetActions.appendChild(editBtn);
+      
+      // 设为当前按钮
+      const setActiveBtn = document.createElement('button');
+      setActiveBtn.className = 'action-btn-small set-active-preset-btn';
+      setActiveBtn.dataset.presetId = preset.id;
+      setActiveBtn.textContent = '设为当前';
+      if (isActive) {
+        setActiveBtn.disabled = true;
+      }
+      presetActions.appendChild(setActiveBtn);
+      
+      // 删除按钮（当预设数量大于1时才显示）
+      if (state.presets.length > 1) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'action-btn-small delete-preset-list-btn';
+        deleteBtn.dataset.presetId = preset.id;
+        deleteBtn.style.color = '#d9534f';
+        deleteBtn.textContent = '删除';
+        presetActions.appendChild(deleteBtn);
+      }
+      
+      item.appendChild(presetInfo);
+      item.appendChild(presetActions);
       listEl.appendChild(item);
     });
     
@@ -699,10 +764,10 @@ export class ApiSettingsScreen implements ScreenModule {
 
   // 保存API设置
   async saveApiSettings(): Promise<void> {
-    const saveApiConfig = (window as any).saveApiConfig;
+    const updateApiConfig = (window as any).updateApiConfig;
     
-    if (!saveApiConfig) {
-      console.error('保存API设置失败：保存函数不可用');
+    if (!updateApiConfig) {
+      console.error('保存API设置失败：updateApiConfig函数不可用');
       return;
     }
     
@@ -714,10 +779,11 @@ export class ApiSettingsScreen implements ScreenModule {
         model: (document.getElementById('model-select') as HTMLSelectElement).value
       };
       
-      await saveApiConfig(apiConfig);
+      // 使用统一的更新方法（同时更新内存状态和数据库）
+      await updateApiConfig(apiConfig);
       
       alert('API设置已保存!');
-      console.log('API设置已保存');
+      console.log('API设置已保存并更新到状态');
     } catch (error) {
       console.error('保存API设置失败:', error);
       alert('保存失败，请重试');
@@ -755,8 +821,10 @@ export class ApiSettingsScreen implements ScreenModule {
       const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
       const state = (window as any).state;
       
-      // 清空现有选项
-      modelSelect.innerHTML = '';
+      // 安全：清空现有选项
+      while (modelSelect.firstChild) {
+        modelSelect.removeChild(modelSelect.firstChild);
+      }
       
       // 添加模型选项
       data.data.forEach((model: any) => {
@@ -1313,44 +1381,7 @@ export const wallpaperScreenModule = new WallpaperScreen();
 // === 全局单例实例 ===
 export const screenManager = new ScreenModuleManager();
 
-// === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    screenManager: ScreenModuleManager;
-    renderWorldBookScreenProxy: () => void;
-    renderPresetListProxy: () => void;
-    renderApiSettingsProxy: () => void;
-    renderWallpaperScreenProxy: () => void;
-    openWorldBookEditor: (id: string) => void;
-    openPresetEditor: (id: string | null) => void;
-    [key: string]: any;
-  }
-}
-
-// 注入到window对象，保持向后兼容性
-if (typeof window !== 'undefined') {
-  const win = window as any;
-  
-  // 屏幕管理器
-  win.screenManager = screenManager;
-  
-  // 代理渲染函数
-  win.renderWorldBookScreenProxy = () => screenManager.renderScreen('world-book');
-  win.renderPresetListProxy = () => screenManager.renderScreen('presets');
-  win.renderApiSettingsProxy = () => screenManager.renderScreen('api-settings');
-  win.renderWallpaperScreenProxy = () => screenManager.renderScreen('wallpaper');
-  
-  // 编辑器打开函数
-  win.openWorldBookEditor = (id: string) => {
-    const worldBookScreen = screenManager.getModule('world-book') as WorldBookScreen;
-    worldBookScreen?.openWorldBookEditor(id);
-  };
-  
-  win.openPresetEditor = (id: string | null) => {
-    const presetScreen = screenManager.getModule('presets') as PresetScreen;
-    presetScreen?.openPresetEditor(id);
-  };
-}
+// 注意：全局window注入已迁移到 init/compat.ts，避免重复定义
 
 // 默认导出
 export default {

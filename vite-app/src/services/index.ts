@@ -55,51 +55,7 @@ export const serviceManager = new ServiceManager();
 // === 向后兼容：导出服务实例 ===
 export { uiUtilsService, batteryService, dataService, musicService, personaService };
 
-// === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    ServiceManager: ServiceManager;
-    UIService: typeof uiUtilsService;
-    BatteryService: typeof batteryService;
-    DataService: typeof dataService;
-    MusicService: typeof musicService;
-    PersonaService: typeof personaService;
-    // UI工具API
-    showCustomModal: () => void;
-    hideCustomModal: () => void;
-    showCustomConfirm: (title: string, message: string, options?: ModalOptions) => Promise<boolean>;
-    showCustomAlert: (title: string, message: string) => Promise<boolean>;
-    showCustomPrompt: (title: string, placeholder: string, initialValue?: string, type?: string) => Promise<string | null>;
-    showNotification: (chatId: string, messageContent: string) => void;
-    updateClock: () => void;
-    initClock: () => void;
-    openThemeListModal: (jsonUrl: string, title: string) => Promise<void>;
-    closeThemeListModal: () => void;
-    confirmThemeSelection: () => Promise<void>;
-    // 电池API
-    getBatteryStatus: () => any;
-    // 数据API
-    exportData: () => Promise<void>;
-    importData: (file: File) => Promise<void>;
-    clearAllData: () => Promise<void>;
-    getDataStats: () => Promise<any>;
-    // 音乐API
-    togglePlayPause: () => void;
-    playNext: () => void;
-    playPrev: () => void;
-    changePlayMode: () => void;
-    addSongFromURL: () => Promise<void>;
-    addSongFromLocal: (files: FileList) => Promise<void>;
-    startListenTogetherSession: (chatId: string) => Promise<void>;
-    endListenTogetherSession: () => Promise<void>;
-    // 人设API
-    openPersonaLibrary: () => Promise<void>;
-    closePersonaLibrary: () => void;
-    savePersonaPreset: () => Promise<void>;
-    applyPersonaPreset: (preset: any) => Promise<void>;
-    openMemberEditor: (chatId: string, memberId: string) => Promise<void>;
-  }
-}
+// === 向后兼容：注入到window对象（简化类型声明） ===
 
 // 全局注入函数（在init模块中调用）
 export function injectServicesToWindow(): void {
@@ -155,8 +111,8 @@ export function injectServicesToWindow(): void {
   win.closePersonaLibrary = () => personaService.closePersonaLibrary();
   win.savePersonaPreset = () => personaService.savePersonaPreset();
   win.applyPersonaPreset = (preset: any) => personaService.applyPersonaPreset(preset);
-  win.openMemberEditor = (chatId: string, memberId: string) => 
-    personaService.openMemberEditor(chatId, memberId);
+  win.openMemberEditor = (memberId: string) => 
+    personaService.openMemberEditor(memberId);
 }
 
 // === 默认导出 ===

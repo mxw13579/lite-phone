@@ -251,7 +251,10 @@ export class InitializationModule {
   /**
    * 退出选择模式
    */
-  private exitSelectionMode(): void {
+  /**
+   * 退出选择模式（公开方法，供外部调用）
+   */
+  exitSelectionMode(): void {
     this.selectedMessages.clear();
     document.getElementById('chat-interface-screen')?.classList.remove('selection-mode');
     document.querySelectorAll('.message-bubble.selected').forEach(bubble => {
@@ -262,7 +265,7 @@ export class InitializationModule {
   /**
    * 切换消息编辑模式
    */
-  private toggleMessageEditMode(): void {
+  public toggleMessageEditMode(): void {
     const win = window as any;
     if (win.ChatModule?.toggleMessageEditMode) {
       win.ChatModule.toggleMessageEditMode();
@@ -272,7 +275,7 @@ export class InitializationModule {
   /**
    * 发送用户转账
    */
-  private sendUserTransfer(): void {
+  public sendUserTransfer(): void {
     const win = window as any;
     if (win.ChatModule?.sendUserTransfer) {
       win.ChatModule.sendUserTransfer();
@@ -378,16 +381,7 @@ export class InitializationModule {
 // === 全局单例实例 ===
 export const initializationModule = new InitializationModule();
 
-// === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    InitializationModule: InitializationModule;
-    initializeApp: () => Promise<void>;
-    exitSelectionMode: () => void;
-    toggleMessageEditMode: () => void;
-    sendUserTransfer: () => void;
-  }
-}
+// === 向后兼容：注入到window对象（类型声明移至init/compat.ts） ===
 
 // 注入到window对象，保持向后兼容性
 if (typeof window !== 'undefined') {
@@ -398,6 +392,11 @@ if (typeof window !== 'undefined') {
   
   // 初始化API
   win.initializeApp = () => initializationModule.initializeApp();
+  
+  // 导出UI状态管理方法，避免在main.ts中重复
+  win.exitSelectionMode = () => initializationModule.exitSelectionMode();
+  win.toggleMessageEditMode = () => initializationModule.toggleMessageEditMode();
+  win.sendUserTransfer = () => initializationModule.sendUserTransfer();
 }
 
 // 默认导出

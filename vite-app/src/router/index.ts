@@ -295,29 +295,7 @@ export function initRouter(): void {
   console.log('路由模块初始化完成');
 }
 
-// === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    SCREEN_IDS: typeof SCREEN_IDS;
-    showScreen: typeof showScreen;
-    getCurrentScreen: typeof getCurrentScreen;
-    isCurrentScreen: typeof isCurrentScreen;
-    goHome: typeof goHome;
-    navigateToChat: typeof navigateToChat;
-    navigateToChatList: typeof navigateToChatList;
-    navigateToApiSettings: typeof navigateToApiSettings;
-    navigateToWorldBook: typeof navigateToWorldBook;
-    navigateToPresets: typeof navigateToPresets;
-    navigateToWallpaper: typeof navigateToWallpaper;
-    registerScreenRenderer: typeof registerScreenRenderer;
-    registerScreenPostProcess: typeof registerScreenPostProcess;
-    setupProxyMappings: typeof setupProxyMappings;
-    goBack: typeof goBack;
-    getRouteHistory: typeof getRouteHistory;
-    initRouter: typeof initRouter;
-    [key: string]: any;
-  }
-}
+// === 向后兼容：注入到window对象（类型声明移至init/compat.ts） ===
 
 // 注入到window对象，保持向后兼容性
 if (typeof window !== 'undefined') {

@@ -3,6 +3,20 @@
 
 import type { Chat, Message, GlobalSettings } from '../../state';
 
+// === 安全渲染辅助函数 ===
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function sanitizeForAttribute(value: string): string {
+  return escapeHtml(value).replace(/"/g, "&quot;");
+}
+
 // === 类型定义 ===
 interface MessageRenderElement {
   element: HTMLElement;
@@ -56,7 +70,9 @@ export class MessageRenderModule {
     if (msg.type === 'pat') {
       const wrapper = document.createElement('div');
       wrapper.className = 'system-message-container';
-      wrapper.innerHTML = `<span>${msg.content}</span>`;
+      const span = document.createElement('span');
+      span.textContent = String(msg.content); // 安全：使用textContent
+      wrapper.appendChild(span);
       return wrapper;
     }
 
@@ -111,10 +127,31 @@ export class MessageRenderModule {
       const imageUrl = msg.content[0].image_url.url;
       contentHtml = `<img src="${imageUrl}" class="chat-image" alt="User uploaded image">`;
     } else {
-      contentHtml = String(msg.content || '').replace(/\n/g, '<br>');
+      // 安全处理文本内容，转义HTML但保留换行
+      const textContent = String(msg.content || '');
+      contentHtml = escapeHtml(textContent).replace(/\n/g, '<br>');
     }
     
-    bubble.innerHTML = `<div class="avatar-group"><img src="${avatarSrc}" class="avatar"><span class="timestamp">${this.formatTimestamp(msg.timestamp)}</span></div><div class="content">${contentHtml}</div>`;
+    // 安全构建DOM结构，避免innerHTML的XSS风险
+    const avatarGroup = document.createElement('div');
+    avatarGroup.className = 'avatar-group';
+    
+    const avatarImg = document.createElement('img');
+    avatarImg.src = avatarSrc; // 由浏览器自动转义URL
+    avatarImg.className = 'avatar';
+    
+    const timestampSpan = document.createElement('span');
+    timestampSpan.className = 'timestamp';
+    timestampSpan.textContent = this.formatTimestamp(msg.timestamp);
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'content';
+    contentDiv.innerHTML = contentHtml; // contentHtml已在上面安全处理
+    
+    avatarGroup.appendChild(avatarImg);
+    avatarGroup.appendChild(timestampSpan);
+    bubble.appendChild(avatarGroup);
+    bubble.appendChild(contentDiv);
     
     wrapper.appendChild(bubble);
     return wrapper;
@@ -148,10 +185,19 @@ export class MessageRenderModule {
       return;
     }
     
-    chatListEl.innerHTML = '';
+    // 安全：清空聊天列表内容
+    while (chatListEl.firstChild) {
+      chatListEl.removeChild(chatListEl.firstChild);
+    }
     
     if (Object.keys(state.state.chats).length === 0) {
-      chatListEl.innerHTML = '<p style="text-align:center; color: #8a8a8a; margin-top: 50px;">点击右上角 "+" 或群组图标添加聊天</p>';
+      // 安全：使用DOM构建代替innerHTML
+      const emptyP = document.createElement('p');
+      emptyP.style.textAlign = 'center';
+      emptyP.style.color = '#8a8a8a';
+      emptyP.style.marginTop = '50px';
+      emptyP.textContent = '点击右上角 "+" 或群组图标添加聊天';
+      chatListEl.appendChild(emptyP);
       return;
     }
     
@@ -185,7 +231,39 @@ export class MessageRenderModule {
         item.dataset.chatId = chat.id;
         
         const avatar = chat.isGroup ? chat.settings.groupAvatar : chat.settings.aiAvatar;
-        item.innerHTML = `<img src="${avatar || avatars.defaultAvatar}" class="avatar"><div class="info"><div class="name-line"><span class="name">${chat.name}</span>${chat.isGroup ? '<span class="group-tag">群聊</span>' : ''}</div><div class="last-msg">${lastMsgDisplay}</div></div>`;
+        
+        // 安全构建聊天列表项DOM结构
+        const avatarImg = document.createElement('img');
+        avatarImg.src = avatar || avatars.defaultAvatar;
+        avatarImg.className = 'avatar';
+        
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'info';
+        
+        const nameLineDiv = document.createElement('div');
+        nameLineDiv.className = 'name-line';
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.textContent = chat.name; // 安全：使用textContent
+        
+        const lastMsgDiv = document.createElement('div');
+        lastMsgDiv.className = 'last-msg';
+        lastMsgDiv.textContent = lastMsgDisplay; // 安全：使用textContent
+        
+        nameLineDiv.appendChild(nameSpan);
+        if (chat.isGroup) {
+          const groupTagSpan = document.createElement('span');
+          groupTagSpan.className = 'group-tag';
+          groupTagSpan.textContent = '群聊';
+          nameLineDiv.appendChild(groupTagSpan);
+        }
+        
+        infoDiv.appendChild(nameLineDiv);
+        infoDiv.appendChild(lastMsgDiv);
+        
+        item.appendChild(avatarImg);
+        item.appendChild(infoDiv);
         
         chatListEl.appendChild(item);
       });
@@ -220,7 +298,10 @@ export class MessageRenderModule {
       headerTitle.textContent = chat.name;
     }
     
-    messagesContainer.innerHTML = '';
+    // 安全：清空消息容器内容
+    while (messagesContainer.firstChild) {
+      messagesContainer.removeChild(messagesContainer.firstChild);
+    }
     
     const chatScreen = document.getElementById('chat-interface-screen');
     if (chatScreen) {

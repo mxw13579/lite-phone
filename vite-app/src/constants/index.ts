@@ -76,12 +76,7 @@ export const CONSTANTS: Constants = {
   UI: UI_CONSTANTS,
 };
 
-// === 向后兼容：window对象注入 ===
-declare global {
-  interface Window {
-    CONSTANTS: Constants;
-  }
-}
+// === 向后兼容：window对象注入（类型声明移至init/compat.ts） ===
 
 // 全局注入函数（可选调用，main.ts已统一处理）
 export function injectConstantsToWindow(): void {

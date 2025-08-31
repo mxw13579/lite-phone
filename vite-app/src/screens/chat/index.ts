@@ -260,56 +260,7 @@ export class ChatScreenModule {
 // === 全局单例实例 ===
 export const chatScreenModule = new ChatScreenModule();
 
-// === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    ChatModule: ChatScreenModule;
-    CHAT_MODULES: {
-      renderModule: MessageRenderModule;
-      eventsModule: EventHandlerModule;
-      composerModule: MessageComposerModule;
-      attachmentsModule: AttachmentHandlerModule;
-      playbackModule: VoicePlaybackModule;
-    };
-    // 聊天核心API
-    renderChatList: () => void;
-    renderChatInterface: (chatId: string) => void;
-    openChat: (chatId: string) => void;
-    createMessageElement: (msg: Message, chat: Chat) => HTMLElement;
-    appendMessage: (msg: Message, chat: Chat, isInitialLoad?: boolean) => void;
-    formatTimestamp: (timestamp: number) => string;
-    // AI响应API
-    triggerAiResponse: () => Promise<void>;
-    parseAiResponse: (content: string) => string[];
-    // 消息交互API
-    handlePat: (msg: Message) => Promise<void>;
-    enterSelectionMode: (timestamp: number) => void;
-    exitSelectionMode: () => void;
-    toggleMessageSelection: (timestamp: number) => void;
-    // 编辑模式API
-    enterMessageEditMode: () => void;
-    exitMessageEditMode: (shouldSave?: boolean) => Promise<void>;
-    toggleMessageEditMode: () => Promise<void>;
-    // 表情包API
-    renderStickerPanel: () => void;
-    sendSticker: (sticker: { id: string; url: string; name: string }) => Promise<void>;
-    // 转账API
-    sendUserTransfer: () => Promise<void>;
-    // 附件API
-    handleImageSelect: (callback?: (imageDataUrl: string) => void) => Promise<void>;
-    addStickerFromFile: () => Promise<void>;
-    addStickerFromUrl: () => Promise<void>;
-    // 语音API
-    playVoiceMessage: (element: HTMLElement, text: string, timestamp: number) => Promise<void>;
-    startVoiceRecording: () => Promise<void>;
-    // 状态访问API
-    getIsSelectionMode: () => boolean;
-    getSelectedMessages: () => Set<number>;
-    getIsMessageEditMode: () => boolean;
-    getCurrentRenderedCount: () => number;
-    setIsMessageEditMode: (mode: boolean) => void;
-  }
-}
+// === 向后兼容：注入到window对象（类型声明移至init/compat.ts） ===
 
 // 注入到window对象，保持向后兼容性
 if (typeof window !== 'undefined') {

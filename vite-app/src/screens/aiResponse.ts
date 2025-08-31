@@ -372,16 +372,7 @@ export class AiResponseModule {
 export const aiResponseModule = new AiResponseModule();
 
 // === 向后兼容：注入到window对象 ===
-declare global {
-  interface Window {
-    AiResponseModule: AiResponseModule;
-    // AI响应核心API
-    triggerAiResponse: () => Promise<void>;
-    parseAiResponse: (content: string) => any[];
-  }
-}
-
-// 注入到window对象，保持向后兼容性
+// 注入到window对象，保持向后兼容性（简化类型声明）
 if (typeof window !== 'undefined') {
   const win = window as any;
 
