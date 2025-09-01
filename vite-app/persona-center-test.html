@@ -193,7 +193,7 @@
             
             try {
                 // 动态导入角色中心模块
-                const personaCenterModule = await import('./src/screens/personaCenter/index.js');
+                const personaCenterModule = await import('./src/screens/personaCenter/index.ts');
                 showTestResult('module-load-results', 'success', '✅ 角色中心模块导入成功');
                 
                 // 检查关键类型导出
@@ -232,7 +232,7 @@
             
             try {
                 // 动态导入数据库模块
-                const dbModule = await import('./src/database/index.js');
+                const dbModule = await import('./src/database/index.ts');
                 showTestResult('database-test-results', 'success', '✅ 数据库模块导入成功');
                 
                 // 初始化数据库
@@ -268,7 +268,7 @@
             
             try {
                 // 导入服务模块
-                const { PersonaService, UserRoleService } = await import('./src/screens/personaCenter/index.js');
+                const { PersonaService, UserRoleService } = await import('./src/screens/personaCenter/index.ts');
                 
                 // 测试 PersonaService
                 const personaService = new PersonaService();
@@ -311,7 +311,7 @@
             
             try {
                 // 导入组件模块
-                const { PersonaCenterScreen } = await import('./src/screens/personaCenter/index.js');
+                const { PersonaCenterScreen } = await import('./src/screens/personaCenter/index.ts');
                 
                 // 获取测试容器
                 const container = document.getElementById('persona-center-test-container');
@@ -350,7 +350,7 @@
             
             try {
                 // 测试路由系统
-                const routerModule = await import('./src/router/index.js');
+                const routerModule = await import('./src/router/index.ts');
                 if (routerModule.SCREEN_IDS.PERSONA_CENTER) {
                     showTestResult('integration-test-results', 'success', '✅ 路由系统包含角色中心');
                 } else {
@@ -358,7 +358,7 @@
                 }
                 
                 // 测试兼容性注入
-                const compatModule = await import('./src/init/compat.js');
+                const compatModule = await import('./src/init/compat.ts');
                 showTestResult('integration-test-results', 'success', '✅ 兼容性模块导入成功');
                 
                 // 执行兼容性注入

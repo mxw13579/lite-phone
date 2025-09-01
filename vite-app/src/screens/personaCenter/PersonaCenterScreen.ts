@@ -564,7 +564,7 @@ export class PersonaCenterScreen {
   // 返回上一级
   goBack(): void {
     try { 
-      import('../../router/index.js').then(({ goBack }) => {
+      import('../../router/index').then(({ goBack }) => {
         goBack();
       });
     } catch { /* ignore */ }

@@ -8,10 +8,10 @@ import type {
   ImportResult, 
   ConflictStrategy,
   ImportExportMeta
-} from '../types/PersonaTypes.js';
+} from '../types/PersonaTypes';
 
-import { PersonaService } from './PersonaService.js';
-import { UserRoleService } from './UserRoleService.js';
+import { PersonaService } from './PersonaService';
+import { UserRoleService } from './UserRoleService';
 
 export class ImportExportService {
   private personaService: PersonaService;

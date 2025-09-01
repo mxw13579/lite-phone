@@ -13,6 +13,9 @@
     "noResolve": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
+    "allowJs": false,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

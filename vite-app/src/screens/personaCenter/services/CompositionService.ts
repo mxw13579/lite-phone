@@ -6,9 +6,9 @@ import type {
   UserRole, 
   CompositionConfig, 
   DEFAULT_COMPOSITION_CONFIG 
-} from '../types/PersonaTypes.js';
+} from '../types/PersonaTypes';
 
-import type { WorldBook } from '../../../state/index.js';
+import type { WorldBook } from '../../../state/index';
 
 export class CompositionService {
   // 合成System Prompt

@@ -7,7 +7,7 @@ import type {
   UpdatePersonaInput, 
   FilterOptions, 
   SearchOptions 
-} from '../types/PersonaTypes.js';
+} from '../types/PersonaTypes';
 
 // 导入数据库操作函数
 import { 
@@ -17,7 +17,7 @@ import {
   deletePersona, 
   searchPersonas,
   updatePersonaLastUsedAt 
-} from '../../../database/index.js';
+} from '../../../database/index';
 
 // 导入状态管理函数
 import {
@@ -26,7 +26,7 @@ import {
   updatePersona as updatePersonaState,
   removePersona,
   setActivePersonaId
-} from '../../../state/index.js';
+} from '../../../state/index';
 
 export class PersonaService {
   // 获取所有Persona

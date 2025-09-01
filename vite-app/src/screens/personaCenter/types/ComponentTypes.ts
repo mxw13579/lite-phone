@@ -1,7 +1,7 @@
 // 组件接口类型定义
 // 定义各个UI组件的接口和回调函数类型
 
-import type { Persona, UserRole, FilterOptions, SearchOptions } from './PersonaTypes.js';
+import type { Persona, UserRole, FilterOptions, SearchOptions } from './PersonaTypes';
 
 // 基础组件接口
 export interface ComponentBase {

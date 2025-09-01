@@ -7,7 +7,7 @@ import type {
   UpdateUserRoleInput, 
   FilterOptions, 
   SearchOptions 
-} from '../types/PersonaTypes.js';
+} from '../types/PersonaTypes';
 
 // 导入数据库操作函数
 import { 
@@ -18,7 +18,7 @@ import {
   searchUserRoles,
   setGlobalDefaultUserRole,
   updateUserRoleLastUsedAt 
-} from '../../../database/index.js';
+} from '../../../database/index';
 
 // 导入状态管理函数
 import {
@@ -27,7 +27,7 @@ import {
   updateUserRole as updateUserRoleState,
   removeUserRole,
   setActiveUserRoleId
-} from '../../../state/index.js';
+} from '../../../state/index';
 
 export class UserRoleService {
   // 获取所有UserRole
