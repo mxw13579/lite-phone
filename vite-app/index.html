@@ -165,11 +165,13 @@
             </div>
         </div>
         <div id="preset-editor-screen" class="screen">
-            <div class="header">
-                <span class="back-btn" onclick="showScreen('preset-list-screen')">‹</span>
-                <span id="preset-editor-title">编辑预设</span>
-                <span class="save-btn" id="save-preset-btn">保存</span>
-            </div>
+            <header class="header" role="banner">
+                <button class="back-btn" onclick="showScreen('preset-list-screen')" aria-label="返回预设列表">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title" id="preset-editor-title">编辑预设</h1>
+                <button class="save-btn btn-primary" id="save-preset-btn" aria-label="保存预设">保存</button>
+            </header>
             <div class="form-container">
                 <div class="form-group">
                     <label for="preset-name-input">预设名称</label>
@@ -209,11 +211,15 @@
             </div>
         </div>
         <div id="preset-list-screen" class="screen">
-            <div class="header">
-                <span class="back-btn" onclick="showScreen('home-screen')">‹</span>
-                <span>预设管理</span>
-                <span class="action-btn" id="add-preset-btn">+</span>
-            </div>
+            <header class="header" role="banner">
+                <button class="back-btn" onclick="showScreen('home-screen')" aria-label="返回主屏幕">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <h1 class="header-title">预设管理</h1>
+                <button class="action-btn" id="add-preset-btn" aria-label="添加新预设">
+                    <span aria-hidden="true">+</span>
+                </button>
+            </header>
             <div id="preset-list" class="list-container" style="padding:0;">
                 <!-- 预设列表将由JS动态生成 -->
             </div>
@@ -374,6 +380,10 @@
 
         <div id="persona-center-screen" class="screen" role="application" aria-label="角色中心">
             <!-- 角色中心内容将由PersonaCenterScreen组件动态生成 -->
+        </div>
+        <div id="persona-editor-screen" class="screen" role="application" aria-label="角色编辑器">
+            <!-- 角色编辑器将以全屏方式挂载PersonaDetailComponent -->
+            <div id="persona-editor-root"></div>
         </div>
         </main>
 </div>

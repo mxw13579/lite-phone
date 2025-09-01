@@ -1,22 +1,20 @@
 // 角色详情组件 - 右侧详情面板
 // 支持AI角色和用户角色的详情编辑，提供多标签页界面
 
-import type { 
-  Persona, 
-  UserRole, 
-  PersonaDetailEvents, 
-  PersonaDetailState,
-  ValidationResult,
+import type {
+  Persona,
+  UserRole,
   CreatePersonaInput,
   CreateUserRoleInput,
   UpdatePersonaInput,
   UpdateUserRoleInput
-} from '../types/PersonaTypes.js';
+} from '../types/PersonaTypes';
+import type { PersonaDetailEvents, PersonaDetailState, ValidationResult } from '../types/ComponentTypes';
 
-import type { WorldBook } from '../../../state/index.js';
-import { PersonaService } from '../services/PersonaService.js';
-import { UserRoleService } from '../services/UserRoleService.js';
-import { CompositionService } from '../services/CompositionService.js';
+import type { WorldBook } from '../../../state';
+import { PersonaService } from '../services/PersonaService';
+import { UserRoleService } from '../services/UserRoleService';
+import { CompositionService } from '../services/CompositionService';
 
 export class PersonaDetailComponent {
   private container: HTMLElement;
@@ -54,8 +52,19 @@ export class PersonaDetailComponent {
   }
 
   private initializeComponent(): void {
-    this.render();
+    // 不在初始化时立即渲染，等待外部调用showCreatePersona或showPersona
     this.attachEventListeners();
+    
+    // 如果容器为空，显示初始加载状态
+    if (this.container && this.container.innerHTML.trim() === '') {
+      this.container.innerHTML = `
+        <div class="persona-detail-loading">
+          <div style="padding: 20px; text-align: center;">
+            <div>正在初始化角色编辑器...</div>
+          </div>
+        </div>
+      `;
+    }
   }
 
   // 显示角色详情
@@ -89,22 +98,23 @@ export class PersonaDetailComponent {
       avatar: '',
       tags: [],
       prompt: {
-        system: '',
-        style: '',
-        safety: ''
+        definition: ''
       },
       worldBookLinks: [],
       status: 'draft',
       archived: false
     };
     
+    console.log('showCreatePersona: Setting up new persona...', newPersona);
     this.state.currentData = { type: 'persona', data: newPersona as Persona };
     this.state.activeTab = 'basic';
     this.state.isDirty = false;
     this.state.isEditing = true;
     this.clearValidationErrors();
     
+    console.log('showCreatePersona: Current state after setup:', this.state);
     await this.render();
+    console.log('showCreatePersona: Render completed');
   }
 
   // 显示创建新用户角色界面
@@ -114,8 +124,7 @@ export class PersonaDetailComponent {
       avatar: '',
       tags: [],
       prompt: {
-        persona: '',
-        style: ''
+        definition: ''
       },
       archived: false,
       isGlobalDefault: false
@@ -293,7 +302,10 @@ export class PersonaDetailComponent {
 
   // 渲染组件
   async render(): Promise<void> {
+    console.log('render: Starting render with state:', this.state);
+    
     if (!this.state.currentData) {
+      console.log('render: No currentData, showing empty state');
       this.container.innerHTML = `
         <div class="persona-detail-empty">
           <div class="empty-state">
@@ -306,6 +318,7 @@ export class PersonaDetailComponent {
       return;
     }
     
+    console.log('render: Rendering with data:', this.state.currentData);
     const currentItem = this.state.currentData.data;
     const isPersona = this.state.currentData.type === 'persona';
     
@@ -316,6 +329,8 @@ export class PersonaDetailComponent {
         ${this.renderTabContent(currentItem, isPersona)}
       </div>
     `;
+    
+    console.log('render: Render completed, DOM updated');
   }
 
   private renderHeader(item: Persona | UserRole, isPersona: boolean): string {
@@ -351,6 +366,105 @@ export class PersonaDetailComponent {
         </div>
       </div>
     `;
+  }
+
+  private renderTabContent(item: Persona | UserRole, isPersona: boolean): string {
+    switch (this.state.activeTab) {
+      case 'basic':
+        return this.renderBasicTab(item, isPersona);
+      case 'prompt':
+        return this.renderPromptTab(item, isPersona);
+      case 'baseline':
+        return isPersona ? this.renderBaselineTab(item as Persona) : '';
+      case 'worldbook':
+        return isPersona ? this.renderWorldBookTab(item as Persona) : '';
+      case 'preview':
+        return this.renderPreviewTab(item, isPersona);
+      default:
+        return '<div class="tab-content">未知标签页</div>';
+    }
+  }
+
+  private renderBasicTab(item: Persona | UserRole, isPersona: boolean): string {
+    const errors = this.state.validationErrors;
+    return `
+      <div class="tab-content basic-tab">
+        <div class="form-group">
+          <label class="form-label">名称 *</label>
+          <input 
+            type="text" 
+            class="form-input ${errors.name ? 'error' : ''}" 
+            value="${item.name || ''}"
+            ${this.state.isEditing ? '' : 'readonly'}
+            oninput="window.personaCenterDetail?.updateField('name', this.value)"
+            placeholder="请输入${isPersona ? '角色' : '用户角色'}名称"
+          >
+          ${errors.name ? `<div class="form-error">${errors.name}</div>` : ''}
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">头像</label>
+          <input 
+            type="text" 
+            class="form-input" 
+            value="${item.avatar || ''}"
+            ${this.state.isEditing ? '' : 'readonly'}
+            oninput="window.personaCenterDetail?.updateField('avatar', this.value)"
+            placeholder="头像URL（可选）"
+          >
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">标签</label>
+          <input 
+            type="text" 
+            class="form-input" 
+            value="${(item.tags || []).join(', ')}"
+            ${this.state.isEditing ? '' : 'readonly'}
+            oninput="window.personaCenterDetail?.updateTags(this.value)"
+            placeholder="用逗号分隔的标签"
+          >
+        </div>
+      </div>
+    `;
+  }
+
+  private renderPromptTab(item: Persona | UserRole, isPersona: boolean): string {
+    return `
+      <div class="tab-content prompt-tab">
+        <div class="form-group">
+          <label class="form-label">角色定义</label>
+          <textarea 
+            class="form-textarea" 
+            rows="10"
+            ${this.state.isEditing ? '' : 'readonly'}
+            oninput="window.personaCenterDetail?.updatePromptField('definition', this.value)"
+            placeholder="请输入${isPersona ? '角色' : '用户角色'}的详细定义..."
+          >${(item.prompt?.definition || '')}</textarea>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderBaselineTab(item: Persona): string {
+    return `<div class="tab-content">Baseline功能开发中...</div>`;
+  }
+
+  private renderWorldBookTab(item: Persona): string {
+    return `<div class="tab-content">世界书功能开发中...</div>`;
+  }
+
+  private renderPreviewTab(item: Persona | UserRole, isPersona: boolean): string {
+    return `<div class="tab-content">预览功能开发中...</div>`;
+  }
+
+  // 添加缺失的辅助方法
+  updateTags(value: string): void {
+    if (!this.state.currentData || !this.state.isEditing) return;
+    
+    const tags = value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+    this.state.currentData.data.tags = tags;
+    this.state.isDirty = true;
   }
 
   private renderTabs(isPersona: boolean): string {
@@ -489,38 +603,17 @@ export class PersonaDetailComponent {
       return `
         <div class="tab-content prompt-tab">
           <div class="form-group">
-            <label class="form-label">系统提示词 *</label>
+            <label class="form-label">角色设定 *</label>
             <textarea 
               class="form-textarea ${errors.system ? 'error' : ''}" 
               rows="8"
               ${this.state.isEditing ? '' : 'readonly'}
-              oninput="window.personaCenterDetail?.updatePromptField('system', this.value)"
-              placeholder="请输入系统提示词..."
-            >${persona.prompt?.system || ''}</textarea>
+              oninput="window.personaCenterDetail?.updatePromptField('definition', this.value)"
+              placeholder="请输入角色设定..."
+            >${persona.prompt?.definition || persona.prompt?.system || ''}</textarea>
             ${errors.system ? `<div class="form-error">${errors.system}</div>` : ''}
           </div>
           
-          <div class="form-group">
-            <label class="form-label">风格提示词</label>
-            <textarea 
-              class="form-textarea" 
-              rows="4"
-              ${this.state.isEditing ? '' : 'readonly'}
-              oninput="window.personaCenterDetail?.updatePromptField('style', this.value)"
-              placeholder="请输入风格提示词..."
-            >${persona.prompt?.style || ''}</textarea>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">安全提示词</label>
-            <textarea 
-              class="form-textarea" 
-              rows="4"
-              ${this.state.isEditing ? '' : 'readonly'}
-              oninput="window.personaCenterDetail?.updatePromptField('safety', this.value)"
-              placeholder="请输入安全提示词..."
-            >${persona.prompt?.safety || ''}</textarea>
-          </div>
         </div>
       `;
     } else {
@@ -528,27 +621,17 @@ export class PersonaDetailComponent {
       return `
         <div class="tab-content prompt-tab">
           <div class="form-group">
-            <label class="form-label">角色描述 *</label>
+            <label class="form-label">角色设定 *</label>
             <textarea 
               class="form-textarea ${errors.persona ? 'error' : ''}" 
               rows="6"
               ${this.state.isEditing ? '' : 'readonly'}
-              oninput="window.personaCenterDetail?.updatePromptField('persona', this.value)"
+              oninput="window.personaCenterDetail?.updatePromptField('definition', this.value)"
               placeholder="请描述这个用户角色..."
-            >${userRole.prompt?.persona || ''}</textarea>
+            >${userRole.prompt?.definition || userRole.prompt?.persona || ''}</textarea>
             ${errors.persona ? `<div class="form-error">${errors.persona}</div>` : ''}
           </div>
           
-          <div class="form-group">
-            <label class="form-label">风格描述</label>
-            <textarea 
-              class="form-textarea" 
-              rows="4"
-              ${this.state.isEditing ? '' : 'readonly'}
-              oninput="window.personaCenterDetail?.updatePromptField('style', this.value)"
-              placeholder="请描述说话风格..."
-            >${userRole.prompt?.style || ''}</textarea>
-          </div>
         </div>
       `;
     }
@@ -642,7 +725,7 @@ export class PersonaDetailComponent {
       return `
         <div class="tab-content preview-tab">
           <div class="preview-header">
-            <h4>系统提示词预览</h4>
+            <h4>角色设定预览</h4>
             <div class="preview-stats">
               <span class="token-count">预估Token数: ${preview.tokenCount}</span>
             </div>

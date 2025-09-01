@@ -21,7 +21,8 @@ import { aiResponseModule } from './screens/aiResponse';
 
 // === 初始化模块导入 ===
 import { initializationModule } from './init';
-import { injectCompatibilityAPIs } from './init/compat';
+// 强制使用 TypeScript 版本的兼容层，避免同名 .js 被解析
+import { injectCompatibilityAPIs } from './init/compat.ts';
 
 // === 服务层导入 ===
 import * as SERVICES from './services';

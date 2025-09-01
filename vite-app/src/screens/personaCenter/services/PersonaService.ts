@@ -303,8 +303,9 @@ export class PersonaService {
     }
 
     if ('prompt' in input && input.prompt) {
-      if (!input.prompt.system?.trim()) {
-        errors.push('系统提示词不能为空');
+      const def = input.prompt.definition || input.prompt.system;
+      if (!def?.trim()) {
+        errors.push('角色设定不能为空');
       }
     }
 

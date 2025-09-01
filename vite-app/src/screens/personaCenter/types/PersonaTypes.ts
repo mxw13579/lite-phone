@@ -29,7 +29,10 @@ export interface Persona {
   type: 'ai';
   tags: string[];
   prompt: {
-    system: string;
+    // 统一为“角色设定”，兼容旧字段
+    definition?: string;
+    // 兼容字段（读取时作回退，不在UI中展示）
+    system?: string;
     style?: string;
     safety?: string;
   };
@@ -52,7 +55,10 @@ export interface UserRole {
   type: 'user';
   tags: string[];
   prompt: {
-    persona: string;
+    // 统一为“角色设定”，兼容旧字段
+    definition?: string;
+    // 兼容字段（读取时作回退，不在UI中展示）
+    persona?: string;
     style?: string;
   };
   archived: boolean;
@@ -80,8 +86,6 @@ export type UpdateUserRoleInput = Partial<Omit<UserRole, 'id' | 'createdAt'>>;
 export interface FilterOptions {
   type?: 'ai' | 'user' | 'all';
   tags?: string[];
-  status?: 'draft' | 'published' | 'all';
-  archived?: boolean;
 }
 
 // 搜索选项
@@ -141,3 +145,15 @@ export const DEFAULT_COMPOSITION_CONFIG: CompositionConfig = {
   memoryTokenBudget: 600,
   runtimeMode: 'preview'
 };
+
+// Persona Center 屏幕状态
+export interface PersonaCenterState {
+  loading: boolean;
+  error: string | null;
+  selectedPersonaId: string | null;
+  selectedUserRoleId: string | null;
+  viewMode: 'list' | 'detail';
+  searchTerm: string;
+  filterOptions: FilterOptions;
+  activeMenu?: 'overview' | 'ai' | 'user' | 'worldbook' | 'import' | 'settings';
+}

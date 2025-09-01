@@ -2146,6 +2146,48 @@ body {
     flex-shrink: 0;
 }
 
+/* 功能菜单（左侧/顶栏） */
+.pc-nav {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+}
+.back-btn {
+    margin-right: 8px;
+}
+
+.pc-nav .nav-item {
+    padding: 6px 10px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.pc-nav .nav-item.active,
+.pc-nav .nav-item[aria-selected="true"] {
+    color: var(--color-primary);
+    background: #eef5ff;
+    border-color: #bcd7ff;
+}
+
+@media (max-width: 768px) {
+    .pc-nav { position: sticky; top: 45px; z-index: var(--z-raised); overflow-x: auto; }
+}
+
+/* 让头部按钮更紧凑 */
+.persona-center-header .btn {
+    min-height: 36px;
+    padding: 6px 10px;
+}
+.persona-center-header .btn-group .btn {
+    min-width: auto;
+}
+
 .header-left {
     display: flex;
     flex-direction: column;
@@ -2182,28 +2224,85 @@ body {
     gap: var(--space-xs);
 }
 
-/* 角色中心内容区 */
+/* 角色中心内容区 - 简化为单列布局 */
 .persona-center-content {
     display: flex;
     flex: 1;
     min-height: 0;
 }
 
-.left-panel {
-    width: 300px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--color-border);
-    background-color: var(--color-bg-secondary);
+/* 角色中心主面板 - 原left-panel改为全宽 */
+.main-panel {
+    width: 100%;
+    flex: 1;
+    background: linear-gradient(180deg, var(--color-bg-secondary), var(--color-bg-primary));
     display: flex;
     flex-direction: column;
 }
 
+/* 保留left-panel样式以兼容其他可能的使用场景 */
+.left-panel {
+    width: 280px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--color-border);
+    background: linear-gradient(180deg, var(--color-bg-secondary), var(--color-bg-primary));
+    display: flex;
+    flex-direction: column;
+}
+
+/* 新增：顶栏工具条，统一视觉层级 */
+.persona-center-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: linear-gradient(180deg, var(--color-bg-secondary), rgba(0,0,0,0));
+}
+
+.persona-center-toolbar .crumb {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.persona-center-toolbar .crumb.current {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+
+.persona-center-toolbar .crumb-sep {
+    margin: 0 6px;
+    color: var(--color-text-muted);
+}
+
+.persona-center-toolbar .stat-pill {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    padding: 4px 8px;
+    border-radius: 999px;
+}
+
+.left-panel {
+    width: 280px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--color-border);
+    background: linear-gradient(180deg, var(--color-bg-secondary), var(--color-bg-primary));
+    display: flex;
+    flex-direction: column;
+}
+
+/* 注释掉right-panel样式，角色中心不再使用右侧面板 */
+/*
 .right-panel {
     flex: 1;
     background-color: var(--color-bg-primary);
     display: flex;
     flex-direction: column;
 }
+*/
 
 /* 角色列表样式 */
 .persona-list {
@@ -2267,7 +2366,7 @@ body {
 .persona-list-content {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space-sm);
+    padding: 8px;
 }
 
 .persona-group {
@@ -2294,23 +2393,26 @@ body {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
-    padding: var(--space-sm);
-    margin-bottom: var(--space-xs);
+    padding: 10px;
+    margin-bottom: 6px;
     border: 1px solid transparent;
-    border-radius: var(--border-radius-md);
+    border-radius: 10px;
     cursor: pointer;
     transition: all 0.2s ease;
-    background-color: var(--color-bg-secondary);
+    background: var(--color-bg-secondary);
+    box-shadow: var(--shadow-sm);
 }
 
 .persona-item:hover {
     background-color: var(--color-bg-tertiary);
     border-color: var(--color-border);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-base);
 }
 
 .persona-item.selected {
-    background-color: var(--color-primary-light);
     border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(0,123,255,0.15);
 }
 
 .persona-item.archived {
@@ -2385,6 +2487,112 @@ body {
     border: 1px solid var(--color-border);
 }
 
+/* =============== 角色列表（现有DOM类名） =============== */
+.persona-list-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.persona-list-header {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.persona-list-header .search-container {
+    position: relative;
+}
+.persona-list-header #persona-search {
+    width: 100%;
+    padding: 8px 30px 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg-secondary);
+    font-size: var(--font-size-sm);
+}
+.persona-list-header .clear-btn {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    width: 24px; height: 24px;
+    cursor: pointer;
+}
+
+.persona-list-header .filter-container select {
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg-secondary);
+    font-size: var(--font-size-xs);
+}
+
+/* 头部的“新建”按钮采用 action-btn 样式 */
+
+.list-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-bg-secondary);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 8px;
+}
+.list-item.selected {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(0,123,255,0.12);
+}
+.list-item .item-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.list-item .item-name {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+.list-item .item-type-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+}
+.list-item .item-type-badge.ai { background: #eef5ff; border-color:#bcd7ff; color:#2763c4; }
+.list-item .item-type-badge.user { background: #eef9f0; border-color:#c6eccf; color:#2d8a45; }
+
+.list-item .item-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+.list-item .item-tags .tag {
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 10px;
+}
+.list-item .item-actions .action-btn.small {
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    border-radius: 8px;
+    font-size: var(--font-size-xs);
+}
+.list-item .action-btn.small.danger { border-color: var(--color-danger); color: var(--color-danger); }
+
 /* 角色详情样式 */
 .persona-detail {
     height: 100%;
@@ -2425,9 +2633,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-lg);
+    padding: 14px 16px;
     border-bottom: 1px solid var(--color-border);
-    background-color: var(--color-bg-secondary);
+    background: linear-gradient(180deg, var(--color-bg-secondary), var(--color-bg-primary));
 }
 
 .header-left {
@@ -2466,7 +2674,7 @@ body {
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-    padding: var(--space-sm) var(--space-md);
+    padding: 10px 12px;
     border: none;
     background: none;
     cursor: pointer;
@@ -2485,6 +2693,7 @@ body {
 .tab.active {
     color: var(--color-primary);
     border-bottom-color: var(--color-primary);
+    box-shadow: inset 0 -2px 0 rgba(0,123,255,0.2);
 }
 
 .tab-icon {
@@ -2759,15 +2968,22 @@ body {
     font-size: var(--font-size-sm);
 }
 
-/* 响应式设计 */
+/* 响应式设计 - 角色中心简化后的移动端样式 */
 @media (max-width: 768px) {
+    /* 角色中心内容区在移动端保持单列 */
     .persona-center-content {
-        flex-direction: column;
+        /* 已经是单列布局，无需特殊处理 */
     }
     
+    /* 保留其他面板的移动端样式 */
     .left-panel {
         width: 100%;
         height: 300px;
+    }
+    
+    /* 主面板在移动端全宽显示 */
+    .main-panel {
+        width: 100%;
     }
     
     .persona-center-header {

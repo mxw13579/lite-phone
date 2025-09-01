@@ -31,14 +31,9 @@ export class CompositionService {
       parts.push(content.trim());
     };
 
-    // 1. System Prompt (必有)
-    addSection('System', persona.prompt.system);
-
-    // 2. Safety Prompt (可选)
-    addSection('Safety', persona.prompt.safety);
-
-    // 3. Style Prompt (可选) 
-    addSection('Style', persona.prompt.style);
+    // 新规范：仅“角色设定”一段；兼容旧字段
+    const definition = persona.prompt.definition || persona.prompt.system || '';
+    addSection('角色设定', definition);
 
     // 4. WorldBook 内容（按order排序，仅启用的）
     if (persona.worldBookLinks && persona.worldBookLinks.length > 0) {
@@ -100,12 +95,9 @@ export class CompositionService {
 
     lines.push(`角色名: ${userRole.name}`);
 
-    if (userRole.prompt.style?.trim()) {
-      lines.push(`风格: ${userRole.prompt.style.trim()}`);
-    }
-
-    if (userRole.prompt.persona?.trim()) {
-      lines.push(`说明: ${userRole.prompt.persona.trim()}`);
+    const urDef = userRole.prompt.definition || userRole.prompt.persona || '';
+    if (urDef.trim()) {
+      lines.push(`角色设定: ${urDef.trim()}`);
     }
 
     return lines.join('\n');
@@ -151,29 +143,12 @@ export class CompositionService {
   ): Array<{ title: string; content: string; enabled: boolean }> {
     const sections: Array<{ title: string; content: string; enabled: boolean }> = [];
 
-    // System段
-    if (persona.prompt.system?.trim()) {
+    // 角色设定段（兼容旧字段）
+    const def2 = persona.prompt.definition || persona.prompt.system || '';
+    if (def2.trim()) {
       sections.push({
-        title: 'System',
-        content: persona.prompt.system.trim(),
-        enabled: true
-      });
-    }
-
-    // Safety段
-    if (persona.prompt.safety?.trim()) {
-      sections.push({
-        title: 'Safety',
-        content: persona.prompt.safety.trim(),
-        enabled: true
-      });
-    }
-
-    // Style段
-    if (persona.prompt.style?.trim()) {
-      sections.push({
-        title: 'Style',
-        content: persona.prompt.style.trim(),
+        title: '角色设定',
+        content: def2.trim(),
         enabled: true
       });
     }

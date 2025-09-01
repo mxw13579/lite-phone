@@ -9,9 +9,9 @@ import type {
   ComponentState
 } from '../types/ComponentTypes';
 
-import type { Persona, UserRole } from '../types/PersonaTypes.js';
-import { PersonaService } from '../services/PersonaService.js';
-import { UserRoleService } from '../services/UserRoleService.js';
+import type { Persona, UserRole } from '../types/PersonaTypes';
+import { PersonaService } from '../services/PersonaService';
+import { UserRoleService } from '../services/UserRoleService';
 
 export class PersonaListComponent {
   private container: HTMLElement;
@@ -20,7 +20,7 @@ export class PersonaListComponent {
   private events: PersonaListEvents;
   private state: ComponentState;
   
-  private currentFilter: FilterOptions = { type: 'all', archived: false };
+  private currentFilter: FilterOptions = { type: 'all' };
   private searchTerm: string = '';
   private selectedItems: Set<string> = new Set();
 
@@ -113,7 +113,11 @@ export class PersonaListComponent {
       const items = this.buildListItems(filteredPersonas, filteredUserRoles);
       this.state.loading = false;
       
-      this.renderListItems(items);
+      // 将渲染结果写回DOM，避免一直显示加载中
+      const content = this.container.querySelector('.persona-list-content');
+      if (content) {
+        content.innerHTML = this.renderListItems(items);
+      }
     } catch (error) {
       console.error('刷新列表失败:', error);
       this.state.loading = false;
@@ -152,6 +156,31 @@ export class PersonaListComponent {
       this.updateItemSelection(id, false);
     });
     this.selectedItems.clear();
+  }
+
+  // 加载数据（用于外部刷新）
+  async loadData(): Promise<void> {
+    await this.render();
+  }
+
+  // 销毁组件
+  destroy(): void {
+    // 清理全局事件处理器
+    delete (window as any).handleItemClick;
+    delete (window as any).handleItemAction;
+    
+    // 清理DOM事件监听器
+    const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement;
+    if (searchInput) {
+      searchInput.removeEventListener('input', () => {});
+    }
+    
+    const clearBtn = this.container.querySelector('#clear-search');
+    if (clearBtn) {
+      clearBtn.removeEventListener('click', () => {});
+    }
+    
+    this.container.innerHTML = '';
   }
 
   // 删除项目
@@ -232,19 +261,9 @@ export class PersonaListComponent {
   private applyFilters<T extends Persona | UserRole>(items: T[], filters: FilterOptions): T[] {
     let filtered = items;
 
-    if (filters.archived !== undefined) {
-      filtered = filtered.filter(item => item.archived === filters.archived);
-    }
-
     if (filters.tags && filters.tags.length > 0) {
       filtered = filtered.filter(item => 
         filters.tags!.some(tag => item.tags.includes(tag))
-      );
-    }
-
-    if (filters.status && 'status' in items[0]) {
-      filtered = filtered.filter(item => 
-        'status' in item && item.status === filters.status
       );
     }
 
@@ -264,22 +283,7 @@ export class PersonaListComponent {
             <input type="text" id="persona-search" placeholder="搜索角色..." value="${this.searchTerm}">
             <button id="clear-search" class="clear-btn" ${this.searchTerm ? '' : 'style="display:none"'}>✕</button>
           </div>
-          <div class="filter-container">
-            <select id="type-filter">
-              <option value="all" ${this.currentFilter.type === 'all' ? 'selected' : ''}>全部</option>
-              <option value="ai" ${this.currentFilter.type === 'ai' ? 'selected' : ''}>AI角色</option>
-              <option value="user" ${this.currentFilter.type === 'user' ? 'selected' : ''}>用户角色</option>
-            </select>
-            <select id="status-filter">
-              <option value="all">全部状态</option>
-              <option value="active" ${!this.currentFilter.archived ? 'selected' : ''}>活跃</option>
-              <option value="archived" ${this.currentFilter.archived ? 'selected' : ''}>已归档</option>
-            </select>
-          </div>
-          <div class="action-container">
-            <button id="new-persona-btn" class="action-btn primary">新建AI角色</button>
-            <button id="new-userrole-btn" class="action-btn secondary">新建用户角色</button>
-          </div>
+          <div class="filter-container"></div>
         </div>
         <div class="persona-list-content">
           ${this.renderListItems(items)}
@@ -291,35 +295,38 @@ export class PersonaListComponent {
   // 渲染列表项
   private renderListItems(items: PersonaListItem[]): string {
     if (items.length === 0) {
+      const currentType = this.currentFilter.type;
+      const typeText = currentType === 'ai' ? 'AI角色' : currentType === 'user' ? '用户角色' : '角色';
+      const createHandler = currentType === 'user' ? 'window.personaCenterScreen?.createNewUserRole()' : 'window.personaCenterScreen?.createNewPersona()';
+      
       return `
         <div class="empty-state">
-          <p>未找到匹配的角色</p>
-          <button class="create-first-btn" onclick="this.events?.onCreate?.('ai')">创建你的第一个角色</button>
+          <div class="empty-icon">🎭</div>
+          <h4>暂无${typeText}</h4>
+          <p>创建您的第一个${typeText}开始使用</p>
+          <button class="btn btn-primary" onclick="${createHandler}">新建${typeText === 'AI角色' ? '角色' : typeText}</button>
         </div>
       `;
     }
 
     const groupedItems = this.groupItemsByType(items);
+    const activeType = this.currentFilter.type === 'ai' ? 'ai' : this.currentFilter.type === 'user' ? 'user' : 'all';
     let html = '';
 
-    // 渲染AI角色组
-    if (groupedItems.ai.length > 0) {
-      html += `
-        <div class="item-group">
-          <h3 class="group-title">AI角色 (${groupedItems.ai.length})</h3>
-          ${groupedItems.ai.map(item => this.renderListItem(item)).join('')}
+    const renderGroup = (title: string, list: PersonaListItem[], type: 'ai'|'user') => `
+      <div class="item-group">
+        <div class="group-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>${title} (${list.length})</span>
+          <button class="btn btn-secondary btn-sm" onclick="${type==='ai' ? 'window.personaCenterScreen?.createNewPersona()' : 'window.personaCenterScreen?.createNewUserRole()'}">新建角色</button>
         </div>
-      `;
-    }
+        ${list.map(item => this.renderListItem(item)).join('')}
+      </div>`;
 
-    // 渲染用户角色组
-    if (groupedItems.user.length > 0) {
-      html += `
-        <div class="item-group">
-          <h3 class="group-title">用户角色 (${groupedItems.user.length})</h3>
-          ${groupedItems.user.map(item => this.renderListItem(item)).join('')}
-        </div>
-      `;
+    if (activeType === 'all' || activeType === 'ai') {
+      if (groupedItems.ai.length > 0) html += renderGroup('AI角色', groupedItems.ai, 'ai');
+    }
+    if (activeType === 'all' || activeType === 'user') {
+      if (groupedItems.user.length > 0) html += renderGroup('用户角色', groupedItems.user, 'user');
     }
 
     return html;
@@ -450,40 +457,29 @@ export class PersonaListComponent {
     }
 
     // 类型筛选
-    const typeFilter = this.container.querySelector('#type-filter') as HTMLSelectElement;
-    if (typeFilter) {
-      typeFilter.addEventListener('change', () => {
-        this.filter({
-          ...this.currentFilter,
-          type: typeFilter.value as 'all' | 'ai' | 'user'
-        });
-      });
-    }
+    // 顶部已分AI/用户，不再提供二次筛选
 
     // 状态筛选
-    const statusFilter = this.container.querySelector('#status-filter') as HTMLSelectElement;
-    if (statusFilter) {
-      statusFilter.addEventListener('change', () => {
-        this.filter({
-          ...this.currentFilter,
-          archived: statusFilter.value === 'archived'
-        });
-      });
-    }
+    // 去除状态筛选（不再需要）
 
-    // 新建按钮
-    const newPersonaBtn = this.container.querySelector('#new-persona-btn');
-    if (newPersonaBtn) {
-      newPersonaBtn.addEventListener('click', () => {
-        this.events.onCreate('ai');
-      });
-    }
+    // 新建按钮移至页面头部，不在列表中重复提供
 
-    const newUserRoleBtn = this.container.querySelector('#new-userrole-btn');
-    if (newUserRoleBtn) {
-      newUserRoleBtn.addEventListener('click', () => {
-        this.events.onCreate('user');
+    // 顶部新增“新建”按钮（与列表同级）
+    const header = this.container.querySelector('.persona-list-header');
+    if (header) {
+      const btn = document.createElement('button');
+      // 使用常规按钮样式，避免 icon 按钮的固定宽度导致文字竖排
+      btn.className = 'btn btn-primary';
+      btn.textContent = '新建角色';
+      btn.style.marginLeft = 'auto';
+      btn.addEventListener('click', () => {
+        if (this.currentFilter.type === 'user') {
+          this.events.onCreate('user');
+        } else {
+          this.events.onCreate('ai');
+        }
       });
+      header.appendChild(btn);
     }
 
     // 全局事件处理函数

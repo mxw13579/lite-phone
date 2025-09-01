@@ -12,7 +12,8 @@ export type ScreenId =
   | 'world-book-editor-screen'
   | 'preset-list-screen'
   | 'preset-editor-screen'
-  | 'persona-center-screen';
+  | 'persona-center-screen'
+  | 'persona-editor-screen';
 
 export type RenderFunction = () => void;
 export type PostProcessFunction = (screenId: ScreenId) => void;
@@ -34,7 +35,8 @@ export const SCREEN_IDS: Record<string, ScreenId> = {
   WORLD_BOOK_EDITOR: 'world-book-editor-screen',
   PRESET_LIST: 'preset-list-screen',
   PRESET_EDITOR: 'preset-editor-screen',
-  PERSONA_CENTER: 'persona-center-screen'
+  PERSONA_CENTER: 'persona-center-screen',
+  PERSONA_EDITOR: 'persona-editor-screen'
 } as const;
 
 // === 路由状态管理 ===
@@ -60,7 +62,8 @@ const screenRenderMap: Partial<Record<ScreenId, RenderFunction>> = {
   [SCREEN_IDS.WORLD_BOOK_EDITOR]: () => (window as any).renderWorldBookEditorProxy?.(),
   [SCREEN_IDS.PRESET_LIST]: () => (window as any).renderPresetListProxy?.(),
   [SCREEN_IDS.PRESET_EDITOR]: () => (window as any).renderPresetEditorProxy?.(),
-  [SCREEN_IDS.PERSONA_CENTER]: () => (window as any).renderPersonaCenterProxy?.()
+  [SCREEN_IDS.PERSONA_CENTER]: () => (window as any).renderPersonaCenterProxy?.(),
+  [SCREEN_IDS.PERSONA_EDITOR]: () => (window as any).renderPersonaEditorProxy?.()
 };
 
 // 特殊屏幕的后处理函数
@@ -79,7 +82,8 @@ const screenPostProcessMap: Partial<Record<ScreenId, PostProcessFunction | undef
   [SCREEN_IDS.WORLD_BOOK_EDITOR]: undefined,
   [SCREEN_IDS.PRESET_LIST]: undefined,
   [SCREEN_IDS.PRESET_EDITOR]: undefined,
-  [SCREEN_IDS.PERSONA_CENTER]: undefined
+  [SCREEN_IDS.PERSONA_CENTER]: undefined,
+  [SCREEN_IDS.PERSONA_EDITOR]: undefined
 };
 
 // === 核心路由函数 ===
@@ -100,12 +104,21 @@ export function showScreen(screenId: ScreenId): void {
 
   // 调用对应屏幕的渲染函数
   const renderFunction = screenRenderMap[screenId];
+  console.log(`查找屏幕渲染函数: ${screenId}`, { 
+    found: !!renderFunction, 
+    availableScreens: Object.keys(screenRenderMap),
+    screenRenderMap: screenRenderMap 
+  });
+  
   if (renderFunction) {
     try {
+      console.log(`执行屏幕渲染函数: ${screenId}`);
       renderFunction();
     } catch (error) {
       console.error(`屏幕渲染函数执行失败: ${screenId}`, error);
     }
+  } else {
+    console.warn(`未找到屏幕渲染函数: ${screenId}`);
   }
 
   // 切换屏幕显示状态

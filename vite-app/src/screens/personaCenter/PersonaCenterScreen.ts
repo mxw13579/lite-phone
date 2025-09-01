@@ -4,23 +4,27 @@
 import type { 
   Persona, 
   UserRole, 
-  PersonaListEvents, 
-  PersonaDetailEvents,
   SearchOptions,
   FilterOptions,
   PersonaCenterState
-} from './types/PersonaTypes.js';
+} from './types/PersonaTypes';
 
-import type { WorldBook } from '../../state/index.js';
-import { PersonaService } from './services/PersonaService.js';
-import { UserRoleService } from './services/UserRoleService.js';
-import { ImportExportService } from './services/ImportExportService.js';
-import { PersonaListComponent } from './components/PersonaList.js';
-import { PersonaDetailComponent } from './components/PersonaDetail.js';
+import type { 
+  PersonaListEvents, 
+  PersonaDetailEvents
+} from './types/ComponentTypes';
+
+import type { WorldBook } from '../../state';
+import { PersonaService } from './services/PersonaService';
+import { UserRoleService } from './services/UserRoleService';
+import { ImportExportService } from './services/ImportExportService';
+import { PersonaListComponent } from './components/PersonaList';
+import { PersonaDetailComponent } from './components/PersonaDetail';
 
 export class PersonaCenterScreen {
   private container: HTMLElement;
   private state: PersonaCenterState;
+  private isDetailVisible: boolean = false;
   
   // 服务层
   private personaService: PersonaService;
@@ -31,9 +35,8 @@ export class PersonaCenterScreen {
   private personaList: PersonaListComponent | null = null;
   private personaDetail: PersonaDetailComponent | null = null;
   
-  // 容器元素
+  // 容器元素  
   private leftPanel: HTMLElement | null = null;
-  private rightPanel: HTMLElement | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -53,7 +56,8 @@ export class PersonaCenterScreen {
         type: 'all',
         status: 'all',
         archived: false
-      }
+      },
+      activeMenu: 'ai'
     };
   }
 
@@ -86,7 +90,6 @@ export class PersonaCenterScreen {
   destroy(): void {
     this.detachGlobalEventListeners();
     this.personaList?.destroy();
-    this.personaDetail = null;
     this.personaList = null;
     console.log('PersonaCenterScreen destroyed');
   }
@@ -121,49 +124,38 @@ export class PersonaCenterScreen {
 
     this.container.innerHTML = `
       <div class="persona-center">
-        <header class="persona-center-header">
-          <div class="header-left">
-            <h1 class="screen-title">
-              <span class="title-icon">🎭</span>
-              角色中心
-            </h1>
-            <div class="screen-subtitle">管理AI角色和用户角色</div>
-          </div>
-          
-          <div class="header-actions">
-            <button class="btn btn-secondary" onclick="window.personaCenterScreen?.showImportExport()">
-              <span class="btn-icon">📁</span>
-              导入导出
-            </button>
-            <div class="btn-group">
-              <button class="btn btn-primary" onclick="window.personaCenterScreen?.createNewPersona()">
-                <span class="btn-icon">🤖</span>
-                新建AI角色
-              </button>
-              <button class="btn btn-primary" onclick="window.personaCenterScreen?.createNewUserRole()">
-                <span class="btn-icon">👤</span>
-                新建用户角色
-              </button>
-            </div>
-          </div>
+        <header class="header" role="banner">
+          <button class="back-btn" onclick="window.showScreen && window.showScreen('home-screen')" aria-label="返回主屏幕">
+            <span aria-hidden="true">‹</span>
+          </button>
+          <h1 class="header-title">
+            <span class="title-icon">🎭</span>
+            角色中心
+          </h1>
+          <div style="width: 30px;"></div>
         </header>
+        <nav class="pc-nav" role="tablist" aria-label="角色中心功能菜单">
+          <button class="nav-item" data-menu="ai" onclick="window.personaCenterScreen?.switchMenu('ai')">AI角色</button>
+          <button class="nav-item" data-menu="user" onclick="window.personaCenterScreen?.switchMenu('user')">用户角色</button>
+        </nav>
+
+        
 
         <div class="persona-center-content">
-          <div class="left-panel" id="persona-list-container"></div>
-          <div class="right-panel" id="persona-detail-container"></div>
+          <div class="main-panel" id="persona-list-container"></div>
         </div>
       </div>
     `;
 
     // 直接从容器内查找面板元素，避免时序问题
     this.leftPanel = this.container.querySelector('#persona-list-container') as HTMLElement;
-    this.rightPanel = this.container.querySelector('#persona-detail-container') as HTMLElement;
+    this.updateNavActive();
   }
 
   // 初始化组件
   private async initializeComponents(): Promise<void> {
-    if (!this.leftPanel || !this.rightPanel) {
-      console.error('查找失败 - leftPanel:', !!this.leftPanel, 'rightPanel:', !!this.rightPanel);
+    if (!this.leftPanel) {
+      console.error('查找失败 - leftPanel:', !!this.leftPanel);
       throw new Error('面板容器未找到');
     }
 
@@ -172,36 +164,38 @@ export class PersonaCenterScreen {
 
     // 初始化PersonaList组件
     const listEvents: PersonaListEvents = {
-      onPersonaSelected: (persona) => this.handlePersonaSelected(persona),
-      onUserRoleSelected: (userRole) => this.handleUserRoleSelected(userRole),
-      onPersonaCreated: (persona) => this.handlePersonaCreated(persona),
-      onUserRoleCreated: (userRole) => this.handleUserRoleCreated(userRole),
-      onPersonaUpdated: (persona) => this.handlePersonaUpdated(persona),
-      onUserRoleUpdated: (userRole) => this.handleUserRoleUpdated(userRole),
-      onPersonaDeleted: (personaId) => this.handlePersonaDeleted(personaId),
-      onUserRoleDeleted: (userRoleId) => this.handleUserRoleDeleted(userRoleId),
-      onSearchChange: (searchTerm) => this.handleSearchChange(searchTerm),
-      onFilterChange: (filters) => this.handleFilterChange(filters)
+      onSelect: (id: string, type: 'ai' | 'user') => {
+        if (type === 'ai') {
+          this.personaService.getById(id).then(persona => {
+            if (persona) this.handlePersonaSelected(persona);
+          });
+        } else {
+          this.userRoleService.getById(id).then(userRole => {
+            if (userRole) this.handleUserRoleSelected(userRole);
+          });
+        }
+      },
+      onCreate: (type: 'ai' | 'user') => {
+        if (type === 'ai') this.createNewPersona();
+        else this.createNewUserRole();
+      },
+      onDelete: (id: string, type: 'ai' | 'user') => {
+        if (type === 'ai') this.handlePersonaDeleted(id);
+        else this.handleUserRoleDeleted(id);
+      },
+      onArchive: (id: string, archived: boolean) => {
+        // 根据需要实现归档逻辑
+      },
+      onSearch: (options: SearchOptions) => this.handleSearchChange(options.term),
+      onFilter: (filters: FilterOptions) => this.handleFilterChange(filters)
     };
 
     this.personaList = new PersonaListComponent(this.leftPanel, listEvents);
 
-    // 初始化PersonaDetail组件
-    const detailEvents: PersonaDetailEvents = {
-      onPersonaSelected: (persona) => this.handlePersonaSelected(persona),
-      onUserRoleSelected: (userRole) => this.handleUserRoleSelected(userRole),
-      onPersonaCreated: (persona) => this.handlePersonaCreated(persona),
-      onUserRoleCreated: (userRole) => this.handleUserRoleCreated(userRole),
-      onPersonaUpdated: (persona) => this.handlePersonaUpdated(persona),
-      onUserRoleUpdated: (userRole) => this.handleUserRoleUpdated(userRole),
-      onPersonaDeleted: (personaId) => this.handlePersonaDeleted(personaId),
-      onUserRoleDeleted: (userRoleId) => this.handleUserRoleDeleted(userRoleId)
-    };
-
-    this.personaDetail = new PersonaDetailComponent(this.rightPanel, detailEvents, worldBooks);
-
     // 渲染组件（这会自动加载数据）
     await this.personaList.render();
+    // 默认进入AI角色菜单
+    this.switchMenu(this.state.activeMenu || 'ai');
   }
 
   // 加载初始数据
@@ -215,8 +209,14 @@ export class PersonaCenterScreen {
     this.state.selectedPersonaId = persona.id;
     this.state.selectedUserRoleId = null;
     
-    if (this.personaDetail) {
-      await this.personaDetail.showPersona(persona);
+    // 在角色中心列表页，选择角色后跳转到编辑页面
+    try {
+      const { showScreen, SCREEN_IDS } = await import('../../router');
+      const win = window as any;
+      win._selectedPersonaForEdit = persona;
+      showScreen(SCREEN_IDS.PERSONA_EDITOR);
+    } catch (error) {
+      console.error('跳转到编辑页面失败:', error);
     }
     
     // 更新PersonaService的最后使用时间
@@ -227,8 +227,14 @@ export class PersonaCenterScreen {
     this.state.selectedUserRoleId = userRole.id;
     this.state.selectedPersonaId = null;
     
-    if (this.personaDetail) {
-      await this.personaDetail.showUserRole(userRole);
+    // 在角色中心列表页，选择用户角色后跳转到编辑页面
+    try {
+      const { showScreen, SCREEN_IDS } = await import('../../router');
+      const win = window as any;
+      win._selectedUserRoleForEdit = userRole;
+      showScreen(SCREEN_IDS.PERSONA_EDITOR);
+    } catch (error) {
+      console.error('跳转到编辑页面失败:', error);
     }
     
     // 更新UserRoleService的最后使用时间
@@ -261,10 +267,7 @@ export class PersonaCenterScreen {
       await this.personaList.loadData();
     }
     
-    // 如果当前选中的是这个角色，更新详情视图
-    if (this.state.selectedPersonaId === persona.id && this.personaDetail) {
-      await this.personaDetail.showPersona(persona);
-    }
+    // 角色列表页不需要更新详情视图，列表数据刷新已足够
   }
 
   private async handleUserRoleUpdated(userRole: UserRole): Promise<void> {
@@ -273,10 +276,7 @@ export class PersonaCenterScreen {
       await this.personaList.loadData();
     }
     
-    // 如果当前选中的是这个用户角色，更新详情视图
-    if (this.state.selectedUserRoleId === userRole.id && this.personaDetail) {
-      await this.personaDetail.showUserRole(userRole);
-    }
+    // 角色列表页不需要更新详情视图，列表数据刷新已足够
   }
 
   private async handlePersonaDeleted(personaId: string): Promise<void> {
@@ -285,12 +285,9 @@ export class PersonaCenterScreen {
       await this.personaList.loadData();
     }
     
-    // 如果删除的是当前选中的角色，清空详情视图
+    // 清空选中状态
     if (this.state.selectedPersonaId === personaId) {
       this.state.selectedPersonaId = null;
-      if (this.personaDetail) {
-        this.personaDetail.clear();
-      }
     }
   }
 
@@ -300,12 +297,9 @@ export class PersonaCenterScreen {
       await this.personaList.loadData();
     }
     
-    // 如果删除的是当前选中的用户角色，清空详情视图
+    // 清空选中状态
     if (this.state.selectedUserRoleId === userRoleId) {
       this.state.selectedUserRoleId = null;
-      if (this.personaDetail) {
-        this.personaDetail.clear();
-      }
     }
   }
 
@@ -321,28 +315,46 @@ export class PersonaCenterScreen {
 
   // 公开方法
   async createNewPersona(): Promise<void> {
-    if (this.personaDetail) {
-      await this.personaDetail.showCreatePersona();
-    }
-    
-    // 清除列表选中状态
-    this.state.selectedPersonaId = null;
-    this.state.selectedUserRoleId = null;
-    if (this.personaList) {
-      this.personaList.clearSelection();
+    // 跳转到专用的编辑界面
+    try {
+      const { showScreen } = await import('../../router');
+      const win = window as any;
+      
+      // 设置编辑模式
+      win._personaEditorMode = 'persona';
+      console.log('createNewPersona: Setting editor mode to persona and navigating...');
+      
+      // 直接使用字符串ID而不是通过SCREEN_IDS常量
+      const personaEditorScreenId = 'persona-editor-screen';
+      console.log('即将跳转到:', personaEditorScreenId);
+      
+      showScreen(personaEditorScreenId as any);
+      return;
+    } catch (error) {
+      console.error('跳转失败:', error);
+      alert('无法打开角色编辑页面，请检查路由配置');
     }
   }
 
   async createNewUserRole(): Promise<void> {
-    if (this.personaDetail) {
-      await this.personaDetail.showCreateUserRole();
-    }
-    
-    // 清除列表选中状态
-    this.state.selectedPersonaId = null;
-    this.state.selectedUserRoleId = null;
-    if (this.personaList) {
-      this.personaList.clearSelection();
+    // 跳转到专用的编辑界面
+    try {
+      const { showScreen } = await import('../../router');
+      const win = window as any;
+      
+      // 设置编辑模式  
+      win._personaEditorMode = 'user';
+      console.log('createNewUserRole: Setting editor mode to user and navigating...');
+      
+      // 直接使用字符串ID
+      const personaEditorScreenId = 'persona-editor-screen';
+      console.log('即将跳转到:', personaEditorScreenId);
+      
+      showScreen(personaEditorScreenId as any);
+      return;
+    } catch (error) {
+      console.error('跳转失败:', error);
+      alert('无法打开用户角色编辑页面，请检查路由配置');
     }
   }
 
@@ -511,15 +523,8 @@ export class PersonaCenterScreen {
       switch (event.key) {
         case 'n':
           event.preventDefault();
-          this.createNewPersona();
-          break;
-        case 'u':
-          event.preventDefault();
-          this.createNewUserRole();
-          break;
-        case 'i':
-          event.preventDefault();
-          this.showImportExport();
+          if (this.state.activeMenu === 'ai') this.createNewPersona();
+          if (this.state.activeMenu === 'user') this.createNewUserRole();
           break;
       }
     }
@@ -530,11 +535,55 @@ export class PersonaCenterScreen {
     return { ...this.state };
   }
 
-  // 世界书数据更新
+  // 世界书数据更新（角色列表页无需处理）
   async updateWorldBooks(): Promise<void> {
-    const worldBooks = await this.getWorldBooks();
-    if (this.personaDetail) {
-      this.personaDetail.updateWorldBooks(worldBooks);
-    }
+    // 角色中心列表页无需更新世界书数据
+    console.log('角色中心列表页无需更新世界书数据');
   }
+
+  // ====== 功能菜单与面板渲染 ======
+  switchMenu(menu: 'overview' | 'ai' | 'user' | 'worldbook' | 'import' | 'settings'): void {
+    this.state.activeMenu = menu;
+    this.updateNavActive();
+
+    if (!this.leftPanel) return;
+
+    // 左侧列表仅在 AI/用户 里显示
+    if (menu === 'ai' || menu === 'user') {
+      this.leftPanel.style.display = '';
+      // 过滤列表
+      const type = menu === 'ai' ? 'ai' : 'user';
+      this.personaList?.filter({ ...this.state.filterOptions, type });
+      return;
+    }
+
+    // 其它菜单暂时隐藏列表
+    this.leftPanel.style.display = 'none';
+  }
+
+  // 返回上一级
+  goBack(): void {
+    try { 
+      import('../../router/index.js').then(({ goBack }) => {
+        goBack();
+      });
+    } catch { /* ignore */ }
+  }
+
+  private updateNavActive(): void {
+    const active = this.state.activeMenu || 'overview';
+    const navItems = this.container.querySelectorAll('.pc-nav .nav-item');
+    navItems.forEach(btn => {
+      const menu = (btn as HTMLElement).dataset.menu as string;
+      if (menu === active) {
+        btn.classList.add('active');
+        (btn as HTMLElement).setAttribute('aria-selected', 'true');
+      } else {
+        btn.classList.remove('active');
+        (btn as HTMLElement).setAttribute('aria-selected', 'false');
+      }
+    });
+  }
+
+  // 移除右侧面板相关的渲染方法，角色中心只保留列表功能
 }
