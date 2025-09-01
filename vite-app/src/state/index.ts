@@ -1,6 +1,8 @@
 // 状态管理模块 - TypeScript版本
 // 集中管理应用的全局状态和状态更新函数
 
+import type { Persona, UserRole } from '../screens/personaCenter/types/PersonaTypes';
+
 // === TypeScript类型定义 ===
 
 export interface Chat {
@@ -13,6 +15,10 @@ export interface Chat {
   musicData: {
     totalTime: number;
   };
+  // 角色引用字段
+  personaId?: string;           // 使用的AI角色ID
+  defaultUserRoleId?: string;   // 默认用户角色ID
+  compositionHash?: string;     // 合成哈希，用于版本一致性检查
 }
 
 export interface Member {
@@ -35,7 +41,6 @@ export interface ChatSettings {
   aiPatSuffix: string;
   myPatSuffix: string;
   myGroupNickname?: string;
-  myNickname?: string;
   groupAvatar?: string;
 }
 
@@ -47,6 +52,8 @@ export interface Message {
   type?: 'text' | 'image' | 'voice' | 'transfer' | 'sticker' | 'ai_image' | 'voice_message' | 'pat' | 'user_photo';
   meaning?: string;
   role?: string;
+  // 角色引用字段
+  userRoleId?: string;          // 消息级用户角色ID（用于特定消息的角色注入）
   [key: string]: any;
 }
 
@@ -106,7 +113,7 @@ export interface MusicState {
 
 export interface Track {
   id: string;
-  title: string;
+  name: string;
   artist: string;
   src: string;
   isLocal: boolean;
@@ -143,6 +150,10 @@ export interface AppState {
   worldBooks: WorldBook[];
   personaPresets: PersonaPreset[];
   presets: Preset[];
+  personas: Persona[];
+  userRoles: UserRole[];
+  activePersonaId?: string;
+  activeUserRoleId?: string;
 }
 
 // === 管理器接口定义 ===
@@ -187,7 +198,11 @@ export const state: AppState = {
   userStickers: [],
   worldBooks: [],
   personaPresets: [],
-  presets: []
+  presets: [],
+  personas: [],
+  userRoles: [],
+  activePersonaId: undefined,
+  activeUserRoleId: undefined
 };
 
 // === 辅助状态变量 ===
@@ -208,7 +223,7 @@ export let isMessageEditMode = false;
 export let editingPresetId: string | null = null;
 export let newWallpaperBase64: string | null = null;
 export let isSelectionMode = false;
-export let selectedMessages = new Set<string>();
+export let selectedMessages = new Set<number>();
 export let editingMemberId: string | null = null;
 export let editingWorldBookId: string | null = null;
 export let editingPersonaPresetId: string | null = null;
@@ -371,6 +386,96 @@ export function removePersonaPreset(presetId: string): void {
   console.log('状态更新：删除角色预设', presetId);
 }
 
+// === Persona状态管理函数 ===
+
+// 设置Personas
+export function setPersonas(personas: Persona[]): void {
+  state.personas = personas;
+  console.log('状态更新：Personas已更新');
+}
+
+// 添加Persona
+export function addPersona(persona: Persona): void {
+  state.personas.push(persona);
+  console.log('状态更新：新增Persona');
+}
+
+// 更新Persona
+export function updatePersona(personaId: string, personaData: Partial<Persona>): void {
+  const index = state.personas.findIndex(p => p.id === personaId);
+  if (index !== -1) {
+    Object.assign(state.personas[index], personaData);
+    console.log('状态更新：Persona已更新', personaId);
+  }
+}
+
+// 删除Persona
+export function removePersona(personaId: string): void {
+  state.personas = state.personas.filter(p => p.id !== personaId);
+  if (state.activePersonaId === personaId) {
+    state.activePersonaId = undefined;
+  }
+  console.log('状态更新：删除Persona', personaId);
+}
+
+// 设置活跃Persona
+export function setActivePersonaId(personaId: string | undefined): void {
+  state.activePersonaId = personaId;
+  console.log('状态更新：活跃Persona ID', personaId);
+}
+
+// === UserRole状态管理函数 ===
+
+// 设置UserRoles
+export function setUserRoles(userRoles: UserRole[]): void {
+  state.userRoles = userRoles;
+  console.log('状态更新：UserRoles已更新');
+}
+
+// 添加UserRole
+export function addUserRole(userRole: UserRole): void {
+  state.userRoles.push(userRole);
+  console.log('状态更新：新增UserRole');
+}
+
+// 更新UserRole
+export function updateUserRole(userRoleId: string, userRoleData: Partial<UserRole>): void {
+  const index = state.userRoles.findIndex(ur => ur.id === userRoleId);
+  if (index !== -1) {
+    Object.assign(state.userRoles[index], userRoleData);
+    console.log('状态更新：UserRole已更新', userRoleId);
+  }
+}
+
+// 删除UserRole
+export function removeUserRole(userRoleId: string): void {
+  state.userRoles = state.userRoles.filter(ur => ur.id !== userRoleId);
+  if (state.activeUserRoleId === userRoleId) {
+    state.activeUserRoleId = undefined;
+  }
+  console.log('状态更新：删除UserRole', userRoleId);
+}
+
+// 设置活跃UserRole
+export function setActiveUserRoleId(userRoleId: string | undefined): void {
+  state.activeUserRoleId = userRoleId;
+  console.log('状态更新：活跃UserRole ID', userRoleId);
+}
+
+// 获取活跃的Persona
+export function getActivePersona(): Persona | null {
+  return state.activePersonaId ? 
+    state.personas.find(p => p.id === state.activePersonaId) || null : 
+    null;
+}
+
+// 获取活跃的UserRole
+export function getActiveUserRole(): UserRole | null {
+  return state.activeUserRoleId ? 
+    state.userRoles.find(ur => ur.id === state.activeUserRoleId) || null : 
+    null;
+}
+
 // === 辅助状态更新函数 ===
 
 // 设置地址
@@ -410,6 +515,46 @@ export function setSelectionMode(enabled: boolean): void {
     selectedMessages.clear();
   }
   console.log('状态更新：选择模式', enabled ? '启用' : '禁用');
+}
+
+// === 消息选择操作API（Phase 3新增）===
+
+// 添加选中消息
+export function addSelectedMessage(timestamp: number): void {
+  selectedMessages.add(timestamp);
+  console.log('状态更新：添加选中消息', timestamp);
+}
+
+// 移除选中消息
+export function removeSelectedMessage(timestamp: number): void {
+  selectedMessages.delete(timestamp);
+  console.log('状态更新：移除选中消息', timestamp);
+}
+
+// 切换消息选中状态
+export function toggleSelectedMessage(timestamp: number): void {
+  if (selectedMessages.has(timestamp)) {
+    selectedMessages.delete(timestamp);
+  } else {
+    selectedMessages.add(timestamp);
+  }
+  console.log('状态更新：切换消息选中', timestamp, selectedMessages.has(timestamp) ? '选中' : '取消');
+}
+
+// 清空所有选中消息
+export function clearSelectedMessages(): void {
+  selectedMessages.clear();
+  console.log('状态更新：清空所有选中消息');
+}
+
+// 获取选中消息数量
+export function getSelectedMessageCount(): number {
+  return selectedMessages.size;
+}
+
+// 获取选中消息集合（返回副本）
+export function getSelectedMessages(): Set<number> {
+  return new Set(selectedMessages);
 }
 
 // === 状态查询函数 ===
@@ -493,12 +638,32 @@ export function injectStateToWindow(): void {
       removePreset,
       setPersonaPresets,
       removePersonaPreset,
+      // Persona和UserRole状态管理函数
+      setPersonas,
+      addPersona,
+      updatePersona,
+      removePersona,
+      setActivePersonaId,
+      setUserRoles,
+      addUserRole,
+      updateUserRole,
+      removeUserRole,
+      setActiveUserRoleId,
+      getActivePersona,
+      getActiveUserRole,
       setApiConfig,
       updateApiConfig,
       getActivePreset,
       setMessageEditMode,
       setEditingPresetId,
-      setSelectionMode
+      setSelectionMode,
+      // Phase 3新增：消息选择操作API
+      addSelectedMessage,
+      removeSelectedMessage,
+      toggleSelectedMessage,
+      clearSelectedMessages,
+      getSelectedMessageCount,
+      getSelectedMessages
     });
   }
 }
@@ -529,12 +694,32 @@ export default {
   removePreset,
   setPersonaPresets,
   removePersonaPreset,
+  // Persona和UserRole状态管理函数
+  setPersonas,
+  addPersona,
+  updatePersona,
+  removePersona,
+  setActivePersonaId,
+  setUserRoles,
+  addUserRole,
+  updateUserRole,
+  removeUserRole,
+  setActiveUserRoleId,
+  getActivePersona,
+  getActiveUserRole,
   setMyAddress,
   setMusicActive,
   setMusicInactive,
   setMessageEditMode,
   setEditingPresetId,
   setSelectionMode,
+  // Phase 3新增：消息选择操作API
+  addSelectedMessage,
+  removeSelectedMessage,
+  toggleSelectedMessage,
+  clearSelectedMessages,
+  getSelectedMessageCount,
+  getSelectedMessages,
   getActiveChat,
   getActivePreset,
   isGroupChat,

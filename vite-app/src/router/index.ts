@@ -11,7 +11,8 @@ export type ScreenId =
   | 'world-book-screen'
   | 'world-book-editor-screen'
   | 'preset-list-screen'
-  | 'preset-editor-screen';
+  | 'preset-editor-screen'
+  | 'persona-center-screen';
 
 export type RenderFunction = () => void;
 export type PostProcessFunction = (screenId: ScreenId) => void;
@@ -32,7 +33,8 @@ export const SCREEN_IDS: Record<string, ScreenId> = {
   WORLD_BOOK: 'world-book-screen',
   WORLD_BOOK_EDITOR: 'world-book-editor-screen',
   PRESET_LIST: 'preset-list-screen',
-  PRESET_EDITOR: 'preset-editor-screen'
+  PRESET_EDITOR: 'preset-editor-screen',
+  PERSONA_CENTER: 'persona-center-screen'
 } as const;
 
 // === 路由状态管理 ===
@@ -44,13 +46,21 @@ let currentScreenId: ScreenId = SCREEN_IDS.HOME;
 const screenRenderMap: Partial<Record<ScreenId, RenderFunction>> = {
   [SCREEN_IDS.HOME]: () => {},
   [SCREEN_IDS.CHAT_LIST]: () => (window as any).renderChatListProxy?.(),
-  [SCREEN_IDS.CHAT_INTERFACE]: () => (window as any).renderChatInterfaceProxy?.(),
+  [SCREEN_IDS.CHAT_INTERFACE]: () => {
+    const activeChatId = (window as any).STATE?.state?.activeChatId;
+    if (activeChatId) {
+      (window as any).renderChatInterfaceProxy?.(activeChatId);
+    } else {
+      console.warn('无法渲染聊天界面：没有激活的聊天ID');
+    }
+  },
   [SCREEN_IDS.API_SETTINGS]: () => (window as any).renderApiSettingsProxy?.(),
   [SCREEN_IDS.WALLPAPER]: () => (window as any).renderWallpaperScreenProxy?.(),
   [SCREEN_IDS.WORLD_BOOK]: () => (window as any).renderWorldBookScreenProxy?.(),
   [SCREEN_IDS.WORLD_BOOK_EDITOR]: () => (window as any).renderWorldBookEditorProxy?.(),
   [SCREEN_IDS.PRESET_LIST]: () => (window as any).renderPresetListProxy?.(),
-  [SCREEN_IDS.PRESET_EDITOR]: () => (window as any).renderPresetEditorProxy?.()
+  [SCREEN_IDS.PRESET_EDITOR]: () => (window as any).renderPresetEditorProxy?.(),
+  [SCREEN_IDS.PERSONA_CENTER]: () => (window as any).renderPersonaCenterProxy?.()
 };
 
 // 特殊屏幕的后处理函数
@@ -68,7 +78,8 @@ const screenPostProcessMap: Partial<Record<ScreenId, PostProcessFunction | undef
   [SCREEN_IDS.WORLD_BOOK]: undefined,
   [SCREEN_IDS.WORLD_BOOK_EDITOR]: undefined,
   [SCREEN_IDS.PRESET_LIST]: undefined,
-  [SCREEN_IDS.PRESET_EDITOR]: undefined
+  [SCREEN_IDS.PRESET_EDITOR]: undefined,
+  [SCREEN_IDS.PERSONA_CENTER]: undefined
 };
 
 // === 核心路由函数 ===
@@ -198,6 +209,11 @@ export function navigateToWallpaper(): void {
   showScreen(SCREEN_IDS.WALLPAPER);
 }
 
+// 导航到角色中心
+export function navigateToPersonaCenter(): void {
+  showScreen(SCREEN_IDS.PERSONA_CENTER);
+}
+
 // === 渲染函数注册系统 ===
 
 // 注册屏幕渲染函数（供屏幕模块使用）
@@ -226,6 +242,7 @@ export function setupProxyMappings(): void {
     'renderWorldBookEditorProxy',
     'renderPresetListProxy',
     'renderPresetEditorProxy',
+    'renderPersonaCenterProxy',
     'updateListenTogetherIconProxy'
   ];
 
@@ -295,39 +312,7 @@ export function initRouter(): void {
   console.log('路由模块初始化完成');
 }
 
-// === 向后兼容：注入到window对象（类型声明移至init/compat.ts） ===
-
-// 注入到window对象，保持向后兼容性
-if (typeof window !== 'undefined') {
-  const win = window as any;
-  
-  // 核心常量和函数
-  win.SCREEN_IDS = SCREEN_IDS;
-  win.showScreen = showScreen;
-  win.getCurrentScreen = getCurrentScreen;
-  win.isCurrentScreen = isCurrentScreen;
-  
-  // 导航函数
-  win.goHome = goHome;
-  win.navigateToChat = navigateToChat;
-  win.navigateToChatList = navigateToChatList;
-  win.navigateToApiSettings = navigateToApiSettings;
-  win.navigateToWorldBook = navigateToWorldBook;
-  win.navigateToPresets = navigateToPresets;
-  win.navigateToWallpaper = navigateToWallpaper;
-  
-  // 注册和管理函数
-  win.registerScreenRenderer = registerScreenRenderer;
-  win.registerScreenPostProcess = registerScreenPostProcess;
-  win.setupProxyMappings = setupProxyMappings;
-  
-  // 历史记录函数
-  win.goBack = goBack;
-  win.getRouteHistory = getRouteHistory;
-  
-  // 初始化函数
-  win.initRouter = initRouter;
-}
+// === 向后兼容：已统一迁移到init/compat.ts ===
 
 // 默认导出
 export default {
@@ -344,6 +329,7 @@ export default {
   navigateToPresets,
   navigateToPresetEditor,
   navigateToWallpaper,
+  navigateToPersonaCenter,
   registerScreenRenderer,
   registerScreenPostProcess,
   setupProxyMappings,

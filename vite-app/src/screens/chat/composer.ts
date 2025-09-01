@@ -1,7 +1,10 @@
 // 消息编写模块 - 负责文本消息发送、命令解析、AI回复触发和群聊逻辑
 // 提取自 chat.ts 的消息编写相关功能
+// Phase 2+4: 使用DB仓库访问 + 统一错误处理
 
 import type { Chat, Message, GlobalSettings, ApiConfig, Preset } from '../../state';
+import DB from '../../database';
+import { showError, showValidationError, showOperationError } from '../../services/errorHandling';
 
 // === 类型定义 ===
 interface Constants {
@@ -63,7 +66,8 @@ export class MessageComposerModule {
     
     // 添加消息到聊天历史
     chat.history.push(msg);
-    await db.db.chats.put(chat);
+    // Phase 2: 使用DB仓库替换直接Dexie调用
+    await DB.saveChat(chat);
     
     // 渲染消息并更新界面
     if (win.CHAT_MODULES?.renderModule?.appendMessage) {
@@ -88,7 +92,7 @@ export class MessageComposerModule {
     if ((win.getIsSelectionMode && win.getIsSelectionMode()) || !state?.state?.activeChatId) return;
     
     const chat = state.state.chats[state.state.activeChatId];
-    const patterName = chat.isGroup ? (chat.settings.myNickname || '我') : '你';
+    const patterName = chat.isGroup ? (chat.settings.myGroupNickname || '我') : '你';
     let patteeName: string, patteeSuffix: string;
 
     if (msg.role === 'user') {
@@ -106,7 +110,7 @@ export class MessageComposerModule {
     }
 
     // If patter and pattee are the same in a group chat, adjust the name
-    if (chat.isGroup && msg.role === 'user' && chat.settings.myNickname === msg.senderName) {
+    if (chat.isGroup && msg.role === 'user' && chat.settings.myGroupNickname === msg.senderName) {
       patteeName = '自己';
     }
 
@@ -122,7 +126,7 @@ export class MessageComposerModule {
     };
 
     chat.history.push(patMessage);
-    await db.db.chats.put(chat);
+    await DB.saveChat(chat);
     
     if (win.CHAT_MODULES?.renderModule?.appendMessage) {
       win.CHAT_MODULES.renderModule.appendMessage(patMessage, chat);
@@ -164,7 +168,7 @@ export class MessageComposerModule {
       return await win.SCREENS.aiResponseModule.triggerAiResponse();
     } else {
       console.error('AI响应模块未找到，请检查模块加载');
-      alert('AI响应功能暂时不可用，请刷新页面重试');
+      showError('AI响应功能暂时不可用，请刷新页面重试');
     }
   }
 
@@ -226,7 +230,7 @@ export class MessageComposerModule {
     };
     
     chat.history.push(msg);
-    await db.db.chats.put(chat);
+    await DB.saveChat(chat);
     
     if (win.CHAT_MODULES?.renderModule?.appendMessage) {
       win.CHAT_MODULES.renderModule.appendMessage(msg, chat);
@@ -258,12 +262,12 @@ export class MessageComposerModule {
     const note = noteInput.value.trim();
     
     if (isNaN(amount) || amount < 0 || amount > 9999) {
-      alert('请输入有效的金额 (0 到 9999 之间)！');
+      showValidationError('请输入有效的金额 (0 到 9999 之间)');
       return;
     }
     
     const chat = state.state.chats[state.state.activeChatId];
-    const senderName = chat.isGroup ? (chat.settings.myNickname || '我') : '我';
+    const senderName = chat.isGroup ? (chat.settings.myGroupNickname || '我') : '我';
     const receiverName = chat.isGroup ? '群聊' : chat.name;
     
     const msg: Message = {
@@ -280,7 +284,7 @@ export class MessageComposerModule {
     (msg as any).note = note;
     
     chat.history.push(msg);
-    await db.db.chats.put(chat);
+    await DB.saveChat(chat);
     
     if (win.CHAT_MODULES?.renderModule?.appendMessage) {
       win.CHAT_MODULES.renderModule.appendMessage(msg, chat);
@@ -333,7 +337,7 @@ export class MessageComposerModule {
         });
 
         if (changesMade) {
-          await db.db.chats.put(chat);
+          await DB.saveChat(chat);
           if (win.showCustomAlert) {
             win.showCustomAlert('保存成功', '消息已更新。');
           }

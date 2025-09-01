@@ -7,6 +7,7 @@ export * from './battery';
 export * from './data';
 export * from './music';
 export * from './persona';
+export * from './systemPrompt';
 
 // === 导入服务实例 ===
 import { uiUtilsService } from './uiUtils';
@@ -14,6 +15,7 @@ import { batteryService } from './battery';
 import { dataService } from './data';
 import { musicService } from './music';
 import { personaService } from './persona';
+import { SystemPromptService } from './systemPrompt';
 
 // === 类型定义 ===
 interface ModalOptions {
@@ -28,6 +30,7 @@ export class ServiceManager {
   public data = dataService;
   public music = musicService;
   public persona = personaService;
+  public systemPrompt = new SystemPromptService();
 
   // 初始化所有服务
   async initAllServices(): Promise<void> {
@@ -45,7 +48,7 @@ export class ServiceManager {
   }
 
   // 获取服务实例
-  getService(serviceName: 'uiUtils' | 'battery' | 'data' | 'music' | 'persona') {
+  getService(serviceName: 'uiUtils' | 'battery' | 'data' | 'music' | 'persona' | 'systemPrompt') {
     return this[serviceName];
   }
 }

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>角色中心测试 - EPhone</title>
+    <link rel="stylesheet" href="./public/unified-style.css">
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f7f4ed;
+        }
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .test-result {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .test-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .test-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #b8daff;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid #007bff;
+            background-color: #007bff;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            border-color: #6c757d;
+        }
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+        #persona-center-test-container {
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: white;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="test-header">
+            <h1>🎭 角色中心功能测试</h1>
+            <p>EPhone - Persona Center P0 阶段验收测试</p>
+        </div>
+
+        <!-- 环境检查 -->
+        <div class="test-section">
+            <h3>1. 环境检查</h3>
+            <div id="env-check-results"></div>
+            <button class="btn" onclick="runEnvironmentCheck()">运行环境检查</button>
+        </div>
+
+        <!-- 模块加载测试 -->
+        <div class="test-section">
+            <h3>2. 模块加载测试</h3>
+            <div id="module-load-results"></div>
+            <button class="btn" onclick="runModuleLoadTest()">测试模块加载</button>
+        </div>
+
+        <!-- 数据库测试 -->
+        <div class="test-section">
+            <h3>3. 数据库功能测试</h3>
+            <div id="database-test-results"></div>
+            <button class="btn" onclick="runDatabaseTest()">测试数据库功能</button>
+        </div>
+
+        <!-- 服务层测试 -->
+        <div class="test-section">
+            <h3>4. 服务层功能测试</h3>
+            <div id="service-test-results"></div>
+            <button class="btn" onclick="runServiceTest()">测试服务层</button>
+        </div>
+
+        <!-- UI 组件测试 -->
+        <div class="test-section">
+            <h3>5. UI 组件测试</h3>
+            <div id="ui-test-results"></div>
+            <button class="btn" onclick="runUITest()">测试UI组件</button>
+            
+            <!-- 角色中心容器 -->
+            <div id="persona-center-test-container"></div>
+        </div>
+
+        <!-- 综合测试 -->
+        <div class="test-section">
+            <h3>6. 综合功能测试</h3>
+            <div id="integration-test-results"></div>
+            <button class="btn" onclick="runIntegrationTest()">运行综合测试</button>
+            <button class="btn btn-secondary" onclick="runAllTests()">运行全部测试</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // 测试结果显示函数
+        function showTestResult(containerId, type, message) {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `test-result test-${type}`;
+            div.textContent = message;
+            container.appendChild(div);
+        }
+
+        function clearTestResults(containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+        }
+
+        // 1. 环境检查
+        window.runEnvironmentCheck = function() {
+            clearTestResults('env-check-results');
+            showTestResult('env-check-results', 'info', '开始环境检查...');
+            
+            try {
+                // 检查浏览器API支持
+                if (typeof indexedDB === 'undefined') {
+                    showTestResult('env-check-results', 'error', '❌ IndexedDB 不支持');
+                    return;
+                }
+                showTestResult('env-check-results', 'success', '✅ IndexedDB 支持正常');
+                
+                if (typeof Promise === 'undefined') {
+                    showTestResult('env-check-results', 'error', '❌ Promise 不支持');
+                    return;
+                }
+                showTestResult('env-check-results', 'success', '✅ Promise 支持正常');
+                
+                if (typeof fetch === 'undefined') {
+                    showTestResult('env-check-results', 'warning', '⚠️ Fetch API 不支持（非关键）');
+                } else {
+                    showTestResult('env-check-results', 'success', '✅ Fetch API 支持正常');
+                }
+                
+                showTestResult('env-check-results', 'success', '✅ 环境检查通过');
+                
+            } catch (error) {
+                showTestResult('env-check-results', 'error', `❌ 环境检查失败: ${error.message}`);
+            }
+        };
+
+        // 2. 模块加载测试
+        window.runModuleLoadTest = async function() {
+            clearTestResults('module-load-results');
+            showTestResult('module-load-results', 'info', '开始模块加载测试...');
+            
+            try {
+                // 动态导入角色中心模块
+                const personaCenterModule = await import('./src/screens/personaCenter/index.js');
+                showTestResult('module-load-results', 'success', '✅ 角色中心模块导入成功');
+                
+                // 检查关键类型导出
+                const { PersonaCenterScreen, PersonaService, UserRoleService } = personaCenterModule;
+                
+                if (typeof PersonaCenterScreen === 'function') {
+                    showTestResult('module-load-results', 'success', '✅ PersonaCenterScreen 类导出正常');
+                } else {
+                    showTestResult('module-load-results', 'error', '❌ PersonaCenterScreen 类未正确导出');
+                }
+                
+                if (typeof PersonaService === 'function') {
+                    showTestResult('module-load-results', 'success', '✅ PersonaService 类导出正常');
+                } else {
+                    showTestResult('module-load-results', 'error', '❌ PersonaService 类未正确导出');
+                }
+                
+                if (typeof UserRoleService === 'function') {
+                    showTestResult('module-load-results', 'success', '✅ UserRoleService 类导出正常');
+                } else {
+                    showTestResult('module-load-results', 'error', '❌ UserRoleService 类未正确导出');
+                }
+                
+                showTestResult('module-load-results', 'success', '✅ 模块加载测试通过');
+                
+            } catch (error) {
+                showTestResult('module-load-results', 'error', `❌ 模块加载失败: ${error.message}`);
+                console.error('Module load error:', error);
+            }
+        };
+
+        // 3. 数据库功能测试
+        window.runDatabaseTest = async function() {
+            clearTestResults('database-test-results');
+            showTestResult('database-test-results', 'info', '开始数据库功能测试...');
+            
+            try {
+                // 动态导入数据库模块
+                const dbModule = await import('./src/database/index.js');
+                showTestResult('database-test-results', 'success', '✅ 数据库模块导入成功');
+                
+                // 初始化数据库
+                await dbModule.initializeDatabase();
+                showTestResult('database-test-results', 'success', '✅ 数据库初始化成功');
+                
+                // 测试表是否存在
+                const db = dbModule.db;
+                if (db.personas) {
+                    showTestResult('database-test-results', 'success', '✅ personas 表存在');
+                } else {
+                    showTestResult('database-test-results', 'error', '❌ personas 表不存在');
+                }
+                
+                if (db.userRoles) {
+                    showTestResult('database-test-results', 'success', '✅ userRoles 表存在');
+                } else {
+                    showTestResult('database-test-results', 'error', '❌ userRoles 表不存在');
+                }
+                
+                showTestResult('database-test-results', 'success', '✅ 数据库功能测试通过');
+                
+            } catch (error) {
+                showTestResult('database-test-results', 'error', `❌ 数据库测试失败: ${error.message}`);
+                console.error('Database test error:', error);
+            }
+        };
+
+        // 4. 服务层功能测试
+        window.runServiceTest = async function() {
+            clearTestResults('service-test-results');
+            showTestResult('service-test-results', 'info', '开始服务层功能测试...');
+            
+            try {
+                // 导入服务模块
+                const { PersonaService, UserRoleService } = await import('./src/screens/personaCenter/index.js');
+                
+                // 测试 PersonaService
+                const personaService = new PersonaService();
+                showTestResult('service-test-results', 'success', '✅ PersonaService 实例创建成功');
+                
+                // 测试验证功能
+                const testPersona = {
+                    name: 'Test Persona',
+                    avatar: '',
+                    tags: ['test'],
+                    prompt: { system: 'Test system prompt' },
+                    worldBookLinks: [],
+                    status: 'draft',
+                    archived: false
+                };
+                
+                const validation = personaService.validatePersona(testPersona);
+                if (validation.isValid) {
+                    showTestResult('service-test-results', 'success', '✅ Persona 数据验证功能正常');
+                } else {
+                    showTestResult('service-test-results', 'error', `❌ Persona 验证失败: ${validation.errors.join(', ')}`);
+                }
+                
+                // 测试 UserRoleService
+                const userRoleService = new UserRoleService();
+                showTestResult('service-test-results', 'success', '✅ UserRoleService 实例创建成功');
+                
+                showTestResult('service-test-results', 'success', '✅ 服务层功能测试通过');
+                
+            } catch (error) {
+                showTestResult('service-test-results', 'error', `❌ 服务层测试失败: ${error.message}`);
+                console.error('Service test error:', error);
+            }
+        };
+
+        // 5. UI 组件测试
+        window.runUITest = async function() {
+            clearTestResults('ui-test-results');
+            showTestResult('ui-test-results', 'info', '开始UI组件测试...');
+            
+            try {
+                // 导入组件模块
+                const { PersonaCenterScreen } = await import('./src/screens/personaCenter/index.js');
+                
+                // 获取测试容器
+                const container = document.getElementById('persona-center-test-container');
+                if (!container) {
+                    showTestResult('ui-test-results', 'error', '❌ 测试容器不存在');
+                    return;
+                }
+                
+                // 创建组件实例
+                const personaCenter = new PersonaCenterScreen(container);
+                showTestResult('ui-test-results', 'success', '✅ PersonaCenterScreen 实例创建成功');
+                
+                // 初始化组件
+                await personaCenter.initialize();
+                showTestResult('ui-test-results', 'success', '✅ 组件初始化成功');
+                
+                // 检查容器内容
+                if (container.children.length > 0) {
+                    showTestResult('ui-test-results', 'success', '✅ UI 内容渲染成功');
+                } else {
+                    showTestResult('ui-test-results', 'warning', '⚠️ UI 内容未渲染（可能需要数据）');
+                }
+                
+                showTestResult('ui-test-results', 'success', '✅ UI 组件测试通过');
+                
+            } catch (error) {
+                showTestResult('ui-test-results', 'error', `❌ UI 组件测试失败: ${error.message}`);
+                console.error('UI test error:', error);
+            }
+        };
+
+        // 6. 综合功能测试
+        window.runIntegrationTest = async function() {
+            clearTestResults('integration-test-results');
+            showTestResult('integration-test-results', 'info', '开始综合功能测试...');
+            
+            try {
+                // 测试路由系统
+                const routerModule = await import('./src/router/index.js');
+                if (routerModule.SCREEN_IDS.PERSONA_CENTER) {
+                    showTestResult('integration-test-results', 'success', '✅ 路由系统包含角色中心');
+                } else {
+                    showTestResult('integration-test-results', 'error', '❌ 路由系统未包含角色中心');
+                }
+                
+                // 测试兼容性注入
+                const compatModule = await import('./src/init/compat.js');
+                showTestResult('integration-test-results', 'success', '✅ 兼容性模块导入成功');
+                
+                // 执行兼容性注入
+                compatModule.injectCompatibilityAPIs();
+                
+                if (typeof window.renderPersonaCenterProxy === 'function') {
+                    showTestResult('integration-test-results', 'success', '✅ 角色中心代理函数注入成功');
+                } else {
+                    showTestResult('integration-test-results', 'error', '❌ 角色中心代理函数未注入');
+                }
+                
+                showTestResult('integration-test-results', 'success', '✅ 综合功能测试通过');
+                
+            } catch (error) {
+                showTestResult('integration-test-results', 'error', `❌ 综合测试失败: ${error.message}`);
+                console.error('Integration test error:', error);
+            }
+        };
+
+        // 运行全部测试
+        window.runAllTests = async function() {
+            console.log('开始运行全部测试...');
+            
+            runEnvironmentCheck();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await runModuleLoadTest();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await runDatabaseTest();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await runServiceTest();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await runUITest();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await runIntegrationTest();
+            
+            console.log('全部测试完成！');
+        };
+    </script>
+</body>
+</html>

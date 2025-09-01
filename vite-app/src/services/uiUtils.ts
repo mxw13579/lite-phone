@@ -1,7 +1,10 @@
 // UI工具服务 - 模态框、通知、时钟等UI辅助功能
 // 从services/index.ts中提取的UIUtilsService类
+// Phase 2+4: 使用DB仓库访问 + 统一错误处理
 
 import type { GlobalSettings, Chat } from '../state';
+import DB from '../database';
+import { showError } from './errorHandling';
 
 // === 类型定义 ===
 interface ModalOptions {
@@ -348,7 +351,7 @@ export class UIUtilsService {
   async confirmThemeSelection(): Promise<void> {
     const selectedRadio = document.querySelector('input[name="theme-selection"]:checked') as HTMLInputElement;
     if (!selectedRadio) {
-      alert('请先选择一个主题！');
+      showError('请先选择一个主题！');
       return;
     }
     
@@ -368,9 +371,10 @@ export class UIUtilsService {
     }
     
     // 保存主题设置
-    if (state?.state && db?.db) {
+    if (state?.state) {
       state.state.globalSettings.remoteThemeUrl = url;
-      await db.db.globalSettings.put(state.state.globalSettings);
+      // Phase 2: 使用DB仓库替换直接Dexie调用
+      await DB.saveGlobalSettings(state.state.globalSettings);
     }
     
     this.showCustomAlert("主题已更新", "新主题已应用并保存。");

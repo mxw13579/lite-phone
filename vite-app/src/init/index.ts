@@ -2,6 +2,7 @@
 // 包含所有DOM事件监听器的初始化设置
 
 import type { StateManager, DatabaseManager, Chat, Member, Message } from '../state';
+import DB from '../database';
 
 export class InitializationModule {
   private selectedMessages = new Set<number>();
@@ -53,18 +54,33 @@ export class InitializationModule {
       this.toggleMessageEditMode();
     });
 
-    // 发送转账按钮
+    // 发送转账按钮（打开模态框）
     document.getElementById('transfer-btn')?.addEventListener('click', () => {
-      this.sendUserTransfer();
+      const transferModal = document.getElementById('transfer-modal');
+      if (transferModal) {
+        transferModal.classList.add('visible');
+      }
     });
 
-    // 表情面板切换
-    document.getElementById('sticker-panel-btn')?.addEventListener('click', () => {
+    // 表情面板打开按钮
+    document.getElementById('open-sticker-panel-btn')?.addEventListener('click', () => {
       win.ChatModule?.renderStickerPanel();
+      const stickerPanel = document.getElementById('sticker-panel');
+      if (stickerPanel) {
+        stickerPanel.classList.add('visible');
+      }
     });
 
-    // 转账模态框发送按钮
-    document.getElementById('transfer-send-btn')?.addEventListener('click', () => {
+    // 表情面板关闭按钮
+    document.getElementById('close-sticker-panel-btn')?.addEventListener('click', () => {
+      const stickerPanel = document.getElementById('sticker-panel');
+      if (stickerPanel) {
+        stickerPanel.classList.remove('visible');
+      }
+    });
+
+    // 转账模态框确认按钮
+    document.getElementById('transfer-confirm-btn')?.addEventListener('click', () => {
       this.sendUserTransfer();
     });
 
@@ -73,6 +89,48 @@ export class InitializationModule {
       const transferModal = document.getElementById('transfer-modal');
       if (transferModal) {
         transferModal.classList.remove('visible');
+      }
+    });
+
+    // 发送照片按钮（文字描述照片）
+    document.getElementById('send-photo-btn')?.addEventListener('click', async () => {
+      const photoDescription = await win.showCustomPrompt('发送照片', '请用文字描述您要发送的照片：');
+      if (photoDescription && photoDescription.trim() && win.STATE?.state?.activeChatId) {
+        const state = win.STATE.state;
+        const chat = state.chats[state.activeChatId];
+        if (chat) {
+          const msg: any = {
+            id: `msg_${Date.now()}_${Math.random()}`,
+            role: 'user',
+            content: photoDescription.trim(),
+            type: 'user_photo',
+            sender: chat.isGroup ? (chat.settings.myGroupNickname || '我') : '我',
+            timestamp: Date.now()
+          };
+          
+          chat.history.push(msg);
+          await win.DB.saveChat(chat);
+          
+          if (win.ChatModule?.renderModule?.appendMessage) {
+            win.ChatModule.renderModule.appendMessage(msg, chat);
+          }
+          if (win.ChatModule?.renderModule?.renderChatList) {
+            win.ChatModule.renderModule.renderChatList();
+          }
+        }
+      }
+    });
+
+    // 上传图片按钮（实际文件上传）
+    document.getElementById('upload-image-btn')?.addEventListener('click', () => {
+      win.ChatModule?.attachmentsModule?.handleImageSelect?.();
+    });
+
+    // 发送语音按钮
+    document.getElementById('voice-message-btn')?.addEventListener('click', async () => {
+      const voiceContent = await win.showCustomPrompt('发送语音', '请输入你想说的内容：');
+      if (voiceContent && voiceContent.trim()) {
+        win.ChatModule?.playbackModule?.sendVoiceMessage?.(voiceContent.trim());
       }
     });
 
@@ -101,7 +159,7 @@ export class InitializationModule {
           };
           if (!chat.members) chat.members = [];
           chat.members.push(newMember);
-          await win.DB.db.chats.put(chat);
+          await DB.saveChat(chat);
           this.renderGroupMemberSettings();
         }
       }
@@ -161,22 +219,22 @@ export class InitializationModule {
     const win = window as any;
     
     // 播放/暂停按钮
-    document.getElementById('play-pause-btn')?.addEventListener('click', () => {
+    document.getElementById('music-play-pause-btn')?.addEventListener('click', () => {
       win.MusicService?.togglePlayPause();
     });
 
     // 下一首按钮
-    document.getElementById('next-btn')?.addEventListener('click', () => {
+    document.getElementById('music-next-btn')?.addEventListener('click', () => {
       win.MusicService?.playNext();
     });
 
     // 上一首按钮
-    document.getElementById('prev-btn')?.addEventListener('click', () => {
+    document.getElementById('music-prev-btn')?.addEventListener('click', () => {
       win.MusicService?.playPrev();
     });
 
     // 播放模式切换按钮
-    document.getElementById('play-mode-btn')?.addEventListener('click', () => {
+    document.getElementById('music-mode-btn')?.addEventListener('click', () => {
       win.MusicService?.changePlayMode();
     });
 
@@ -193,6 +251,26 @@ export class InitializationModule {
     // 返回聊天按钮
     document.getElementById('back-to-chat-btn')?.addEventListener('click', () => {
       win.MusicService?.returnToChat();
+    });
+
+    // 音乐播放列表按钮
+    document.getElementById('music-playlist-btn')?.addEventListener('click', () => {
+      // 先刷新播放列表UI
+      if (win.MusicService?.updatePlaylistUI) {
+        win.MusicService.updatePlaylistUI();
+      }
+      const playlistPanel = document.getElementById('music-playlist-panel');
+      if (playlistPanel) {
+        playlistPanel.classList.add('visible');
+      }
+    });
+
+    // 关闭播放列表按钮
+    document.getElementById('close-playlist-btn')?.addEventListener('click', () => {
+      const playlistPanel = document.getElementById('music-playlist-panel');
+      if (playlistPanel) {
+        playlistPanel.classList.remove('visible');
+      }
     });
 
     console.log('音乐播放器事件监听器初始化完成');
@@ -333,7 +411,7 @@ export class InitializationModule {
     if (personaInput) member.persona = personaInput.value.trim() || member.persona;
     if (patSuffixInput) member.patSuffix = patSuffixInput.value.trim();
 
-    await win.DB.db.chats.put(chat);
+    await DB.saveChat(chat);
     this.renderGroupMemberSettings();
     this.closeMemberEditor();
   }
@@ -373,7 +451,7 @@ export class InitializationModule {
     if (!chat || !chat.isGroup || !chat.members) return;
 
     chat.members = chat.members.filter(m => m.id !== memberId);
-    await win.DB.db.chats.put(chat);
+    await DB.saveChat(chat);
     this.renderGroupMemberSettings();
   }
 }

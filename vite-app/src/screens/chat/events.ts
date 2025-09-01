@@ -1,7 +1,10 @@
 // 事件处理模块 - 负责DOM事件绑定、键盘事件和用户交互处理
 // 提取自 chat.ts 的事件处理相关功能
+// Phase 4: 使用统一错误处理
 
 import type { Message, Chat } from '../../state';
+import DB from '../../database';
+import { showError, showOperationError } from '../../services/errorHandling';
 
 // === 事件处理模块类 ===
 export class EventHandlerModule {
@@ -98,7 +101,7 @@ export class EventHandlerModule {
       return await win.SCREENS.aiResponseModule.triggerAiResponse();
     } else {
       console.error('AI响应模块未找到，请检查模块加载');
-      alert('AI响应功能暂时不可用，请刷新页面重试');
+      showError('AI响应功能暂时不可用，请刷新页面重试');
     }
   }
 
@@ -176,7 +179,7 @@ export class EventHandlerModule {
           // 删除聊天
           delete state.state.chats[chat.id];
           if (state.state.activeChatId === chat.id) state.state.activeChatId = null;
-          await win.DB.db.chats.delete(chat.id);
+          await DB.deleteChat(chat.id);
           
           // 重新渲染列表
           if (win.CHAT_MODULES?.renderModule?.renderChatList) {
@@ -184,7 +187,7 @@ export class EventHandlerModule {
           }
         } catch (error) {
           console.error("删除聊天失败:", error);
-          alert("删除失败，请稍后再试。");
+          showOperationError("删除聊天", error as Error);
         }
       }
     });
@@ -210,13 +213,13 @@ export class EventHandlerModule {
       
       const deleteBtn = document.createElement('div');
       deleteBtn.className = 'delete-btn';
-      deleteBtn.innerHTML = '&times;';
+      deleteBtn.textContent = '×';
       deleteBtn.onclick = async (e) => {
         e.stopPropagation();
         const confirmed = await this.showCustomConfirm('删除表情', `确定要删除表情 "${sticker.name}" 吗？`, {confirmButtonClass: 'btn-danger'});
         if (confirmed) {
           const state = win.STATE;
-          await win.DB.db.userStickers.delete(sticker.id);
+          await DB.deleteUserSticker(sticker.id);
           state.state.userStickers = state.state.userStickers.filter((s: any) => s.id !== sticker.id);
           
           // 重新渲染表情面板

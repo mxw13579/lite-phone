@@ -60,7 +60,7 @@ export const DEFAULT_PROMPT_GROUP = `你是一个群聊的组织者和AI驱动�
 # 群聊规则
 1.  **角色扮演**: 你必须同时扮演以下所有角色，并严格遵守他们的人设。每个角色的发言都必须符合其身份和性格。
 2.  **当前时间**: {currentTime}。
-3.  **用户角色**: 用户的名字是"我"，他/她的人设是："{chat.settings.myPersona}"。你在群聊中对用户的称呼是"{myNickname}"，在需要时请使用"@{myNickname}"来提及用户。
+3.  **用户角色**: 用户的名字是"我"，他/她的人设是："{chat.settings.myPersona}"。你在群聊中对用户的称呼是"{myGroupNickname}"，在需要时请使用"@{myGroupNickname}"来提及用户。
 4.  **输出格式**: 你的回复**必须**是一个JSON数组。**绝对不要**在JSON前后添加任何额外字符。每个元素可以是：
     - 普通消息: \`{"name": "角色名", "message": "文本内容"}\`
     - 图片消息: \`{"name": "角色名", "type": "ai_image", "description": "图片描述"}\`

@@ -1,7 +1,9 @@
 // 消息渲染模块 - 负责消息列表渲染、滚动管理和DOM更新
 // 提取自 chat.ts 的消息渲染相关功能
+// Phase 4: 使用安全DOM构建器替换innerHTML
 
 import type { Chat, Message, GlobalSettings } from '../../state';
+import { buildMessageContent } from './domBuilders';
 
 // === 安全渲染辅助函数 ===
 function escapeHtml(unsafe: string): string {
@@ -103,34 +105,22 @@ export class MessageRenderModule {
       avatarSrc = isUser ? (chat.settings.myAvatar || avatars.defaultAvatar) : (chat.settings.aiAvatar || avatars.defaultAvatar);
     }
     
-    let contentHtml: string;
+    // Phase 4: 使用安全DOM构建器替换innerHTML拼接
+    // 添加相应的CSS类
     if (msg.type === 'user_photo' || msg.type === 'ai_image') {
       bubble.classList.add('is-ai-image');
-      const altText = msg.type === 'user_photo' ? "用户描述的照片" : "AI生成的图片";
-      contentHtml = `<img src="https://i.postimg.cc/KYr2qRCK/1.jpg" class="ai-generated-image" alt="${altText}" data-description="${msg.content}">`;
     } else if (msg.type === 'voice_message') {
       bubble.classList.add('is-voice-message');
-      const duration = Math.max(1, Math.round((String(msg.content) || '').length / 5));
-      const durationFormatted = `0:${String(duration).padStart(2, '0')}''`;
-      const waveformHTML = '<div></div><div></div><div></div><div></div><div></div>';
-      contentHtml = `<div class="voice-message-body" data-text="${msg.content}"><div class="voice-waveform">${waveformHTML}</div><span class="voice-duration">${durationFormatted}</span></div>`;
     } else if (msg.type === 'transfer') {
       bubble.classList.add('is-transfer');
-      const titleText = isUser ? '转账给Ta' : '收到一笔转账';
-      const heartIcon = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="vertical-align: middle;"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>`;
-      contentHtml = `<div class="transfer-card"><div class="transfer-title">${heartIcon} ${titleText}</div><div class="transfer-amount">¥ ${Number((msg as any).amount).toFixed(2)}</div><div class="transfer-note">${(msg as any).note || '对方没有留下备注哦~'}</div></div>`;
     } else if (typeof msg.content === 'string' && STICKER_REGEX.test(msg.content)) {
       bubble.classList.add('is-sticker');
-      contentHtml = `<img src="${msg.content}" alt="${(msg as any).meaning || 'Sticker'}" class="sticker-image">`;
     } else if (Array.isArray(msg.content) && msg.content[0]?.type === 'image_url') {
       bubble.classList.add('has-image');
-      const imageUrl = msg.content[0].image_url.url;
-      contentHtml = `<img src="${imageUrl}" class="chat-image" alt="User uploaded image">`;
-    } else {
-      // 安全处理文本内容，转义HTML但保留换行
-      const textContent = String(msg.content || '');
-      contentHtml = escapeHtml(textContent).replace(/\n/g, '<br>');
     }
+    
+    // 使用安全DOM构建器构建消息内容
+    const messageContent = buildMessageContent(msg, isUser);
     
     // 安全构建DOM结构，避免innerHTML的XSS风险
     const avatarGroup = document.createElement('div');
@@ -146,7 +136,8 @@ export class MessageRenderModule {
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'content';
-    contentDiv.innerHTML = contentHtml; // contentHtml已在上面安全处理
+    // Phase 4: 替换innerHTML为安全的appendChild
+    contentDiv.appendChild(messageContent);
     
     avatarGroup.appendChild(avatarImg);
     avatarGroup.appendChild(timestampSpan);
@@ -384,6 +375,9 @@ export class MessageRenderModule {
     const messageEl = this.createMessageElement(msg, chat);
     const loadMoreBtn = document.getElementById('load-more-btn');
     
+    // 绑定消息事件
+    this.bindMessageEventsAfterRender(messageEl, msg);
+    
     if (loadMoreBtn) {
       messagesContainer.insertBefore(messageEl, loadMoreBtn.nextSibling);
     } else {
@@ -398,6 +392,9 @@ export class MessageRenderModule {
     
     const messageEl = this.createMessageElement(msg, chat);
     const typingIndicator = document.getElementById('typing-indicator');
+    
+    // 绑定消息事件
+    this.bindMessageEventsAfterRender(messageEl, msg);
     
     messagesContainer.insertBefore(messageEl, typingIndicator);
     
@@ -423,6 +420,18 @@ export class MessageRenderModule {
   // 重置渲染数量
   resetRenderedCount(): void {
     currentRenderedCount = 0;
+  }
+
+  // 为渲染后的消息元素绑定事件
+  private bindMessageEventsAfterRender(messageEl: HTMLElement, msg: Message): void {
+    const bubble = messageEl.querySelector('.message-bubble') as HTMLElement;
+    if (bubble && msg.type !== 'pat') {
+      // 获取事件处理模块
+      const win = window as any;
+      if (win.CHAT_MODULES?.eventsModule?.bindMessageEvents) {
+        win.CHAT_MODULES.eventsModule.bindMessageEvents(messageEl, bubble, msg);
+      }
+    }
   }
 }
 

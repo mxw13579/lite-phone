@@ -1,5 +1,6 @@
 // 聊天模块统一导出文件 - Barrel Export Pattern
 // 整合所有聊天相关子模块，保持向后兼容性
+// Phase 3: 状态统一改造 - 使用STATE模块统一管理临时状态
 
 // === 子模块导入 ===
 import { messageRenderModule, MessageRenderModule } from './render';
@@ -7,16 +8,12 @@ import { eventHandlerModule, EventHandlerModule } from './events';
 import { messageComposerModule, MessageComposerModule } from './composer';
 import { attachmentHandlerModule, AttachmentHandlerModule } from './attachments';
 import { voicePlaybackModule, VoicePlaybackModule } from './playback';
+import STATE from '../../state';
 
 // === 类型导入 ===
 import type { Chat, Message } from '../../state';
 
-// === 模块状态变量 ===
-let isSelectionMode = false;
-let selectedMessages = new Set<number>();
-let isMessageEditMode = false;
-
-// === 聊天核心模块类 - 整合版本 ===
+// === 聊天核心模块类 - 整合版本（Phase 3: 状态已统一到STATE模块）===
 export class ChatScreenModule {
   // 子模块实例
   public renderModule: MessageRenderModule;
@@ -96,6 +93,12 @@ export class ChatScreenModule {
     const state = win.STATE;
     if (!state) return;
     
+    // 验证 chatId 和聊天是否存在
+    if (!chatId || !state.state.chats[chatId]) {
+      console.error('openChat: 聊天不存在', chatId);
+      return;
+    }
+    
     state.setActiveChatId(chatId);
     this.renderChatInterface(chatId);
     
@@ -119,12 +122,12 @@ export class ChatScreenModule {
 
   // === 选择模式API ===
   enterSelectionMode(initialMsgTimestamp: number): void {
-    if (isMessageEditMode) {
+    if (STATE.isMessageEditMode) {
       this.exitMessageEditMode(false);
     }
-    if (isSelectionMode) return;
+    if (STATE.isSelectionMode) return;
     
-    isSelectionMode = true;
+    STATE.setSelectionMode(true);
     const chatScreen = document.getElementById('chat-interface-screen');
     if (chatScreen) {
       chatScreen.classList.add('selection-mode');
@@ -133,39 +136,39 @@ export class ChatScreenModule {
   }
 
   exitSelectionMode(): void {
-    if (!isSelectionMode) return;
+    if (!STATE.isSelectionMode) return;
     
-    isSelectionMode = false;
+    STATE.setSelectionMode(false);
     const chatScreen = document.getElementById('chat-interface-screen');
     if (chatScreen) {
       chatScreen.classList.remove('selection-mode');
     }
     
-    selectedMessages.forEach(ts => {
+    STATE.getSelectedMessages().forEach(ts => {
       const bubble = document.querySelector(`.message-bubble[data-timestamp="${ts}"]`);
       if (bubble) bubble.classList.remove('selected');
     });
-    selectedMessages.clear();
+    STATE.clearSelectedMessages();
   }
 
   toggleMessageSelection(timestamp: number): void {
     const bubble = document.querySelector(`.message-bubble[data-timestamp="${timestamp}"]`);
     if (!bubble) return;
     
-    if (selectedMessages.has(timestamp)) {
-      selectedMessages.delete(timestamp);
+    if (STATE.getSelectedMessages().has(timestamp)) {
+      STATE.removeSelectedMessage(timestamp);
       bubble.classList.remove('selected');
     } else {
-      selectedMessages.add(timestamp);
+      STATE.addSelectedMessage(timestamp);
       bubble.classList.add('selected');
     }
     
     const selectionCount = document.getElementById('selection-count');
     if (selectionCount) {
-      selectionCount.textContent = `已选 ${selectedMessages.size} 条`;
+      selectionCount.textContent = `已选 ${STATE.getSelectedMessageCount()} 条`;
     }
     
-    if (selectedMessages.size === 0) {
+    if (STATE.getSelectedMessageCount() === 0) {
       this.exitSelectionMode();
     }
   }
@@ -173,16 +176,16 @@ export class ChatScreenModule {
   // === 编辑模式API - 委托给composer模块 ===
   async exitMessageEditMode(shouldSave = false): Promise<void> {
     await this.composerModule.exitMessageEditMode(shouldSave);
-    isMessageEditMode = false;
+    STATE.setMessageEditMode(false);
   }
 
   enterMessageEditMode(): void {
     this.composerModule.enterMessageEditMode();
-    isMessageEditMode = true;
+    STATE.setMessageEditMode(true);
   }
 
   async toggleMessageEditMode(): Promise<void> {
-    if (isMessageEditMode) {
+    if (STATE.isMessageEditMode) {
       await this.exitMessageEditMode(true); // Exit and save
     } else {
       this.enterMessageEditMode(); // Enter
@@ -241,15 +244,15 @@ export class ChatScreenModule {
 
   // === 状态访问API ===
   getIsSelectionMode(): boolean {
-    return isSelectionMode;
+    return STATE.isSelectionMode;
   }
 
   getSelectedMessages(): Set<number> {
-    return new Set(selectedMessages);
+    return STATE.getSelectedMessages();
   }
 
   getIsMessageEditMode(): boolean {
-    return isMessageEditMode;
+    return STATE.isMessageEditMode;
   }
 
   getCurrentRenderedCount(): number {
@@ -260,74 +263,7 @@ export class ChatScreenModule {
 // === 全局单例实例 ===
 export const chatScreenModule = new ChatScreenModule();
 
-// === 向后兼容：注入到window对象（类型声明移至init/compat.ts） ===
-
-// 注入到window对象，保持向后兼容性
-if (typeof window !== 'undefined') {
-  const win = window as any;
-  
-  // 主模块实例
-  win.ChatModule = chatScreenModule;
-  
-  // 子模块访问
-  win.CHAT_MODULES = {
-    renderModule: messageRenderModule,
-    eventsModule: eventHandlerModule,
-    composerModule: messageComposerModule,
-    attachmentsModule: attachmentHandlerModule,
-    playbackModule: voicePlaybackModule
-  };
-  
-  // 聊天核心API
-  win.renderChatList = () => chatScreenModule.renderChatList();
-  win.renderChatInterface = (chatId: string) => chatScreenModule.renderChatInterface(chatId);
-  win.openChat = (chatId: string) => chatScreenModule.openChat(chatId);
-  win.createMessageElement = (msg: Message, chat: Chat) => chatScreenModule.createMessageElement(msg, chat);
-  win.appendMessage = (msg: Message, chat: Chat, isInitialLoad?: boolean) => chatScreenModule.appendMessage(msg, chat, isInitialLoad);
-  win.formatTimestamp = (timestamp: number) => chatScreenModule.formatTimestamp(timestamp);
-  
-  // AI响应API
-  win.triggerAiResponse = () => chatScreenModule.triggerAiResponse();
-  win.parseAiResponse = (content: string) => chatScreenModule.parseAiResponse(content);
-  
-  // 消息交互API
-  win.handlePat = (msg: Message) => chatScreenModule.handlePat(msg);
-  win.enterSelectionMode = (timestamp: number) => chatScreenModule.enterSelectionMode(timestamp);
-  win.exitSelectionMode = () => chatScreenModule.exitSelectionMode();
-  win.toggleMessageSelection = (timestamp: number) => chatScreenModule.toggleMessageSelection(timestamp);
-  
-  // 编辑模式API
-  win.enterMessageEditMode = () => chatScreenModule.enterMessageEditMode();
-  win.exitMessageEditMode = (shouldSave?: boolean) => chatScreenModule.exitMessageEditMode(shouldSave);
-  win.toggleMessageEditMode = () => chatScreenModule.toggleMessageEditMode();
-  
-  // 表情包API
-  win.renderStickerPanel = () => chatScreenModule.renderStickerPanel();
-  win.sendSticker = (sticker: any) => chatScreenModule.sendSticker(sticker);
-  
-  // 转账API
-  win.sendUserTransfer = () => chatScreenModule.sendUserTransfer();
-  
-  // 附件API
-  win.handleImageSelect = (callback?: (imageDataUrl: string) => void) => chatScreenModule.handleImageSelect(callback);
-  win.addStickerFromFile = () => chatScreenModule.addStickerFromFile();
-  win.addStickerFromUrl = () => chatScreenModule.addStickerFromUrl();
-  
-  // 语音API
-  win.playVoiceMessage = (element: HTMLElement, text: string, timestamp: number) => chatScreenModule.playVoiceMessage(element, text, timestamp);
-  win.startVoiceRecording = () => chatScreenModule.startVoiceRecording();
-  
-  // 状态访问API
-  win.getIsSelectionMode = () => chatScreenModule.getIsSelectionMode();
-  win.getSelectedMessages = () => chatScreenModule.getSelectedMessages();
-  win.getIsMessageEditMode = () => chatScreenModule.getIsMessageEditMode();
-  win.getCurrentRenderedCount = () => chatScreenModule.getCurrentRenderedCount();
-  
-  // 状态设置API (内部使用)
-  win.setIsMessageEditMode = (mode: boolean) => {
-    isMessageEditMode = mode;
-  };
-}
+// === 向后兼容：已统一迁移到init/compat.ts ===
 
 // === 子模块导出 ===
 export {

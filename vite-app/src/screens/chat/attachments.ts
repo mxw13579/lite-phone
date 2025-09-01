@@ -1,7 +1,10 @@
 // 附件处理模块 - 负责图片选择、上传、压缩、文件校验和附件预览
 // 提取自 chat.ts 的附件处理相关功能
+// Phase 2+4: 使用DB仓库访问 + 统一错误处理
 
 import type { Message, Chat } from '../../state';
+import DB from '../../database';
+import { showError, showSuccess, showValidationError, showOperationError } from '../../services/errorHandling';
 
 // === 类型定义 ===
 interface StateManager {
@@ -86,7 +89,7 @@ export class AttachmentHandlerModule {
       const validation = this.validateImageFile(file);
       
       if (!validation.valid) {
-        alert(validation.error);
+        showError(validation.error);
         return;
       }
       
@@ -102,7 +105,7 @@ export class AttachmentHandlerModule {
         }
       } catch (error) {
         console.error('图片处理失败:', error);
-        alert('图片处理失败，请重试');
+        showOperationError('图片处理', error as Error);
       }
     };
     
@@ -116,7 +119,7 @@ export class AttachmentHandlerModule {
     const db: DatabaseManager = win.DB;
     
     if (!state?.state?.activeChatId) {
-      alert('请先选择一个聊天');
+      showError('请先选择一个聊天');
       return;
     }
     
@@ -133,7 +136,8 @@ export class AttachmentHandlerModule {
     };
     
     chat.history.push(msg);
-    await db.db.chats.put(chat);
+    // Phase 2: 使用DB仓库替换直接Dexie调用
+    await DB.saveChat(chat);
     
     // 渲染消息
     if (win.CHAT_MODULES?.renderModule?.appendMessage) {
@@ -149,7 +153,7 @@ export class AttachmentHandlerModule {
     await this.handleImageSelect(async (imageDataUrl: string) => {
       const name = prompt('请输入表情包名称:');
       if (!name || !name.trim()) {
-        alert('表情包名称不能为空');
+        showValidationError('表情包名称不能为空');
         return;
       }
       
@@ -163,7 +167,8 @@ export class AttachmentHandlerModule {
         name: name.trim()
       };
       
-      await db.db.userStickers.put(sticker);
+      // Phase 2: 使用DB仓库替换直接Dexie调用
+      await DB.saveUserSticker(sticker);
       state.state.userStickers.push(sticker);
       
       // 重新渲染表情面板
@@ -171,7 +176,7 @@ export class AttachmentHandlerModule {
         win.CHAT_MODULES.composerModule.renderStickerPanel();
       }
       
-      alert('表情包添加成功！');
+      showSuccess('表情包添加成功！');
     });
   }
 
@@ -182,7 +187,7 @@ export class AttachmentHandlerModule {
     
     const name = prompt('请输入表情包名称:');
     if (!name || !name.trim()) {
-      alert('表情包名称不能为空');
+      showValidationError('表情包名称不能为空');
       return;
     }
     
@@ -190,7 +195,7 @@ export class AttachmentHandlerModule {
     try {
       new URL(url);
     } catch {
-      alert('请输入有效的图片链接');
+      showError('请输入有效的图片链接');
       return;
     }
     
@@ -205,7 +210,8 @@ export class AttachmentHandlerModule {
     };
     
     try {
-      await db.db.userStickers.put(sticker);
+      // Phase 2: 使用DB仓库替换直接Dexie调用
+      await DB.saveUserSticker(sticker);
       state.state.userStickers.push(sticker);
       
       // 重新渲染表情面板
@@ -213,10 +219,10 @@ export class AttachmentHandlerModule {
         win.CHAT_MODULES.composerModule.renderStickerPanel();
       }
       
-      alert('表情包添加成功！');
+      showSuccess('表情包添加成功！');
     } catch (error) {
       console.error('添加表情包失败:', error);
-      alert('添加表情包失败，请重试');
+      showOperationError('添加表情包', error as Error);
     }
   }
 
@@ -331,9 +337,9 @@ export class AttachmentHandlerModule {
       
       // 显示结果
       if (successCount > 0) {
-        alert(`成功发送 ${successCount} 张图片${failCount > 0 ? `，失败 ${failCount} 张` : ''}`);
+        showSuccess(`成功发送 ${successCount} 张图片${failCount > 0 ? `，失败 ${failCount} 张` : ''}`);
       } else {
-        alert('所有图片处理失败，请检查文件格式和大小');
+        showError('所有图片处理失败，请检查文件格式和大小');
       }
     };
     

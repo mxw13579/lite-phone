@@ -1,5 +1,6 @@
 /**
  * 人设管理服务模块 - TypeScript版本
+ * Phase 2+4: 使用DB仓库访问 + 统一错误处理
  * 
  * 负责管理AI角色人设预设库功能，包括：
  * - 人设预设的创建、编辑、删除、应用
@@ -11,6 +12,8 @@
  */
 
 import type { PersonaPreset } from '../state';
+import DB from '../database';
+import { showError, showValidationError, showOperationError } from './errorHandling';
 
 // === 类型定义 ===
 interface ModalOptions {
@@ -213,8 +216,9 @@ export class PersonaService {
       const state: StateManager = win.STATE;
       const db: DatabaseManager = win.DB;
       
-      if (state?.state && db?.db) {
-        await db.db.personaPresets.delete(this.editingPersonaPresetId);
+      if (state?.state) {
+        // Phase 2: 使用DB仓库替换直接Dexie调用
+        await DB.deletePersonaPreset(this.editingPersonaPresetId);
         state.state.personaPresets = state.state.personaPresets.filter(p => p.id !== this.editingPersonaPresetId);
         this.hidePresetActions();
         this.renderPersonaLibrary();
@@ -249,7 +253,7 @@ export class PersonaService {
     const defaultAvatar = this.getDefaultAvatar();
 
     if (avatar === defaultAvatar && !persona) {
-      alert("头像和人设不能都为空哦！");
+      showValidationError("头像和人设不能都为空");
       return;
     }
 
@@ -259,7 +263,8 @@ export class PersonaService {
       if (preset) {
         preset.avatar = avatar;
         preset.persona = persona;
-        await db.db.personaPresets.put(preset);
+        // Phase 2: 使用DB仓库替换直接Dexie调用
+        await DB.savePersonaPreset(preset);
       }
     } else {
       // 创建新预设
@@ -268,7 +273,8 @@ export class PersonaService {
         avatar: avatar,
         persona: persona
       };
-      await db.db.personaPresets.add(newPreset);
+      // Phase 2: 使用DB仓库替换直接Dexie调用
+      await DB.savePersonaPreset(newPreset);
       state.state.personaPresets.push(newPreset);
     }
 
@@ -339,7 +345,7 @@ export class PersonaService {
       const deleteBtn = document.createElement('div');
       deleteBtn.className = 'delete-member-btn';
       deleteBtn.title = '删除该成员';
-      deleteBtn.innerHTML = '&times;'; // 这个HTML实体是安全的
+      deleteBtn.textContent = '×'; // 使用textContent替代innerHTML
       memberAvatarContainer.appendChild(deleteBtn);
       
       const memberNameSpan = document.createElement('span');

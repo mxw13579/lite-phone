@@ -1,7 +1,11 @@
 // AI响应处理模块 - TypeScript版本
 // 处理AI聊天响应的核心逻辑
+// Phase 4: 使用统一错误处理
 
 import type { Message, Chat, StateManager, DatabaseManager, ApiConfig, MusicState, Preset } from '../state';
+import DB from '../database';
+import { showApiConfigError } from '../services/errorHandling';
+import { SystemPromptService } from '../services/systemPrompt';
 
 interface Constants {
   DEFAULT_PROMPT_IMAGE: string;
@@ -13,6 +17,12 @@ interface Constants {
 }
 
 export class AiResponseModule {
+  private systemPromptService: SystemPromptService;
+
+  constructor() {
+    this.systemPromptService = new SystemPromptService();
+  }
+
   // 触发AI响应
   async triggerAiResponse(): Promise<void> {
     const win = window as any;
@@ -40,7 +50,7 @@ export class AiResponseModule {
     const {proxyUrl: rawProxyUrl, apiKey, model} = apiConfig;
 
     if (!rawProxyUrl || !apiKey || !model) {
-      alert('请先在API设置中配置反代地址、密钥并选择模型。');
+      showApiConfigError();
       if (typingIndicator) {
         typingIndicator.style.display = 'none';
       }
@@ -84,120 +94,148 @@ export class AiResponseModule {
     let musicContext = '';
     if (musicState?.isActive && musicState.activeChatId === chatId && musicState.currentIndex > -1) {
       const currentTrack = musicState.playlist[musicState.currentIndex];
-      musicContext = `\n\n# 当前情景\n你正在和用户一起听歌。当前播放的歌曲是：${currentTrack.title} - ${currentTrack.artist}。请在对话中自然地融入这个情境。\n`;
+      musicContext = `\n\n# 当前情景\n你正在和用户一起听歌。当前播放的歌曲是：${currentTrack.name} - ${currentTrack.artist}。请在对话中自然地融入这个情境。\n`;
     }
 
+    // === 系统提示生成：使用新的SystemPromptService ===
     let systemPrompt: string;
+    let compositionHash: string;
+    
+    try {
+      // 使用SystemPromptService生成系统提示
+      const promptResult = await this.systemPromptService.generateSystemPrompt(
+        chat, 
+        {}, // worldBooksMap由SystemPromptService内部根据persona.worldBookLinks处理
+        undefined // TODO: 记忆包集成
+      );
+      
+      systemPrompt = promptResult.systemPrompt;
+      compositionHash = promptResult.compositionHash;
+      
+      // 更新chat的compositionHash（用于版本一致性检查）
+      if (chat.compositionHash !== compositionHash) {
+        chat.compositionHash = compositionHash;
+        await win.saveChat(chat);
+      }
+      
+      console.log('✅ 使用新的SystemPromptService生成系统提示');
+      
+    } catch (error) {
+      console.error('SystemPromptService失败，回退到原有逻辑:', error);
+      
+      // === 原有的系统提示生成逻辑（回退方案） ===
+      const activePreset = win.getActivePreset();
+      const constants: Constants = win.CONSTANTS;
+      const DEFAULT_PROMPT_SINGLE = constants?.DEFAULT_PROMPT_SINGLE || '默认单聊提示词';
+      const DEFAULT_PROMPT_GROUP = constants?.DEFAULT_PROMPT_GROUP || '默认群聊提示词';
+
+      if (chat.isGroup) {
+        const basGroupPrompt = activePreset?.promptGroup || DEFAULT_PROMPT_GROUP;
+        systemPrompt = basGroupPrompt
+          .replace('{myAddress}', addressForTemplate)
+          .replace('{worldBookContent}', worldBookContent)
+          .replace('{musicContext}', musicContext)
+          .replace('{currentTime}', currentTime)
+          .replace('{chat.settings.myPersona}', chat.settings.myPersona || '');
+      } else {
+        const baseSinglePrompt = activePreset?.promptSingle || DEFAULT_PROMPT_SINGLE;
+        systemPrompt = baseSinglePrompt
+          .replace('{myAddress}', addressForTemplate)
+          .replace(/{chat.name}/g, chat.name)
+          .replace(/{currentTime}/g, currentTime)
+          .replace('{worldBookContent}', worldBookContent)
+          .replace('{musicContext}', musicContext)
+          .replace(/{chat.settings.aiPersona}/g, chat.settings.aiPersona || '')
+          .replace(/{chat.settings.myPersona}/g, chat.settings.myPersona || '');
+      }
+    }
+
+    // === 消息负载处理（保持现有逻辑） ===
     let messagesPayload: Array<{role: string, content: any}>;
     const maxMemory = parseInt(String(chat.settings.maxMemory)) || 10;
     const historySlice = chat.history.slice(-maxMemory);
-    const activePreset = win.getActivePreset();
 
-    const constants: Constants = win.CONSTANTS;
-    const DEFAULT_PROMPT_IMAGE = constants?.DEFAULT_PROMPT_IMAGE || '默认图片提示词';
-    const DEFAULT_PROMPT_VOICE = constants?.DEFAULT_PROMPT_VOICE || '默认语音提示词';
-    const DEFAULT_PROMPT_TRANSFER = constants?.DEFAULT_PROMPT_TRANSFER || '默认转账提示词';
-    const DEFAULT_PROMPT_SINGLE = constants?.DEFAULT_PROMPT_SINGLE || '默认单聊提示词';
-    const DEFAULT_PROMPT_GROUP = constants?.DEFAULT_PROMPT_GROUP || '默认群聊提示词';
-
-    const aiImageInstructions = activePreset?.promptImage || DEFAULT_PROMPT_IMAGE;
-    const aiVoiceInstructions = activePreset?.promptVoice || DEFAULT_PROMPT_VOICE;
-    const transferInstructions = activePreset?.promptTransfer || DEFAULT_PROMPT_TRANSFER;
-    
-    console.log('=== AI响应调试信息 ===');
-    console.log('地理位置开关:', state.state.globalSettings.enableGeolocation);
-    console.log('原始地址:', myAddress);
-    console.log('模板地址:', addressForTemplate);
-    console.log('聊天类型:', chat.isGroup ? '群聊' : '单聊');
-
-    if (chat.isGroup && chat.members) {
-      const membersList = chat.members.map(m => `- **${m.name}**: ${m.persona}`).join('\n');
-      const myNickname = chat.settings.myGroupNickname || '我';
-      const groupAiImageInstructions = `\n# 发送图片的能力\n- 群成员无法真正发送图片文件。但当用户要求某位成员发送照片，或者某个成员想通过图片来表达时，该成员可以发送一张"文字描述的图片"。\n- 若要发送图片，请在你的回复JSON数组中，为该角色单独发送一个特殊的对象，格式为：\`{"name": "角色名", "type": "ai_image", "description": "这里是对图片的详细文字描述..."}\`。描述应该符合该角色的性格和当时的语境。`;
-      const groupAiVoiceInstructions = `\n# 发送语音的能力\n- 群成员同样可以发送"模拟语音消息"。\n- 若要发送语音，请为该角色单独发送一个特殊的对象，格式为：\`{"name": "角色名", "type": "voice_message", "content": "这里是语音的文字内容..."}\`。当历史记录中出现 "[角色名 发送了一条语音，内容是：'xxx']" 时，代表该角色用语音说了'xxx'。其他角色应该对此内容做出回应。`;
-      let baseGroupPrompt = activePreset?.promptGroup || DEFAULT_PROMPT_GROUP;
-      console.log('myAddress:', addressForTemplate)
-      systemPrompt = baseGroupPrompt
-        .replace('{myAddress}', addressForTemplate)
-        .replace('{worldBookContent}', worldBookContent)
-        .replace('{musicContext}', musicContext)
-        .replace('{currentTime}', currentTime)
-        .replace('{chat.settings.myPersona}', chat.settings.myPersona || '')
-        .replace(/{myNickname}/g, myNickname)
-        .replace('{groupAiImageInstructions}', groupAiImageInstructions)
-        .replace('{groupAiVoiceInstructions}', groupAiVoiceInstructions)
-        .replace('{membersList}', membersList);
-      messagesPayload = historySlice.map(msg => {
-        if (msg.type === 'pat') {
-          return {role: 'user', content: `[拍一拍 ${msg.content}]`};
-        }
-        const sender = msg.role === 'user' ? (chat.settings.myGroupNickname || '我') : (msg as any).senderName;
-        let content: any;
-        if (msg.type === 'user_photo') content = `[${sender} 发送了一张描述的照片，内容是：'${msg.content}']`;
-        else if (msg.type === 'ai_image') content = `[${sender} 发送了一张图片]`;
-        else if (msg.type === 'voice_message') content = `[${sender} 发送了一条语音，内容是：'${msg.content}']`;
-        else if (msg.type === 'transfer') content = `[${(msg as any).senderName}向${(msg as any).receiverName}转账 ${(msg as any).amount}元, 备注: ${(msg as any).note}]`;
-        else if ((msg as any).meaning) content = `${sender}: [发送了一个表情，意思是: '${(msg as any).meaning}']`;
-        else if (Array.isArray(msg.content)) content = [...msg.content, {type: 'text', text: `${sender}:`}];
-        else content = `${sender}: ${msg.content}`;
-        return {role: 'user', content: content};
-      });
-    } else {
-      let baseSinglePrompt = activePreset?.promptSingle || DEFAULT_PROMPT_SINGLE;
-      systemPrompt = baseSinglePrompt
-        .replace('{myAddress}', addressForTemplate)
-        .replace(/{chat.name}/g, chat.name)
-        .replace(/{currentTime}/g, currentTime)
-        .replace('{worldBookContent}', worldBookContent)
-        .replace('{musicContext}', musicContext)
-        .replace(/{chat.settings.aiPersona}/g, chat.settings.aiPersona || '')
-        .replace(/{chat.settings.myPersona}/g, chat.settings.myPersona || '')
-        .replace('{aiImageInstructions}', aiImageInstructions)
-        .replace('{aiVoiceInstructions}', aiVoiceInstructions)
-        .replace('{transferInstructions}', transferInstructions);
-      messagesPayload = historySlice.map(msg => {
-        if (msg.type === 'pat') {
-          return {role: 'user', content: `[拍一拍 ${msg.content}]`};
-        }
-        if (msg.type === 'user_photo') return {
+    // 处理消息：普通消息处理 + UserRole注入
+    messagesPayload = await Promise.all(historySlice.map(async msg => {
+      // 处理特殊消息类型
+      if (msg.type === 'pat') {
+        return {role: 'user', content: `[拍一拍 ${msg.content}]`};
+      }
+      if (msg.type === 'user_photo') {
+        return {
           role: 'user',
           content: `[你收到了一张用户描述的照片，照片内容是：'${msg.content}']`
         };
-        if (msg.type === 'ai_image') return {
+      }
+      if (msg.type === 'ai_image') {
+        return {
           role: 'assistant',
           content: JSON.stringify({type: 'ai_image', description: msg.content})
         };
-        if (msg.type === 'voice_message') {
-          if (msg.role === 'user') return {
+      }
+      if (msg.type === 'voice_message') {
+        if (msg.role === 'user') {
+          return {
             role: 'user',
             content: `[用户发来一条语音消息，内容是：'${msg.content}']`
           };
-          else return {
+        } else {
+          return {
             role: 'assistant',
             content: JSON.stringify({type: 'voice_message', content: msg.content})
           };
         }
-        if (msg.type === 'transfer') {
-          if (msg.role === 'user') return {
+      }
+      if (msg.type === 'transfer') {
+        if (msg.role === 'user') {
+          return {
             role: 'user',
             content: `[你收到了来自用户的转账: ${(msg as any).amount}元, 备注: ${(msg as any).note}]`
           };
-          else return {
+        } else {
+          return {
             role: 'assistant',
             content: JSON.stringify({type: 'transfer', amount: (msg as any).amount, note: (msg as any).note})
           };
         }
-        if (msg.role === 'user' && (msg as any).meaning) return {
+      }
+      if (msg.role === 'user' && (msg as any).meaning) {
+        return {
           role: 'user',
           content: `[用户发送了一个表情，意思是：'${(msg as any).meaning}']`
         };
-        if (typeof msg.content === 'string' || Array.isArray(msg.content)) return {
+      }
+
+      // 处理普通文本消息，并注入UserRole块
+      if (msg.role === 'user' && (typeof msg.content === 'string' || Array.isArray(msg.content))) {
+        try {
+          const processedContent = await this.systemPromptService.injectUserRoleBlock(msg, chat);
+          return {
+            role: 'user',
+            content: processedContent
+          };
+        } catch (error) {
+          console.warn('UserRole注入失败，使用原始内容:', error);
+          return {
+            role: msg.role,
+            content: msg.content
+          };
+        }
+      }
+
+      // 其他消息直接返回
+      if (typeof msg.content === 'string' || Array.isArray(msg.content)) {
+        return {
           role: msg.role,
           content: msg.content
         };
-        return null;
-      }).filter(Boolean) as Array<{role: string, content: any}>;
-    }
+      }
+
+      return null;
+    }));
+    
+    // 过滤空消息
+    messagesPayload = messagesPayload.filter(Boolean) as Array<{role: string, content: any}>;
 
     try {
       const response = await fetch(`${proxyUrl}/v1/chat/completions`, {
@@ -282,7 +320,7 @@ export class AiResponseModule {
         }
 
         chat.history.push(aiMessage);
-        await win.DB.db.chats.put(chat);
+        await DB.saveChat(chat);
 
         if (isViewingThisChat) {
           win.ChatModule.appendMessage(aiMessage, chat);
@@ -312,7 +350,7 @@ export class AiResponseModule {
       };
       if (chat) {
         chat.history.push(errorMessage);
-        await win.DB.db.chats.put(chat);
+        await DB.saveChat(chat);
 
         if (document.getElementById('chat-interface-screen')?.classList.contains('active')) {
           win.ChatModule.appendMessage(errorMessage, chat);
@@ -371,18 +409,7 @@ export class AiResponseModule {
 // === 全局单例实例 ===
 export const aiResponseModule = new AiResponseModule();
 
-// === 向后兼容：注入到window对象 ===
-// 注入到window对象，保持向后兼容性（简化类型声明）
-if (typeof window !== 'undefined') {
-  const win = window as any;
-
-  // 主模块实例
-  win.AiResponseModule = aiResponseModule;
-
-  // AI响应核心API
-  win.triggerAiResponse = () => aiResponseModule.triggerAiResponse();
-  win.parseAiResponse = (content: string) => aiResponseModule.parseAiResponse(content);
-}
+// === 向后兼容：已统一迁移到init/compat.ts ===
 
 // 默认导出
 export default {

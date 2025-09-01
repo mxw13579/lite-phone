@@ -1,8 +1,10 @@
 // 屏幕模块统一入口 - TypeScript版本
 // 整合世界书、预设、API设置、壁纸、聊天五个屏幕的管理功能
+// Phase 4: 统一错误处理，消除alert调用
 
 // 导入类型定义
 import type { WorldBook, Preset, ApiConfig, GlobalSettings } from '../state';
+import { showError, showSuccess, showValidationError, showOperationError, showNetworkError } from '../services/errorHandling';
 
 // 聊天模块导入 - 使用拆分后的模块
 import { chatScreenModule, ChatScreenModule } from './chat/';
@@ -155,7 +157,7 @@ export class WorldBookScreen implements ScreenModule {
       console.log('创建新世界书：', newBook.name);
     } catch (error) {
       console.error('创建世界书失败：', error);
-      alert('创建失败，请重试');
+      showOperationError('创建世界书', error as Error);
     }
   }
 
@@ -177,7 +179,7 @@ export class WorldBookScreen implements ScreenModule {
     
     const newName = nameInput.value.trim();
     if (!newName) {
-      alert('书名不能为空！');
+      showValidationError('世界书名称');
       return;
     }
     
@@ -209,7 +211,7 @@ export class WorldBookScreen implements ScreenModule {
       console.log('保存世界书：', newName);
     } catch (error) {
       console.error('保存世界书失败：', error);
-      alert('保存失败，请重试');
+      showOperationError('保存世界书', error as Error);
     }
   }
 
@@ -237,7 +239,7 @@ export class WorldBookScreen implements ScreenModule {
       console.log('删除世界书：', bookId);
     } catch (error) {
       console.error('删除世界书失败：', error);
-      alert('删除失败，请重试');
+      showOperationError('删除世界书', error as Error);
     }
   }
 
@@ -435,7 +437,7 @@ export class PresetScreen implements ScreenModule {
   async savePreset(): Promise<void> {
     const name = (document.getElementById('preset-name-input') as HTMLInputElement).value.trim();
     if (!name) {
-      alert('预设名称不能为空！');
+      showValidationError('预设名称');
       return;
     }
     
@@ -482,7 +484,7 @@ export class PresetScreen implements ScreenModule {
       console.log('预设保存成功：', name);
     } catch (error) {
       console.error('保存预设失败：', error);
-      alert('保存失败，请重试');
+      showOperationError('保存预设', error as Error);
     }
   }
 
@@ -589,7 +591,7 @@ export class PresetScreen implements ScreenModule {
       console.log('已设置活跃预设：', presetId);
     } catch (error) {
       console.error('设置活跃预设失败：', error);
-      alert('设置失败，请重试');
+      showOperationError('设置活跃预设', error as Error);
     }
   }
 
@@ -607,7 +609,7 @@ export class PresetScreen implements ScreenModule {
       
       // 防止删除最后一个预设
       if (state.presets.length <= 1) {
-        alert('无法删除：至少需要保留一个预设');
+        showError('无法删除：至少需要保留一个预设');
         return;
       }
       
@@ -642,7 +644,7 @@ export class PresetScreen implements ScreenModule {
       }
     } catch (error) {
       console.error('删除预设失败：', error);
-      alert('删除失败，请重试');
+      showOperationError('删除预设', error as Error);
     }
   }
 
@@ -716,11 +718,11 @@ export class PresetScreen implements ScreenModule {
       // 重新渲染列表
       await this.renderPresetListScreen();
       
-      alert(`成功导入 ${newPresets.length} 个新预设`);
+      showSuccess(`成功导入 ${newPresets.length} 个新预设`);
       console.log('预设数据导入成功，新增预设：', newPresets.length);
     } catch (error) {
       console.error('导入预设失败：', error);
-      alert('导入失败：' + (error as Error).message);
+      showOperationError('导入预设', error as Error);
     }
   }
 }
@@ -782,11 +784,11 @@ export class ApiSettingsScreen implements ScreenModule {
       // 使用统一的更新方法（同时更新内存状态和数据库）
       await updateApiConfig(apiConfig);
       
-      alert('API设置已保存!');
+      showSuccess('API设置已保存！');
       console.log('API设置已保存并更新到状态');
     } catch (error) {
       console.error('保存API设置失败:', error);
-      alert('保存失败，请重试');
+      showOperationError('保存API设置', error as Error);
     }
   }
 
@@ -796,7 +798,7 @@ export class ApiSettingsScreen implements ScreenModule {
     const key = (document.getElementById('api-key') as HTMLInputElement).value.trim();
     
     if (!url || !key) {
-      alert('请先填写反代地址和密钥');
+      showError('请先填写反代地址和密钥');
       return;
     }
 
@@ -840,11 +842,11 @@ export class ApiSettingsScreen implements ScreenModule {
         modelSelect.appendChild(option);
       });
       
-      alert('模型列表已更新');
+      showSuccess('模型列表已更新');
       console.log('模型列表更新完成，共', data.data.length, '个模型');
     } catch (error) {
       console.error('拉取模型失败:', error);
-      alert(`拉取模型失败: ${(error as Error).message}`);
+      showNetworkError('拉取模型', error as Error);
     }
   }
 
@@ -987,7 +989,7 @@ export class ApiSettingsScreen implements ScreenModule {
   async applyRemoteTheme(): Promise<void> {
     const url = (document.getElementById('remote-theme-url') as HTMLInputElement)?.value?.trim();
     if (!url) {
-      alert('请输入远程主题的CSS URL！');
+      showError('请输入远程主题的CSS URL');
       return;
     }
     
@@ -1008,13 +1010,13 @@ export class ApiSettingsScreen implements ScreenModule {
       if (win.showCustomAlert) {
         await win.showCustomAlert('主题已更新', '远程主题已应用并保存。');
       } else {
-        alert('主题已更新');
+        showSuccess('主题已更新');
       }
       
       console.log('远程主题已应用:', url);
     } catch (error) {
       console.error('应用远程主题失败:', error);
-      alert('应用主题失败，请检查URL是否有效');
+      showError('应用主题失败，请检查URL是否有效');
     }
   }
 
@@ -1185,7 +1187,7 @@ export class ApiSettingsScreen implements ScreenModule {
       console.log('设置备份导入成功');
     } catch (error) {
       console.error('导入设置失败：', error);
-      alert('导入失败：' + (error as Error).message);
+      showOperationError('导入预设', error as Error);
     }
   }
 }

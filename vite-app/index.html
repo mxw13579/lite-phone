@@ -42,6 +42,9 @@
                     <button class="app-icon" onclick="showScreen('preset-list-screen')" aria-label="打开预设设置应用">
                         <div class="icon-bg"><img src="https://i.postimg.cc/MKfTfsmq/1.png" alt="预设设置"></div>
                         <span class="label">预设设置</span></button>
+                    <button class="app-icon" onclick="showScreen('persona-center-screen')" aria-label="打开角色中心应用">
+                        <div class="icon-bg">🎭</div>
+                        <span class="label">角色中心</span></button>
                 </div>
                 <div class="app-row">
                     <button class="app-icon" onclick="showScreen('chat-list-screen')" aria-label="打开QQ聊天应用">
@@ -368,6 +371,10 @@
                 <button class="form-button" id="save-wallpaper-btn">保存并应用</button>
             </div>
         </div>
+
+        <div id="persona-center-screen" class="screen" role="application" aria-label="角色中心">
+            <!-- 角色中心内容将由PersonaCenterScreen组件动态生成 -->
+        </div>
         </main>
 </div>
 
@@ -381,47 +388,52 @@
         </div>
         <div class="modal-body">
             <!-- 基础信息区块 -->
-            <div class="settings-section">
-                <div class="settings-section-title">
+            <div class="settings-section" data-section="basic">
+                <div class="settings-section-title collapsible-header" role="button" tabindex="0">
                     <span>📝 基础信息</span>
+                    <span class="collapse-indicator">▼</span>
                 </div>
-                <div class="form-group" id="chat-name-group">
-                    <label for="chat-name-input">
-                        <span class="label-icon">💬</span>
-                        <span>备注名 / 群名</span>
-                    </label>
-                    <input type="text" id="chat-name-input" placeholder="给这个聊天起个有趣的名字...">
-                </div>
-                <div class="form-group" id="my-group-nickname-group">
-                    <label for="my-group-nickname-input">
-                        <span class="label-icon">👤</span>
-                        <span>我的群昵称</span>
-                    </label>
-                    <input type="text" id="my-group-nickname-input" placeholder="在群里显示的昵称...">
-                </div>
-                <div class="form-group" id="group-avatar-group">
-                    <label>
-                        <span class="label-icon">🖼️</span>
-                        <span>群头像</span>
-                    </label>
-                    <div class="avatar-upload">
-                        <img id="group-avatar-preview" alt="群头像预览">
-                        <div class="upload-actions">
-                            <button onclick="document.getElementById('group-avatar-input').click()">
-                                <span>📸</span>
-                                <span>上传群头像</span>
-                            </button>
-                            <input type="file" id="group-avatar-input" accept="image/*">
+                <div class="settings-section-content">
+                    <div class="form-group" id="chat-name-group">
+                        <label for="chat-name-input">
+                            <span class="label-icon">💬</span>
+                            <span>备注名 / 群名</span>
+                        </label>
+                        <input type="text" id="chat-name-input" placeholder="给这个聊天起个有趣的名字...">
+                    </div>
+                    <div class="form-group" id="my-group-nickname-group">
+                        <label for="my-group-nickname-input">
+                            <span class="label-icon">👤</span>
+                            <span>我的群昵称</span>
+                        </label>
+                        <input type="text" id="my-group-nickname-input" placeholder="在群里显示的昵称...">
+                    </div>
+                    <div class="form-group" id="group-avatar-group">
+                        <label>
+                            <span class="label-icon">🖼️</span>
+                            <span>群头像</span>
+                        </label>
+                        <div class="avatar-upload">
+                            <img id="group-avatar-preview" alt="群头像预览">
+                            <div class="upload-actions">
+                                <button onclick="document.getElementById('group-avatar-input').click()">
+                                    <span>📸</span>
+                                    <span>上传群头像</span>
+                                </button>
+                                <input type="file" id="group-avatar-input" accept="image/*">
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- 世界观设定区块 -->
-            <div class="settings-section">
-                <div class="settings-section-title">
+            <div class="settings-section" data-section="worldbook">
+                <div class="settings-section-title collapsible-header" role="button" tabindex="0">
                     <span>🌍 世界观设定</span>
+                    <span class="collapse-indicator">▼</span>
                 </div>
+                <div class="settings-section-content">
                 <div class="form-group" id="world-book-link-group">
                     <label>
                         <span class="label-icon">📚</span>
@@ -437,13 +449,16 @@
                         </div>
                     </div>
                 </div>
+                </div>
             </div>
 
             <!-- 角色设定区块 -->
-            <div class="settings-section">
-                <div class="settings-section-title">
+            <div class="settings-section" data-section="persona">
+                <div class="settings-section-title collapsible-header" role="button" tabindex="0">
                     <span>🎭 角色设定</span>
+                    <span class="collapse-indicator">▼</span>
                 </div>
+                <div class="settings-section-content">
                 <div class="form-group" id="ai-persona-group">
                     <label for="ai-persona">
                         <span class="label-icon">🤖</span>
@@ -472,6 +487,25 @@
                                 <span>上传对方头像</span>
                             </button>
                             <input type="file" id="ai-avatar-input" accept="image/*">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" id="default-user-role-group">
+                    <label>
+                        <span class="label-icon">🎭</span>
+                        <span>默认用户角色</span>
+                        <span class="label-hint">(在聊天中扮演的角色)</span>
+                    </label>
+                    <div class="custom-select">
+                        <div class="select-box">
+                            <span id="selected-user-role-text">-- 选择角色 --</span>
+                            <span class="arrow-down">▼</span>
+                        </div>
+                        <div id="user-role-options-container" class="options-container">
+                            <div class="option-item" data-role-id="">
+                                <span class="option-label">无角色 (使用原始消息)</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -511,13 +545,16 @@
                         </div>
                     </div>
                 </div>
+                </div>
             </div>
 
             <!-- 群成员管理区块 -->
-            <div class="settings-section">
-                <div class="settings-section-title">
+            <div class="settings-section" data-section="group-members">
+                <div class="settings-section-title collapsible-header" role="button" tabindex="0">
                     <span>👥 群成员管理</span>
+                    <span class="collapse-indicator">▼</span>
                 </div>
+                <div class="settings-section-content">
                 <div class="form-group" id="group-members-group">
                     <label>
                         <span class="label-icon">🏷️</span>
@@ -529,13 +566,16 @@
                         <span>新增成员</span>
                     </button>
                 </div>
+                </div>
             </div>
 
             <!-- 聊天配置区块 -->
-            <div class="settings-section">
-                <div class="settings-section-title">
+            <div class="settings-section" data-section="chat-config">
+                <div class="settings-section-title collapsible-header" role="button" tabindex="0">
                     <span>⚙️ 聊天配置</span>
+                    <span class="collapse-indicator">▼</span>
                 </div>
+                <div class="settings-section-content">
                 <div class="form-group">
                     <label for="max-memory">
                         <span class="label-icon">🧠</span>
@@ -546,13 +586,16 @@
                         <span class="input-unit">条</span>
                     </div>
                 </div>
+                </div>
             </div>
 
             <!-- 外观主题区块 -->
-            <div class="settings-section">
-                <div class="settings-section-title">
+            <div class="settings-section" data-section="appearance">
+                <div class="settings-section-title collapsible-header" role="button" tabindex="0">
                     <span>🎨 外观主题</span>
+                    <span class="collapse-indicator">▼</span>
                 </div>
+                <div class="settings-section-content">
                 <div class="form-group">
                     <label>
                         <span class="label-icon">🎭</span>
@@ -599,18 +642,22 @@
                     <img id="bg-preview" class="bg-preview-img">
                     <input type="file" id="bg-input" accept="image/*" style="display: none;">
                 </div>
+                </div>
             </div>
 
             <!-- 危险操作区块 -->
-            <div class="settings-section danger-section">
-                <div class="settings-section-title">
+            <div class="settings-section danger-section" data-section="danger">
+                <div class="settings-section-title collapsible-header" role="button" tabindex="0">
                     <span>⚠️ 危险操作</span>
+                    <span class="collapse-indicator">▼</span>
                 </div>
+                <div class="settings-section-content">
                 <button class="danger-btn" id="clear-chat-btn">
                     <span>🗑️</span>
                     <span>清空聊天记录</span>
                     <span class="btn-hint">此操作不可撤销</span>
                 </button>
+                </div>
             </div>
         </div>
         <div class="modal-footer">

@@ -205,11 +205,22 @@ class EPhoneApplication {
     document.getElementById('add-chat-btn')?.addEventListener('click', async () => {
       const name = await SERVICES.uiUtilsService.showCustomPrompt('创建新聊天', '请输入Ta的名字');
       if (name && name.trim()) {
+        // 获取全局默认用户角色
+        let defaultUserRoleId: string | undefined;
+        try {
+          const allUserRoles = await DB.getAllUserRoles();
+          const globalDefaultRole = allUserRoles.find(role => role.isGlobalDefault);
+          defaultUserRoleId = globalDefaultRole?.id;
+        } catch (error) {
+          console.warn('获取全局默认用户角色失败:', error);
+        }
+        
         const newChatId = 'chat_' + Date.now();
         const newChat = {
           id: newChatId,
           name: name.trim(),
           isGroup: false,
+          defaultUserRoleId, // 设置默认用户角色ID
           settings: {
             aiPersona: '你是谁呀。',
             myPersona: '我是谁呀。',
@@ -226,9 +237,73 @@ class EPhoneApplication {
           musicData: {totalTime: 0}
         };
         STATE.state.chats[newChatId] = newChat;
-        await DB.db.chats.put(newChat);
+        // Phase 2: 使用DB仓库替换直接Dexie调用
+        await DB.saveChat(newChat);
         SCREENS.chatScreenModule.renderChatList();
       }
+    });
+
+    // 创建群聊
+    document.getElementById('add-group-chat-btn')?.addEventListener('click', async () => {
+      const name = await SERVICES.uiUtilsService.showCustomPrompt('创建新群聊', '请输入群名');
+      if (name && name.trim()) {
+        // 获取全局默认用户角色
+        let defaultUserRoleId: string | undefined;
+        try {
+          const allUserRoles = await DB.getAllUserRoles();
+          const globalDefaultRole = allUserRoles.find(role => role.isGlobalDefault);
+          defaultUserRoleId = globalDefaultRole?.id;
+        } catch (error) {
+          console.warn('获取全局默认用户角色失败:', error);
+        }
+        
+        const newChatId = 'group_' + Date.now();
+        const newGroupChat = {
+          id: newChatId,
+          name: name.trim(),
+          isGroup: true,
+          defaultUserRoleId, // 设置默认用户角色ID
+          members: [], // 空成员列表，可以后续添加
+          settings: {
+            aiPersona: '你们是群聊中的AI助手。',
+            myPersona: '我在群聊中。',
+            maxMemory: 15, // 群聊默认更多记忆
+            aiAvatar: CONSTANTS.DEFAULT_AVATAR,
+            myAvatar: CONSTANTS.DEFAULT_AVATAR,
+            groupAvatar: CONSTANTS.DEFAULT_GROUP_AVATAR,
+            background: '',
+            theme: 'default',
+            linkedWorldBookIds: [],
+            aiPatSuffix: '的脑袋瓜',
+            myPatSuffix: '的肩膀'
+          },
+          history: [],
+          musicData: {totalTime: 0}
+        };
+        STATE.state.chats[newChatId] = newGroupChat;
+        await DB.saveChat(newGroupChat);
+        SCREENS.chatScreenModule.renderChatList();
+      }
+    });
+
+    // 聊天设置按钮
+    document.getElementById('chat-settings-btn')?.addEventListener('click', () => {
+      this.openChatSettings();
+    });
+
+    // 取消聊天设置
+    document.getElementById('cancel-chat-settings-btn')?.addEventListener('click', () => {
+      this.closeChatSettings();
+    });
+
+    // 保存聊天设置  
+    document.getElementById('save-chat-settings-btn')?.addEventListener('click', () => {
+      this.saveChatSettings();
+    });
+
+    // 新增群成员按钮
+    document.getElementById('add-group-member-btn')?.addEventListener('click', () => {
+      this.addGroupMember();
     });
 
     console.log('聊天界面事件监听器注册完成');
@@ -288,6 +363,513 @@ class EPhoneApplication {
    */
   private showInitialScreen(): void {
     ROUTER.showScreen('home-screen');
+  }
+
+  // === 聊天设置相关方法 ===
+  
+  /**
+   * 打开聊天设置模态框
+   */
+  private openChatSettings(): void {
+    const activeChatId = STATE.state.activeChatId;
+    if (!activeChatId || !STATE.state.chats[activeChatId]) {
+      SERVICES.uiUtilsService.showCustomAlert('错误', '请先选择一个聊天');
+      return;
+    }
+
+    const chat = STATE.state.chats[activeChatId];
+    this.populateChatSettingsForm(chat);
+    
+    // 初始化折叠功能
+    this.initializeSettingsCollapse();
+    
+    const modal = document.getElementById('chat-settings-modal');
+    if (modal) {
+      modal.classList.add('visible');
+    }
+  }
+
+  /**
+   * 关闭聊天设置模态框
+   */
+  private closeChatSettings(): void {
+    const modal = document.getElementById('chat-settings-modal');
+    if (modal) {
+      modal.classList.remove('visible');
+    }
+  }
+
+  /**
+   * 填充聊天设置表单数据
+   */
+  private populateChatSettingsForm(chat: any): void {
+    // 基础信息
+    const chatNameInput = document.getElementById('chat-name-input') as HTMLInputElement;
+    if (chatNameInput) chatNameInput.value = chat.name || '';
+
+    // 获取所有需要根据聊天类型显示/隐藏的元素
+    const groupNicknameInput = document.getElementById('my-group-nickname-input') as HTMLInputElement;
+    const groupAvatarPreview = document.getElementById('group-avatar-preview') as HTMLImageElement;
+    const groupAvatarGroup = document.getElementById('group-avatar-group');
+    const myGroupNicknameGroup = document.getElementById('my-group-nickname-group');
+    const groupMembersGroup = document.getElementById('group-members-group');
+    const addGroupMemberBtn = document.getElementById('add-group-member-btn');
+    
+    // 整个群成员管理区块
+    const groupMembersSection = document.querySelector('[data-section="group-members"]') as HTMLElement;
+    
+    // 角色设定区块相关元素
+    const personaSection = document.querySelector('[data-section="persona"]') as HTMLElement;
+    const personaSectionTitle = personaSection?.querySelector('.settings-section-title span:first-child') as HTMLElement;
+    
+    // AI相关元素 - 在群聊中隐藏，单聊中显示
+    const aiPersonaGroup = document.getElementById('ai-persona-group');
+    const aiAvatarGroup = document.getElementById('ai-avatar-group');
+
+    // 填充角色设定数据
+    const aiPersonaTextarea = document.getElementById('ai-persona') as HTMLTextAreaElement;
+    const myPersonaTextarea = document.getElementById('my-persona') as HTMLTextAreaElement;
+    const aiPatSuffixInput = document.getElementById('ai-pat-suffix-input') as HTMLInputElement;
+    const myPatSuffixInput = document.getElementById('my-pat-suffix-input') as HTMLInputElement;
+    const aiAvatarPreview = document.getElementById('ai-avatar-preview') as HTMLImageElement;
+    const myAvatarPreview = document.getElementById('my-avatar-preview') as HTMLImageElement;
+    const maxMemoryInput = document.getElementById('max-memory') as HTMLInputElement;
+
+    // 填充当前聊天的设置数据
+    if (aiPersonaTextarea) aiPersonaTextarea.value = chat.settings.aiPersona || '';
+    if (myPersonaTextarea) myPersonaTextarea.value = chat.settings.myPersona || '';
+    if (aiPatSuffixInput) aiPatSuffixInput.value = chat.settings.aiPatSuffix || '';
+    if (myPatSuffixInput) myPatSuffixInput.value = chat.settings.myPatSuffix || '';
+    if (maxMemoryInput) maxMemoryInput.value = chat.settings.maxMemory?.toString() || '10';
+
+    // 头像预览
+    if (aiAvatarPreview) {
+      aiAvatarPreview.src = chat.settings.aiAvatar || CONSTANTS.DEFAULT_AVATAR;
+    }
+    if (myAvatarPreview) {
+      myAvatarPreview.src = chat.settings.myAvatar || CONSTANTS.DEFAULT_AVATAR;
+    }
+
+    // 根据聊天类型显示/隐藏相关设置项（参照myPhone逻辑）
+    // 修复：严格布尔判断，防止字符串"false"被误判为true
+    const isGroup = chat.isGroup === true || chat.isGroup === 'true';
+    console.log('Chat settings - isGroup check:', { chatId: chat.id, isGroup: chat.isGroup, resolved: isGroup });
+    
+    if (isGroup) {
+      // 群聊：显示群聊相关设置，隐藏AI相关设置
+      if (groupAvatarGroup) groupAvatarGroup.style.setProperty('display', 'block', 'important');
+      if (myGroupNicknameGroup) myGroupNicknameGroup.style.setProperty('display', 'block', 'important');
+      if (groupMembersGroup) groupMembersGroup.style.setProperty('display', 'block', 'important');
+      if (addGroupMemberBtn) addGroupMemberBtn.style.setProperty('display', 'block', 'important');
+      if (groupMembersSection) groupMembersSection.style.setProperty('display', 'block', 'important');
+      if (aiPersonaGroup) aiPersonaGroup.style.setProperty('display', 'none', 'important');
+      if (aiAvatarGroup) aiAvatarGroup.style.setProperty('display', 'none', 'important');
+      
+      // 更新角色设定区块标题为群聊模式
+      if (personaSectionTitle) {
+        personaSectionTitle.textContent = '👤 我的群聊人设';
+      }
+      
+      if (groupAvatarPreview) {
+        groupAvatarPreview.src = chat.settings.groupAvatar || CONSTANTS.DEFAULT_GROUP_AVATAR;
+      }
+      
+      // 渲染已有群成员
+      if (chat.members && chat.members.length > 0) {
+        this.renderGroupMemberSettings(chat.members);
+      }
+    } else {
+      // 单聊：隐藏群聊相关设置，显示AI相关设置
+      if (groupAvatarGroup) groupAvatarGroup.style.setProperty('display', 'none', 'important');
+      if (myGroupNicknameGroup) myGroupNicknameGroup.style.setProperty('display', 'none', 'important');
+      if (groupMembersGroup) groupMembersGroup.style.setProperty('display', 'none', 'important');
+      if (addGroupMemberBtn) addGroupMemberBtn.style.setProperty('display', 'none', 'important');
+      if (groupMembersSection) groupMembersSection.style.setProperty('display', 'none', 'important');
+      if (aiPersonaGroup) aiPersonaGroup.style.setProperty('display', 'block', 'important');
+      if (aiAvatarGroup) aiAvatarGroup.style.setProperty('display', 'block', 'important');
+      
+      // 恢复角色设定区块标题为单聊模式
+      if (personaSectionTitle) {
+        personaSectionTitle.textContent = '🎭 角色设定';
+      }
+      
+      // 清空群成员设置容器，防止残留内容
+      const groupMembersSettings = document.getElementById('group-members-settings');
+      if (groupMembersSettings) {
+        groupMembersSettings.innerHTML = '';
+      }
+    }
+
+    // 设置主题选择
+    const currentTheme = chat.settings.theme || 'default';
+    const themeRadio = document.querySelector(`input[name="theme-select"][value="${currentTheme}"]`) as HTMLInputElement;
+    if (themeRadio) themeRadio.checked = true;
+    
+    // 初始化用户角色选择器
+    this.initializeUserRoleSelector(chat);
+  }
+
+  /**
+   * 初始化用户角色选择器
+   */
+  private async initializeUserRoleSelector(chat: any): Promise<void> {
+    const selectedRoleText = document.getElementById('selected-user-role-text') as HTMLElement;
+    const optionsContainer = document.getElementById('user-role-options-container') as HTMLElement;
+    const selectBox = optionsContainer?.parentElement?.querySelector('.select-box') as HTMLElement;
+    
+    if (!selectedRoleText || !optionsContainer || !selectBox) {
+      console.warn('用户角色选择器元素未找到');
+      return;
+    }
+    
+    try {
+      // 获取所有用户角色
+      const userRoles = await (window as any).DB.getAllUserRoles();
+      
+      // 清空选项容器
+      optionsContainer.innerHTML = '<div class="option-item" data-role-id=""><span class="option-label">无角色 (使用原始消息)</span></div>';
+      
+      // 添加用户角色选项
+      userRoles.forEach((role: any) => {
+        const optionDiv = document.createElement('div');
+        optionDiv.className = 'option-item';
+        optionDiv.setAttribute('data-role-id', role.id);
+        optionDiv.innerHTML = `
+          <span class="option-label">${role.name}</span>
+          ${role.isGlobalDefault ? '<span class="global-default-badge">默认</span>' : ''}
+        `;
+        optionsContainer.appendChild(optionDiv);
+      });
+      
+      // 设置当前选中的角色
+      const currentRoleId = chat.defaultUserRoleId || '';
+      if (currentRoleId) {
+        const currentRole = userRoles.find((role: any) => role.id === currentRoleId);
+        selectedRoleText.textContent = currentRole ? currentRole.name : '-- 选择角色 --';
+      } else {
+        selectedRoleText.textContent = '无角色 (使用原始消息)';
+      }
+      
+      // 绑定选择器事件
+      selectBox.addEventListener('click', () => {
+        optionsContainer.style.display = optionsContainer.style.display === 'block' ? 'none' : 'block';
+      });
+      
+      // 绑定选项点击事件
+      optionsContainer.addEventListener('click', (e) => {
+        const optionItem = (e.target as HTMLElement).closest('.option-item') as HTMLElement;
+        if (!optionItem) return;
+        
+        const roleId = optionItem.getAttribute('data-role-id') || '';
+        const roleName = optionItem.querySelector('.option-label')?.textContent || '-- 选择角色 --';
+        
+        // 更新显示文本
+        selectedRoleText.textContent = roleName;
+        
+        // 保存选择到聊天对象
+        chat.defaultUserRoleId = roleId || undefined;
+        
+        // 隐藏选项列表
+        optionsContainer.style.display = 'none';
+        
+        console.log(`用户角色已设置: ${roleName} (${roleId})`);
+      });
+      
+      // 点击外部关闭下拉列表
+      document.addEventListener('click', (e) => {
+        if (!selectBox.contains(e.target as Node)) {
+          optionsContainer.style.display = 'none';
+        }
+      });
+      
+    } catch (error) {
+      console.error('初始化用户角色选择器失败:', error);
+      selectedRoleText.textContent = '加载失败';
+    }
+  }
+
+  /**
+   * 初始化设置页面折叠功能
+   */
+  private initializeSettingsCollapse(): void {
+    // 获取所有折叠标题元素
+    const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
+    
+    collapsibleHeaders.forEach(header => {
+      // 移除现有事件监听器（避免重复绑定）
+      header.removeEventListener('click', this.handleCollapseToggle);
+      header.removeEventListener('keydown', this.handleCollapseKeydown);
+      
+      // 添加点击事件监听器
+      header.addEventListener('click', this.handleCollapseToggle.bind(this));
+      
+      // 添加键盘访问支持
+      header.addEventListener('keydown', this.handleCollapseKeydown.bind(this));
+    });
+    
+    // 从localStorage加载折叠状态
+    this.loadCollapseStates();
+  }
+
+  /**
+   * 处理折叠切换点击事件
+   */
+  private handleCollapseToggle(event: Event): void {
+    const header = event.currentTarget as HTMLElement;
+    const settingsSection = header.closest('.settings-section');
+    
+    if (!settingsSection) return;
+    
+    const isCollapsed = settingsSection.classList.contains('collapsed');
+    
+    // 切换折叠状态
+    if (isCollapsed) {
+      settingsSection.classList.remove('collapsed');
+    } else {
+      settingsSection.classList.add('collapsed');
+    }
+    
+    // 保存折叠状态到localStorage
+    const sectionName = settingsSection.getAttribute('data-section');
+    if (sectionName) {
+      this.saveCollapseState(sectionName, !isCollapsed);
+    }
+  }
+
+  /**
+   * 处理折叠切换键盘事件
+   */
+  private handleCollapseKeydown(event: KeyboardEvent): void {
+    // 支持Enter和Space键
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.handleCollapseToggle(event);
+    }
+  }
+
+  /**
+   * 保存折叠状态到localStorage
+   */
+  private saveCollapseState(sectionName: string, isCollapsed: boolean): void {
+    try {
+      const collapseStates = JSON.parse(localStorage.getItem('chatSettingsCollapseStates') || '{}');
+      collapseStates[sectionName] = isCollapsed;
+      localStorage.setItem('chatSettingsCollapseStates', JSON.stringify(collapseStates));
+    } catch (error) {
+      console.error('保存折叠状态失败:', error);
+    }
+  }
+
+  /**
+   * 从localStorage加载折叠状态
+   */
+  private loadCollapseStates(): void {
+    try {
+      const collapseStates = JSON.parse(localStorage.getItem('chatSettingsCollapseStates') || '{}');
+      
+      Object.entries(collapseStates).forEach(([sectionName, isCollapsed]) => {
+        const section = document.querySelector(`[data-section="${sectionName}"]`);
+        if (section && isCollapsed) {
+          section.classList.add('collapsed');
+        }
+      });
+    } catch (error) {
+      console.error('加载折叠状态失败:', error);
+    }
+  }
+
+  /**
+   * 保存聊天设置
+   */
+  private async saveChatSettings(): Promise<void> {
+    const activeChatId = STATE.state.activeChatId;
+    if (!activeChatId || !STATE.state.chats[activeChatId]) {
+      return;
+    }
+
+    const chat = STATE.state.chats[activeChatId];
+    
+    // 获取表单数据
+    const chatNameInput = document.getElementById('chat-name-input') as HTMLInputElement;
+    const groupNicknameInput = document.getElementById('my-group-nickname-input') as HTMLInputElement;
+    const aiPersonaTextarea = document.getElementById('ai-persona') as HTMLTextAreaElement;
+    const myPersonaTextarea = document.getElementById('my-persona') as HTMLTextAreaElement;
+    const aiPatSuffixInput = document.getElementById('ai-pat-suffix-input') as HTMLInputElement;
+    const myPatSuffixInput = document.getElementById('my-pat-suffix-input') as HTMLInputElement;
+    const maxMemoryInput = document.getElementById('max-memory') as HTMLInputElement;
+    const selectedTheme = document.querySelector('input[name="theme-select"]:checked') as HTMLInputElement;
+    
+    // 更新聊天基本信息
+    if (chatNameInput?.value.trim()) {
+      chat.name = chatNameInput.value.trim();
+    }
+    
+    // 更新角色设定
+    if (aiPersonaTextarea) {
+      chat.settings.aiPersona = aiPersonaTextarea.value || '你是谁呀。';
+    }
+    if (myPersonaTextarea) {
+      chat.settings.myPersona = myPersonaTextarea.value || '我是谁呀。';
+    }
+    if (aiPatSuffixInput) {
+      chat.settings.aiPatSuffix = aiPatSuffixInput.value || '的脑袋瓜';
+    }
+    if (myPatSuffixInput) {
+      chat.settings.myPatSuffix = myPatSuffixInput.value || '的肩膀';
+    }
+    
+    // 更新记忆设置
+    if (maxMemoryInput) {
+      const memoryValue = parseInt(maxMemoryInput.value);
+      if (memoryValue && memoryValue >= 1 && memoryValue <= 50) {
+        chat.settings.maxMemory = memoryValue;
+      }
+    }
+    
+    // 更新主题设置
+    if (selectedTheme) {
+      chat.settings.theme = selectedTheme.value;
+    }
+    
+    // 注意：defaultUserRoleId 已通过用户角色选择器直接保存到 chat 对象中
+    // 这里不需要额外处理，因为 chat 对象的引用会在数据库保存时一起保存
+    
+    // 群聊特殊处理
+    if (chat.isGroup && groupNicknameInput?.value.trim()) {
+      // 这里可以添加群昵称处理逻辑
+    }
+    
+    try {
+      // 保存到数据库
+      await DB.saveChat(chat);
+      
+      // 更新UI
+      SCREENS.chatScreenModule.renderChatList();
+      
+      // 如果当前在聊天界面，更新标题和主题
+      const headerTitle = document.getElementById('chat-header-title');
+      if (headerTitle) {
+        headerTitle.textContent = chat.name;
+      }
+      
+      // 更新聊天界面主题
+      const messagesContainer = document.getElementById('chat-messages');
+      if (messagesContainer) {
+        messagesContainer.dataset.theme = chat.settings.theme || 'default';
+      }
+      
+      this.closeChatSettings();
+      SERVICES.uiUtilsService.showCustomAlert('成功', '聊天设置已保存');
+      
+    } catch (error) {
+      console.error('保存聊天设置失败:', error);
+      SERVICES.uiUtilsService.showCustomAlert('错误', '保存设置失败，请重试');
+    }
+  }
+
+  /**
+   * 新增群成员
+   */
+  private addGroupMember(): void {
+    const activeChatId = STATE.state.activeChatId;
+    if (!activeChatId || !STATE.state.chats[activeChatId] || !STATE.state.chats[activeChatId].isGroup) {
+      return;
+    }
+
+    const chat = STATE.state.chats[activeChatId];
+    
+    // 确保members数组存在
+    if (!chat.members) {
+      chat.members = [];
+    }
+    
+    // 创建新成员（参照myPhone版本）
+    const newMember = {
+      id: `member_${Date.now()}`,
+      name: `新成员${chat.members.length + 1}`,
+      avatar: CONSTANTS.DEFAULT_GROUP_MEMBER_AVATAR || CONSTANTS.DEFAULT_AVATAR,
+      persona: '一个新来的群成员。',
+      patSuffix: '的后脑勺'
+    };
+    
+    // 添加到群成员列表
+    chat.members.push(newMember);
+    
+    // 重新渲染群成员设置
+    this.renderGroupMemberSettings(chat.members);
+    
+    console.log('新增群成员:', newMember.name);
+  }
+
+  /**
+   * 渲染群成员设置
+   */
+  private renderGroupMemberSettings(members: any[]): void {
+    const container = document.getElementById('group-members-settings');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    members.forEach((member, index) => {
+      const memberDiv = document.createElement('div');
+      memberDiv.className = 'group-member-item';
+      memberDiv.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        background: #f9f9f9;
+      `;
+      
+      // 成员头像
+      const avatar = document.createElement('img');
+      avatar.src = member.avatar;
+      avatar.style.cssText = 'width: 40px; height: 40px; border-radius: 50%; object-fit: cover;';
+      
+      // 成员信息
+      const info = document.createElement('div');
+      info.style.flex = '1';
+      
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = member.name;
+      nameInput.style.cssText = 'width: 100%; margin-bottom: 5px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;';
+      nameInput.addEventListener('input', () => {
+        member.name = nameInput.value;
+      });
+      
+      const personaTextarea = document.createElement('textarea');
+      personaTextarea.value = member.persona;
+      personaTextarea.rows = 2;
+      personaTextarea.style.cssText = 'width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px; resize: vertical;';
+      personaTextarea.addEventListener('input', () => {
+        member.persona = personaTextarea.value;
+      });
+      
+      info.appendChild(nameInput);
+      info.appendChild(personaTextarea);
+      
+      // 删除按钮
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = '删除';
+      deleteBtn.style.cssText = 'padding: 5px 10px; background: #ff4757; color: white; border: none; border-radius: 4px; cursor: pointer;';
+      deleteBtn.addEventListener('click', () => {
+        const activeChatId = STATE.state.activeChatId;
+        if (activeChatId && STATE.state.chats[activeChatId] && STATE.state.chats[activeChatId].members) {
+          STATE.state.chats[activeChatId].members.splice(index, 1);
+          this.renderGroupMemberSettings(STATE.state.chats[activeChatId].members);
+        }
+      });
+      
+      memberDiv.appendChild(avatar);
+      memberDiv.appendChild(info);
+      memberDiv.appendChild(deleteBtn);
+      
+      container.appendChild(memberDiv);
+    });
   }
 
   // 注意： exitSelectionMode 方法已转移到 init/index.ts，避免重复定义

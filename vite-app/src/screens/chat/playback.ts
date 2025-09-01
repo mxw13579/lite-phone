@@ -1,7 +1,10 @@
 // 语音回放模块 - 负责语音录制、停止、语音消息播放和播放状态UI同步
 // 提取自 chat.ts 的语音处理相关功能
+// Phase 2+4: 使用DB仓库访问 + 统一错误处理
 
 import type { Message, Chat } from '../../state';
+import DB from '../../database';
+import { showError, showOperationError } from '../../services/errorHandling';
 
 // === 类型定义 ===
 interface StateManager {
@@ -44,7 +47,7 @@ export class VoicePlaybackModule {
     const db: DatabaseManager = win.DB;
     
     if (!state?.state?.activeChatId) {
-      alert('请先选择一个聊天');
+      showError('请先选择一个聊天');
       return;
     }
     
@@ -61,7 +64,7 @@ export class VoicePlaybackModule {
     };
     
     chat.history.push(msg);
-    await db.db.chats.put(chat);
+    await DB.saveChat(chat);
     
     // 渲染消息
     if (win.CHAT_MODULES?.renderModule?.appendMessage) {
@@ -103,7 +106,7 @@ export class VoicePlaybackModule {
     } catch (error) {
       console.error('语音播放失败:', error);
       this.stopVoicePlayback();
-      alert('语音播放失败，请检查系统音频设置');
+      showError('语音播放失败，请检查系统音频设置');
     }
   }
 

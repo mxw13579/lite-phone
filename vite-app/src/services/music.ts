@@ -1,5 +1,6 @@
 /**
  * 音乐播放服务模块 - 独立版本
+ * Phase 2: 使用DB仓库访问替换直接Dexie调用
  * 
  * 提供完整的音乐播放功能，包括：
  * - 播放控制（播放/暂停、上一首/下一首）
@@ -7,9 +8,10 @@
  * - 播放列表管理（添加/删除歌曲）
  * - "一起听"功能（多聊天对象音乐会话）
  * - UI更新与状态同步
- * 
- * 支持本地文件和网络URL两种音源
+ * Repository化改造：使用统一的数据库访问层
  */
+
+import DB from '../database';
 
 import type { Chat } from '../state';
 
@@ -338,7 +340,7 @@ export class MusicService {
       const deleteBtn = document.createElement('span');
       deleteBtn.className = 'delete-track-btn';
       deleteBtn.dataset.index = index.toString();
-      deleteBtn.innerHTML = '&times;'; // HTML实体是安全的
+      deleteBtn.textContent = '×'; // 使用textContent替代innerHTML
       
       item.appendChild(playlistItemInfo);
       item.appendChild(deleteBtn);
@@ -417,7 +419,7 @@ export class MusicService {
       const chat = state.state.chats[oldChatId];
       if (!chat.musicData) chat.musicData = { totalTime: 0 };
       chat.musicData.totalTime = musicState.totalElapsedTime;
-      await win.DB.db.chats.put(chat);
+      await DB.saveChat(chat);
     }
 
     // 重置状态
@@ -444,23 +446,23 @@ export class MusicService {
   updateListenTogetherIcon(chatId: string | null, forceReset = false): void {
     const win = window as any;
     const musicState: MusicState = win.STATE?.musicState;
-    const iconImg = document.querySelector('#listen-together-btn img') as HTMLImageElement;
+    const iconSvg = document.querySelector('#listen-together-icon') as SVGElement;
     
-    if (!iconImg) return;
+    if (!iconSvg) return;
 
     if (forceReset || !musicState?.isActive || musicState.activeChatId !== chatId) {
-      iconImg.src = 'https://i.postimg.cc/8kYShvrJ/90-UI-2.png';
-      iconImg.className = '';
+      // 默认状态：移除所有状态类
+      iconSvg.classList.remove('rotating', 'paused');
       return;
     }
 
-    iconImg.src = 'https://i.postimg.cc/vBN7GnQ9/3-FC8-D1596-C5-CFB200-FCB1-D8-C3-A37-A370.png';
-    iconImg.classList.add('rotating');
+    // 活跃状态：添加旋转动画
+    iconSvg.classList.add('rotating');
     
     if (musicState.isPlaying) {
-      iconImg.classList.remove('paused');
+      iconSvg.classList.remove('paused');
     } else {
-      iconImg.classList.add('paused');
+      iconSvg.classList.add('paused');
     }
   }
 
@@ -505,10 +507,11 @@ export class MusicService {
   private async saveGlobalPlaylist(): Promise<void> {
     const win = window as any;
     const musicState: MusicState = win.STATE?.musicState;
-    const db: DatabaseManager = win.DB;
     
-    if (musicState && db?.db) {
-      await db.db.musicLibrary.put({id: 'main', playlist: musicState.playlist});
+    if (musicState) {
+      // Phase 2: 使用DB仓库替换直接Dexie调用
+      const musicLibrary = {id: 'main', playlist: musicState.playlist};
+      await DB.saveMusicLibrary(musicLibrary);
     }
   }
 

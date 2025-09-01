@@ -1,7 +1,9 @@
 // 数据管理服务 - 数据统计、备份导出、导入还原
 // 从services/index.ts中提取的DataService类
+// Repository化改造：使用统一的数据库访问层
 
 import type { Chat, MusicLibrary, PersonaPreset, UserSticker } from '../state';
+import DB from '../database';
 
 // === 类型定义 ===
 interface ModalOptions {
@@ -26,32 +28,24 @@ interface Track {
   requiresReupload?: boolean;
 }
 
-interface DatabaseManager {
-  db: any; // Dexie数据库实例
-}
-
 export class DataService {
   // 导出数据
   async exportData(): Promise<void> {
     try {
       const win = window as any;
-      const db: DatabaseManager = win.DB;
-      if (!db?.db) {
-        throw new Error('数据库实例未初始化');
-      }
 
-      let globalSettings = await db.db.globalSettings.get('main') || {};
+      let globalSettings = await DB.getGlobalSettings() || {};
       if (!globalSettings.id) globalSettings.id = "main";
       if (!globalSettings.wallpaper) globalSettings.wallpaper = "linear-gradient(135deg, #89f7fe, #66a6ff)";
 
       const backupData = {
-        chats: await db.db.chats.toArray(),
-        apiConfig: await db.db.apiConfig.get('main') || {},
+        chats: await DB.getAllChats(),
+        apiConfig: await DB.getApiConfig() || {},
         globalSettings: globalSettings,
-        userStickers: await db.db.userStickers.toArray(),
-        worldBooks: await db.db.worldBooks.toArray(),
-        musicLibrary: await db.db.musicLibrary.get('main') || {playlist: []},
-        personaPresets: await db.db.personaPresets.toArray()
+        userStickers: await DB.getAllUserStickers(),
+        worldBooks: await DB.getAllWorldBooks(),
+        musicLibrary: await DB.getMusicLibrary() || {playlist: []},
+        personaPresets: await DB.getAllPersonaPresets()
       };
 
       // 处理本地音乐文件
@@ -94,7 +88,7 @@ export class DataService {
       if (win.showCustomAlert) {
         win.showCustomAlert("导出失败", `发生错误: ${error.message}`);
       } else {
-        alert(`导出失败: ${error.message}`);
+        console.error(`导出失败: ${error.message}`);
       }
     }
   }
@@ -138,25 +132,28 @@ export class DataService {
         backupData.globalSettings.wallpaper = "linear-gradient(135deg, #89f7fe, #66a6ff)";
       }
 
-      await db.db.transaction('rw', db.db.tables, async () => {
-        await Promise.all(db.db.tables.map((table: any) => table.clear()));
-        if (backupData.chats && backupData.chats.length > 0) await db.db.chats.bulkAdd(backupData.chats);
-        if (backupData.userStickers && backupData.userStickers.length > 0) await db.db.userStickers.bulkAdd(backupData.userStickers);
-        if (backupData.worldBooks && backupData.worldBooks.length > 0) await db.db.worldBooks.bulkAdd(backupData.worldBooks);
-        if (backupData.personaPresets && backupData.personaPresets.length > 0) await db.db.personaPresets.bulkAdd(backupData.personaPresets);
-        await db.db.apiConfig.put(backupData.apiConfig);
-        await db.db.globalSettings.put(backupData.globalSettings);
-        if (backupData.musicLibrary) {
-          const playlist = backupData.musicLibrary.playlist.filter((t: Track) => !t.requiresReupload);
-          await db.db.musicLibrary.put({id: 'main', playlist: playlist});
-          const reuploadCount = backupData.musicLibrary.playlist.length - playlist.length;
-          if (reuploadCount > 0) {
-            if (win.showCustomAlert) {
-              win.showCustomAlert("部分导入", `${reuploadCount}首本地歌曲需要您重新手动添加。`);
-            }
+      // 使用新的统一导入API
+      await DB.importAllData({
+        chats: backupData.chats,
+        userStickers: backupData.userStickers,
+        worldBooks: backupData.worldBooks,
+        personaPresets: backupData.personaPresets,
+        apiConfig: backupData.apiConfig,
+        globalSettings: backupData.globalSettings,
+        musicLibrary: backupData.musicLibrary ? {
+          playlist: backupData.musicLibrary.playlist.filter((t: Track) => !t.requiresReupload)
+        } : undefined
+      });
+
+      // 检查需要重新上传的本地歌曲
+      if (backupData.musicLibrary) {
+        const reuploadCount = backupData.musicLibrary.playlist.filter((t: Track) => t.requiresReupload).length;
+        if (reuploadCount > 0) {
+          if (win.showCustomAlert) {
+            win.showCustomAlert("部分导入", `${reuploadCount}首本地歌曲需要您重新手动添加。`);
           }
         }
-      });
+      }
 
       if (win.showCustomAlert) {
         await win.showCustomAlert("导入成功", "数据已成功恢复。应用即将刷新。");
@@ -169,7 +166,7 @@ export class DataService {
       if (win.showCustomAlert) {
         await win.showCustomAlert("导入失败", `解压或解析文件时发生错误: ${error.message}`);
       } else {
-        alert(`导入失败: ${error.message}`);
+        console.error(`导入失败: ${error.message}`);
       }
     }
   }
@@ -197,14 +194,9 @@ export class DataService {
 
     try {
       const win = window as any;
-      const db: DatabaseManager = win.DB;
-      if (!db?.db) {
-        throw new Error('数据库实例未初始化');
-      }
 
-      await db.db.transaction('rw', db.db.tables, async () => {
-        await Promise.all(db.db.tables.map((table: any) => table.clear()));
-      });
+      // 使用统一的清空API
+      await DB.clearAllTables();
 
       if (win.showCustomAlert) {
         await win.showCustomAlert("清空成功", "所有数据已清空。应用即将刷新。");
@@ -216,7 +208,7 @@ export class DataService {
       if (win.showCustomAlert) {
         win.showCustomAlert("清空失败", `发生错误: ${error.message}`);
       } else {
-        alert(`清空失败: ${error.message}`);
+        console.error(`清空失败: ${error.message}`);
       }
     }
   }
@@ -225,30 +217,26 @@ export class DataService {
   async getDataStats(): Promise<DataStats> {
     try {
       const win = window as any;
-      const db: DatabaseManager = win.DB;
-      if (!db?.db) {
-        throw new Error('数据库实例未初始化');
-      }
 
       const stats: DataStats = {
-        chats: await db.db.chats.count(),
-        userStickers: await db.db.userStickers.count(),
-        worldBooks: await db.db.worldBooks.count(),
-        personaPresets: await db.db.personaPresets.count(),
+        chats: await DB.getChatsCount(),
+        userStickers: await DB.getUserStickersCount(),
+        worldBooks: await DB.getWorldBooksCount(),
+        personaPresets: await DB.getPersonaPresetsCount(),
         totalMessages: 0,
         dataSize: 0
       };
 
       // 计算总消息数
-      const chats = await db.db.chats.toArray();
+      const chats = await DB.getAllChats();
       stats.totalMessages = chats.reduce((total: number, chat: Chat) => total + (chat.history?.length || 0), 0);
 
       // 估算数据大小（简单计算）
       const allData = {
         chats: chats,
-        userStickers: await db.db.userStickers.toArray(),
-        worldBooks: await db.db.worldBooks.toArray(),
-        personaPresets: await db.db.personaPresets.toArray()
+        userStickers: await DB.getAllUserStickers(),
+        worldBooks: await DB.getAllWorldBooks(),
+        personaPresets: await DB.getAllPersonaPresets()
       };
       stats.dataSize = JSON.stringify(allData).length;
 
