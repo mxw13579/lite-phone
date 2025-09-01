@@ -10,3 +10,4 @@
 /vite-app/dist/
 /vite-app/node_modules/
 /myPhone/
+/.playwright-mcp/
