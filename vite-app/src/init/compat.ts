@@ -75,7 +75,7 @@ export function injectCompatibilityAPIs(): void {
   window.renderApiSettingsProxy = () => screenManager?.renderScreen('api-settings');
   window.renderWallpaperScreenProxy = () => screenManager?.renderScreen('wallpaper');
   
-  // 角色编辑器代理（全屏挂载 PersonaDetailComponent）
+  // 角色编辑器代理（使用标准PersonaEditorScreen提供统一导航）
   window.renderPersonaEditorProxy = () => {
     console.log('=== renderPersonaEditorProxy called ===');
     const root = document.getElementById('persona-editor-root');
@@ -86,9 +86,6 @@ export function injectCompatibilityAPIs(): void {
     
     console.log('Found persona-editor-root element:', root);
     
-    // 清空容器
-    root.innerHTML = '';
-    
     // 先显示加载状态
     root.innerHTML = `
       <div style="padding: 20px; text-align: center;">
@@ -96,86 +93,24 @@ export function injectCompatibilityAPIs(): void {
       </div>
     `;
     
-    console.log('Set loading state, starting to load PersonaDetailComponent...');
+    console.log('Set loading state, starting to load PersonaEditorScreen...');
     
-    // 懒加载 TS 源以避免循环依赖
-    import('../screens/personaCenter/components/PersonaDetail.ts').then(async ({ PersonaDetailComponent }) => {
+    // 懒加载PersonaEditorScreen以获得完整的导航功能
+    import('../screens/personaEditor/PersonaEditorScreen.ts').then(async ({ PersonaEditorScreen }) => {
       try {
-        console.log('PersonaDetailComponent imported successfully');
+        console.log('PersonaEditorScreen imported successfully');
         
-        // 构造一个最小的detail实例，仅用于创建/编辑
-        const events = {
-          onPersonaCreated: (p: any) => {
-            // 创建后返回角色中心并选中
-            console.log('onPersonaCreated called', p);
-            window.navigateToPersonaCenter?.();
-            const inst = window.getPersonaCenterInstance?.();
-            inst?.['handlePersonaCreated']?.(p);
-          },
-          onUserRoleCreated: (u: any) => {
-            console.log('onUserRoleCreated called', u);
-            window.navigateToPersonaCenter?.();
-            const inst = window.getPersonaCenterInstance?.();
-            inst?.['handleUserRoleCreated']?.(u);
-          },
-          onCancel: () => {
-            console.log('onCancel called');
-            window.navigateToPersonaCenter?.();
-          }
-        } as any;
+        // 创建PersonaEditorScreen实例，它会提供标准的header和返回按钮
+        const editorScreen = new PersonaEditorScreen(root as HTMLElement);
         
-        const worldBooks = (window as any).STATE?.state?.worldBooks?.reduce?.((acc: any, wb: any) => { acc[wb.id] = wb; return acc; }, {}) || {};
+        // 初始化编辑器屏幕（会自动读取全局状态和数据）
+        await editorScreen.initialize();
         
-        console.log('Creating PersonaDetailComponent...', { worldBooks, root });
-        
-        // 清空加载状态
-        root.innerHTML = '';
-        
-        const detail = new PersonaDetailComponent(root as unknown as HTMLElement, events, worldBooks);
-        
-        // 默认进入创建状态（由触发方决定 persona / userRole）
-        const mode = (window as any)._personaEditorMode || 'persona';
-        console.log('Editor mode:', mode);
-        
-        // 确保组件完全初始化后再调用创建方法
-        setTimeout(async () => {
-          try {
-            console.log('Attempting to call create method for mode:', mode);
-            console.log('Detail component methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(detail)));
-            
-            if (mode === 'user') {
-              console.log('Calling showCreateUserRole...');
-              await (detail as any).showCreateUserRole();
-            } else {
-              console.log('Calling showCreatePersona...');
-              await (detail as any).showCreatePersona();
-            }
-            console.log('Create method called successfully for mode:', mode);
-            
-            // 验证DOM是否已更新
-            console.log('Root innerHTML after create:', root.innerHTML.substring(0, 200) + '...');
-          } catch (error) {
-            console.error('Error calling create method:', error);
-            console.error('Error stack:', error.stack);
-            
-            // 显示错误信息
-            root.innerHTML = `
-              <div style="padding: 20px; text-align: center; color: red;">
-                <div>创建角色失败: ${error.message}</div>
-                <details style="margin-top: 10px; text-align: left;">
-                  <summary>错误详情</summary>
-                  <pre style="font-size: 12px; white-space: pre-wrap;">${error.stack}</pre>
-                </details>
-              </div>
-            `;
-          }
-        }, 0);
-        
-        // 绑定到window便于调试
-        (window as any).personaEditorDetail = detail;
-        console.log('PersonaDetailComponent initialized successfully');
+        // 绑定到window便于调试和管理
+        (window as any).personaEditorScreen = editorScreen;
+        console.log('PersonaEditorScreen initialized successfully');
       } catch (error) {
-        console.error('Error initializing PersonaDetailComponent:', error);
+        console.error('Error initializing PersonaEditorScreen:', error);
         root.innerHTML = `
           <div style="padding: 20px; text-align: center; color: red;">
             <div>加载失败: ${error.message}</div>
@@ -183,7 +118,7 @@ export function injectCompatibilityAPIs(): void {
         `;
       }
     }).catch(error => {
-      console.error('Error importing PersonaDetailComponent:', error);
+      console.error('Error importing PersonaEditorScreen:', error);
       root.innerHTML = `
         <div style="padding: 20px; text-align: center; color: red;">
           <div>导入失败: ${error.message}</div>

@@ -101,8 +101,7 @@ export class PersonaDetailComponent {
         definition: ''
       },
       worldBookLinks: [],
-      status: 'draft',
-      archived: false
+      status: 'draft'
     };
     
     console.log('showCreatePersona: Setting up new persona...', newPersona);
@@ -126,7 +125,6 @@ export class PersonaDetailComponent {
       prompt: {
         definition: ''
       },
-      archived: false,
       isGlobalDefault: false
     };
     
@@ -493,311 +491,6 @@ export class PersonaDetailComponent {
     `;
   }
 
-  private renderTabContent(item: Persona | UserRole, isPersona: boolean): string {
-    switch (this.state.activeTab) {
-      case 'basic':
-        return this.renderBasicTab(item, isPersona);
-      case 'prompt':
-        return this.renderPromptTab(item, isPersona);
-      case 'baseline':
-        return isPersona ? this.renderBaselineTab(item as Persona) : '';
-      case 'worldbook':
-        return isPersona ? this.renderWorldBookTab(item as Persona) : '';
-      case 'preview':
-        return this.renderPreviewTab(item, isPersona);
-      default:
-        return '<div class="tab-content">未知标签页</div>';
-    }
-  }
-
-  private renderBasicTab(item: Persona | UserRole, isPersona: boolean): string {
-    const errors = this.state.validationErrors;
-    
-    return `
-      <div class="tab-content basic-tab">
-        <div class="form-group">
-          <label class="form-label">名称 *</label>
-          <input 
-            type="text" 
-            class="form-input ${errors.name ? 'error' : ''}" 
-            value="${item.name || ''}"
-            ${this.state.isEditing ? '' : 'readonly'}
-            oninput="window.personaCenterDetail?.updateField('name', this.value)"
-            placeholder="请输入${isPersona ? '角色' : '用户角色'}名称"
-          >
-          ${errors.name ? `<div class="form-error">${errors.name}</div>` : ''}
-        </div>
-        
-        <div class="form-group">
-          <label class="form-label">头像</label>
-          <input 
-            type="text" 
-            class="form-input" 
-            value="${item.avatar || ''}"
-            ${this.state.isEditing ? '' : 'readonly'}
-            oninput="window.personaCenterDetail?.updateField('avatar', this.value)"
-            placeholder="头像URL（可选）"
-          >
-        </div>
-        
-        <div class="form-group">
-          <label class="form-label">标签</label>
-          <input 
-            type="text" 
-            class="form-input" 
-            value="${item.tags.join(', ')}"
-            ${this.state.isEditing ? '' : 'readonly'}
-            oninput="window.personaCenterDetail?.updateTags(this.value)"
-            placeholder="用逗号分隔的标签"
-          >
-        </div>
-        
-        ${isPersona && (item as Persona).status ? `
-          <div class="form-group">
-            <label class="form-label">状态</label>
-            <select 
-              class="form-select" 
-              ${this.state.isEditing ? '' : 'disabled'}
-              onchange="window.personaCenterDetail?.updateField('status', this.value)"
-            >
-              <option value="draft" ${(item as Persona).status === 'draft' ? 'selected' : ''}>草稿</option>
-              <option value="published" ${(item as Persona).status === 'published' ? 'selected' : ''}>已发布</option>
-            </select>
-          </div>
-        ` : ''}
-        
-        ${!isPersona ? `
-          <div class="form-group">
-            <label class="form-checkbox">
-              <input 
-                type="checkbox" 
-                ${(item as UserRole).isGlobalDefault ? 'checked' : ''}
-                ${this.state.isEditing ? '' : 'disabled'}
-                onchange="window.personaCenterDetail?.updateField('isGlobalDefault', this.checked)"
-              >
-              <span class="checkbox-label">设为全局默认用户角色</span>
-            </label>
-          </div>
-        ` : ''}
-        
-        <div class="form-group">
-          <label class="form-checkbox">
-            <input 
-              type="checkbox" 
-              ${item.archived ? 'checked' : ''}
-              ${this.state.isEditing ? '' : 'disabled'}
-              onchange="window.personaCenterDetail?.updateField('archived', this.checked)"
-            >
-            <span class="checkbox-label">已归档</span>
-          </label>
-        </div>
-      </div>
-    `;
-  }
-
-  private renderPromptTab(item: Persona | UserRole, isPersona: boolean): string {
-    const errors = this.state.validationErrors;
-    
-    if (isPersona) {
-      const persona = item as Persona;
-      return `
-        <div class="tab-content prompt-tab">
-          <div class="form-group">
-            <label class="form-label">角色设定 *</label>
-            <textarea 
-              class="form-textarea ${errors.system ? 'error' : ''}" 
-              rows="8"
-              ${this.state.isEditing ? '' : 'readonly'}
-              oninput="window.personaCenterDetail?.updatePromptField('definition', this.value)"
-              placeholder="请输入角色设定..."
-            >${persona.prompt?.definition || persona.prompt?.system || ''}</textarea>
-            ${errors.system ? `<div class="form-error">${errors.system}</div>` : ''}
-          </div>
-          
-        </div>
-      `;
-    } else {
-      const userRole = item as UserRole;
-      return `
-        <div class="tab-content prompt-tab">
-          <div class="form-group">
-            <label class="form-label">角色设定 *</label>
-            <textarea 
-              class="form-textarea ${errors.persona ? 'error' : ''}" 
-              rows="6"
-              ${this.state.isEditing ? '' : 'readonly'}
-              oninput="window.personaCenterDetail?.updatePromptField('definition', this.value)"
-              placeholder="请描述这个用户角色..."
-            >${userRole.prompt?.definition || userRole.prompt?.persona || ''}</textarea>
-            ${errors.persona ? `<div class="form-error">${errors.persona}</div>` : ''}
-          </div>
-          
-        </div>
-      `;
-    }
-  }
-
-  private renderBaselineTab(persona: Persona): string {
-    // TODO: 实现Baseline标签页
-    return `
-      <div class="tab-content baseline-tab">
-        <div class="feature-placeholder">
-          <div class="placeholder-icon">📊</div>
-          <h4>Baseline功能</h4>
-          <p>此功能将在后续版本中实现</p>
-        </div>
-      </div>
-    `;
-  }
-
-  private renderWorldBookTab(persona: Persona): string {
-    const worldBookLinks = persona.worldBookLinks || [];
-    const availableWorldBooks = Object.values(this.currentWorldBooks);
-    const linkedIds = new Set(worldBookLinks.map(link => link.worldBookId));
-    
-    return `
-      <div class="tab-content worldbook-tab">
-        <div class="worldbook-links">
-          <h4>已关联的世界书</h4>
-          ${worldBookLinks.length > 0 ? `
-            <div class="linked-worldbooks">
-              ${worldBookLinks.map((link, index) => {
-                const worldBook = this.currentWorldBooks[link.worldBookId];
-                return `
-                  <div class="worldbook-link ${link.enabled ? '' : 'disabled'}">
-                    <div class="link-info">
-                      <span class="worldbook-name">${worldBook?.name || '未知世界书'}</span>
-                      <span class="link-order">顺序: ${link.order || 0}</span>
-                    </div>
-                    <div class="link-actions">
-                      <input 
-                        type="number" 
-                        class="order-input" 
-                        value="${link.order || 0}"
-                        ${this.state.isEditing ? '' : 'readonly'}
-                        onchange="window.personaCenterDetail?.updateWorldBookOrder(${index}, this.value)"
-                      >
-                      <label class="toggle-switch">
-                        <input 
-                          type="checkbox" 
-                          ${link.enabled ? 'checked' : ''}
-                          ${this.state.isEditing ? '' : 'disabled'}
-                          onchange="window.personaCenterDetail?.toggleWorldBookLink(${index}, this.checked)"
-                        >
-                        <span class="toggle-slider"></span>
-                      </label>
-                      ${this.state.isEditing ? `
-                        <button class="btn btn-small btn-danger" onclick="window.personaCenterDetail?.removeWorldBookLink(${index})">移除</button>
-                      ` : ''}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          ` : `
-            <div class="empty-worldbooks">
-              <p>暂无关联的世界书</p>
-            </div>
-          `}
-          
-          ${this.state.isEditing && availableWorldBooks.length > 0 ? `
-            <div class="add-worldbook">
-              <h4>添加世界书</h4>
-              <select class="form-select" id="worldbook-select">
-                <option value="">选择要添加的世界书...</option>
-                ${availableWorldBooks.filter(wb => !linkedIds.has(wb.id)).map(wb => 
-                  `<option value="${wb.id}">${wb.name}</option>`
-                ).join('')}
-              </select>
-              <button class="btn btn-primary" onclick="window.personaCenterDetail?.addWorldBookLink()">添加</button>
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-  }
-
-  private renderPreviewTab(item: Persona | UserRole, isPersona: boolean): string {
-    if (isPersona) {
-      const persona = item as Persona;
-      const preview = this.compositionService.generatePreview(persona, this.currentWorldBooks);
-      
-      return `
-        <div class="tab-content preview-tab">
-          <div class="preview-header">
-            <h4>角色设定预览</h4>
-            <div class="preview-stats">
-              <span class="token-count">预估Token数: ${preview.tokenCount}</span>
-            </div>
-          </div>
-          
-          <div class="preview-content">
-            <pre class="system-prompt-preview">${this.escapeHtml(preview.systemPrompt)}</pre>
-          </div>
-          
-          <div class="preview-sections">
-            <h4>组成部分</h4>
-            ${preview.sections.map(section => `
-              <div class="preview-section ${section.enabled ? '' : 'disabled'}">
-                <div class="section-header">
-                  <span class="section-title">${section.title}</span>
-                  <span class="section-status">${section.enabled ? '启用' : '禁用'}</span>
-                </div>
-                <div class="section-content">${this.escapeHtml(section.content.substring(0, 200))}${section.content.length > 200 ? '...' : ''}</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
-    } else {
-      const userRole = item as UserRole;
-      const userRoleBlock = this.compositionService.injectUserRoleBlock(userRole);
-      
-      return `
-        <div class="tab-content preview-tab">
-          <div class="preview-header">
-            <h4>用户角色预览</h4>
-          </div>
-          
-          <div class="preview-content">
-            <pre class="user-role-preview">${this.escapeHtml(userRoleBlock || '(无内容)')}</pre>
-          </div>
-        </div>
-      `;
-    }
-  }
-
-  // 事件监听器
-  private attachEventListeners(): void {
-    // 暴露组件实例到window对象，供模板中的onclick调用
-    (window as any).personaCenterDetail = this;
-  }
-
-  // 字段更新方法
-  updateField(fieldName: string, value: any): void {
-    if (!this.state.currentData || !this.state.isEditing) return;
-    
-    (this.state.currentData.data as any)[fieldName] = value;
-    this.state.isDirty = true;
-  }
-
-  updatePromptField(fieldName: string, value: string): void {
-    if (!this.state.currentData || !this.state.isEditing) return;
-    
-    const item = this.state.currentData.data;
-    if (!item.prompt) item.prompt = {} as any;
-    (item.prompt as any)[fieldName] = value;
-    this.state.isDirty = true;
-  }
-
-  updateTags(tagsString: string): void {
-    if (!this.state.currentData || !this.state.isEditing) return;
-    
-    const tags = tagsString.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-    this.state.currentData.data.tags = tags;
-    this.state.isDirty = true;
-  }
-
   // 世界书链接管理方法
   updateWorldBookOrder(linkIndex: number, order: string): void {
     if (!this.state.currentData || this.state.currentData.type !== 'persona' || !this.state.isEditing) return;
@@ -847,6 +540,50 @@ export class PersonaDetailComponent {
     
     this.state.isDirty = true;
     this.render(); // 重新渲染以显示新添加的链接
+  }
+
+  // 添加缺少的方法
+  updateField(fieldName: string, value: any): void {
+    if (!this.state.currentData || !this.state.isEditing) return;
+    
+    (this.state.currentData.data as any)[fieldName] = value;
+    this.state.isDirty = true;
+  }
+
+  updatePromptField(fieldName: string, value: string): void {
+    if (!this.state.currentData || !this.state.isEditing) return;
+    
+    const prompt = (this.state.currentData.data as any).prompt || {};
+    prompt[fieldName] = value;
+    (this.state.currentData.data as any).prompt = prompt;
+    this.state.isDirty = true;
+  }
+
+  // 设置编辑状态（供外部调用）
+  setEditing(editing: boolean): void {
+    this.state.isEditing = editing;
+  }
+
+  // 加载数据（供外部调用）
+  async loadData(data: Persona | UserRole, type: 'persona' | 'user'): Promise<void> {
+    this.state.currentData = { 
+      type: type === 'persona' ? 'persona' : 'userRole', 
+      data 
+    };
+    this.state.activeTab = 'basic';
+    this.state.isDirty = false;
+    this.clearValidationErrors();
+  }
+
+  // 销毁组件
+  destroy(): void {
+    delete (window as any).personaCenterDetail;
+  }
+
+  // 私有方法：事件监听器
+  private attachEventListeners(): void {
+    // 绑定到window便于HTML模板调用
+    (window as any).personaCenterDetail = this;
   }
 
   // 辅助方法

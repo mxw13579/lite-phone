@@ -341,6 +341,9 @@ class EPhoneApplication {
     document.getElementById('music-exit-btn')?.addEventListener('click', () => 
       SERVICES.musicService.endListenTogetherSession(true));
     
+    // 角色选择器事件监听器
+    this.registerPersonaSelectorsListeners();
+    
     console.log('音乐播放器事件监听器注册完成');
   }
 
@@ -381,6 +384,9 @@ class EPhoneApplication {
     const chat = STATE.state.chats[activeChatId];
     this.populateChatSettingsForm(chat);
     
+    // 加载角色选择器选项
+    this.loadPersonaOptions();
+    
     // 初始化折叠功能
     this.initializeSettingsCollapse();
     
@@ -397,6 +403,226 @@ class EPhoneApplication {
     const modal = document.getElementById('chat-settings-modal');
     if (modal) {
       modal.classList.remove('visible');
+    }
+  }
+
+  /**
+   * 加载角色选择器选项
+   */
+  private async loadPersonaOptions(): Promise<void> {
+    try {
+      // 导入角色服务
+      const { PersonaService } = await import('./screens/personaCenter/services/PersonaService');
+      const { UserRoleService } = await import('./screens/personaCenter/services/UserRoleService');
+      
+      const personaService = new PersonaService();
+      const userRoleService = new UserRoleService();
+      
+      // 获取所有角色（不区分archived状态）
+      const [personas, userRoles] = await Promise.all([
+        personaService.getAll(),
+        userRoleService.getAll()
+      ]);
+      
+      // 更新AI角色下拉框
+      const aiPersonaContainer = document.getElementById('ai-persona-options-container');
+      if (aiPersonaContainer) {
+        const defaultOption = aiPersonaContainer.querySelector('[data-persona-id=""]');
+        
+        // 清空除默认选项外的所有选项
+        Array.from(aiPersonaContainer.children).forEach(child => {
+          if (child !== defaultOption) {
+            child.remove();
+          }
+        });
+        
+        // 添加角色中心的AI角色
+        personas.forEach(persona => {
+          const option = document.createElement('div');
+          option.className = 'option-item';
+          option.setAttribute('data-persona-id', persona.id);
+          option.innerHTML = `
+            <span class="option-label">
+              <span class="persona-name">${persona.name}</span>
+              <span class="persona-tags">${persona.tags?.slice(0, 2).join(', ') || ''}</span>
+            </span>
+          `;
+          aiPersonaContainer.appendChild(option);
+        });
+      }
+      
+      // 更新用户角色下拉框
+      const userRoleContainer = document.getElementById('user-role-options-container');
+      if (userRoleContainer) {
+        const defaultOption = userRoleContainer.querySelector('[data-role-id=""]');
+        
+        // 清空除默认选项外的所有选项
+        Array.from(userRoleContainer.children).forEach(child => {
+          if (child !== defaultOption) {
+            child.remove();
+          }
+        });
+        
+        // 添加角色中心的用户角色
+        userRoles.forEach(userRole => {
+          const option = document.createElement('div');
+          option.className = 'option-item';
+          option.setAttribute('data-role-id', userRole.id);
+          option.innerHTML = `
+            <span class="option-label">
+              <span class="persona-name">${userRole.name}</span>
+              <span class="persona-tags">${userRole.tags?.slice(0, 2).join(', ') || ''}</span>
+            </span>
+          `;
+          userRoleContainer.appendChild(option);
+        });
+      }
+      
+      console.log(`✅ 已加载${personas.length}个AI角色和${userRoles.length}个用户角色到选择器`);
+      
+    } catch (error) {
+      console.error('加载角色选择器失败:', error);
+    }
+  }
+
+  /**
+   * 更新角色选择器的当前选择状态
+   */
+  private updatePersonaSelections(chat: any): void {
+    // 设置AI角色选择器
+    const aiPersonaText = document.getElementById('selected-ai-persona-text');
+    const selectedAiPersonaId = chat.personaId;
+    if (selectedAiPersonaId && aiPersonaText) {
+      const selectedOption = document.querySelector(`[data-persona-id="${selectedAiPersonaId}"]`);
+      if (selectedOption) {
+        const personaName = selectedOption.querySelector('.persona-name')?.textContent;
+        aiPersonaText.textContent = personaName || '-- 选择角色 --';
+        selectedOption.classList.add('selected');
+      }
+    }
+    
+    // 设置用户角色选择器
+    const userRoleText = document.getElementById('selected-user-role-text');
+    const defaultUserRoleId = chat.defaultUserRoleId;
+    if (defaultUserRoleId && userRoleText) {
+      const selectedOption = document.querySelector(`[data-role-id="${defaultUserRoleId}"]`);
+      if (selectedOption) {
+        const roleName = selectedOption.querySelector('.persona-name')?.textContent;
+        userRoleText.textContent = roleName || '-- 选择角色 --';
+        selectedOption.classList.add('selected');
+      }
+    }
+  }
+
+  /**
+   * 注册角色选择器事件监听器
+   */
+  private registerPersonaSelectorsListeners(): void {
+    // AI角色选择器点击事件（使用事件委托）
+    document.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      
+      // AI角色选择框点击
+      if (target.closest('#selected-ai-persona-text') || target.closest('.select-box')) {
+        const container = document.getElementById('ai-persona-options-container');
+        if (container && target.closest('#ai-persona-options-container')?.parentElement) {
+          container.style.display = container.style.display === 'block' ? 'none' : 'block';
+        }
+      }
+      
+      // AI角色选项点击
+      if (target.closest('#ai-persona-options-container .option-item')) {
+        const option = target.closest('.option-item') as HTMLElement;
+        const personaId = option.getAttribute('data-persona-id');
+        const personaName = option.querySelector('.option-label')?.textContent?.trim();
+        
+        // 更新选择文本
+        const selectedText = document.getElementById('selected-ai-persona-text');
+        if (selectedText) {
+          selectedText.textContent = personaName || '-- 选择角色 --';
+        }
+        
+        // 标记选中状态
+        document.querySelectorAll('#ai-persona-options-container .option-item').forEach(opt => {
+          opt.classList.remove('selected');
+        });
+        option.classList.add('selected');
+        
+        // 隐藏下拉框
+        const container = document.getElementById('ai-persona-options-container');
+        if (container) {
+          container.style.display = 'none';
+        }
+        
+        // 如果选择了角色中心的角色，自动填充textarea
+        if (personaId) {
+          this.fillPersonaTextarea(personaId);
+        }
+      }
+      
+      // 用户角色选择框点击
+      if (target.closest('#selected-user-role-text') || target.closest('#user-role-options-container')?.parentElement?.querySelector('.select-box') === target.closest('.select-box')) {
+        const container = document.getElementById('user-role-options-container');
+        if (container && target.closest('#user-role-options-container')?.parentElement) {
+          container.style.display = container.style.display === 'block' ? 'none' : 'block';
+        }
+      }
+      
+      // 用户角色选项点击
+      if (target.closest('#user-role-options-container .option-item')) {
+        const option = target.closest('.option-item') as HTMLElement;
+        const roleId = option.getAttribute('data-role-id');
+        const roleName = option.querySelector('.option-label')?.textContent?.trim();
+        
+        // 更新选择文本
+        const selectedText = document.getElementById('selected-user-role-text');
+        if (selectedText) {
+          selectedText.textContent = roleName || '-- 选择角色 --';
+        }
+        
+        // 标记选中状态
+        document.querySelectorAll('#user-role-options-container .option-item').forEach(opt => {
+          opt.classList.remove('selected');
+        });
+        option.classList.add('selected');
+        
+        // 隐藏下拉框
+        const container = document.getElementById('user-role-options-container');
+        if (container) {
+          container.style.display = 'none';
+        }
+      }
+    });
+    
+    // 点击其他地方关闭下拉框
+    document.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('#ai-persona-options-container') && !target.closest('.custom-select')) {
+        const aiContainer = document.getElementById('ai-persona-options-container');
+        const userContainer = document.getElementById('user-role-options-container');
+        if (aiContainer) aiContainer.style.display = 'none';
+        if (userContainer) userContainer.style.display = 'none';
+      }
+    });
+  }
+
+  /**
+   * 根据角色ID填充AI角色textarea
+   */
+  private async fillPersonaTextarea(personaId: string): Promise<void> {
+    try {
+      const { PersonaService } = await import('./screens/personaCenter/services/PersonaService');
+      const personaService = new PersonaService();
+      const persona = await personaService.getById(personaId);
+      
+      if (persona && persona.prompt?.definition) {
+        const textarea = document.getElementById('ai-persona') as HTMLTextAreaElement;
+        if (textarea) {
+          textarea.value = persona.prompt.definition;
+        }
+      }
+    } catch (error) {
+      console.error('加载角色设定失败:', error);
     }
   }
 
@@ -442,6 +668,9 @@ class EPhoneApplication {
     if (aiPatSuffixInput) aiPatSuffixInput.value = chat.settings.aiPatSuffix || '';
     if (myPatSuffixInput) myPatSuffixInput.value = chat.settings.myPatSuffix || '';
     if (maxMemoryInput) maxMemoryInput.value = chat.settings.maxMemory?.toString() || '10';
+    
+    // 设置角色选择器当前选择
+    this.updatePersonaSelections(chat);
 
     // 头像预览
     if (aiAvatarPreview) {
@@ -711,6 +940,18 @@ class EPhoneApplication {
     }
     if (myPersonaTextarea) {
       chat.settings.myPersona = myPersonaTextarea.value || '我是谁呀。';
+    }
+    
+    // 保存角色选择器的选择
+    const selectedAiPersonaOption = document.querySelector('#ai-persona-options-container .option-item.selected');
+    const selectedUserRoleOption = document.querySelector('#user-role-options-container .option-item.selected');
+    
+    if (selectedAiPersonaOption) {
+      chat.personaId = selectedAiPersonaOption.getAttribute('data-persona-id') || undefined;
+    }
+    
+    if (selectedUserRoleOption) {
+      chat.defaultUserRoleId = selectedUserRoleOption.getAttribute('data-role-id') || undefined;
     }
     if (aiPatSuffixInput) {
       chat.settings.aiPatSuffix = aiPatSuffixInput.value || '的脑袋瓜';

@@ -16,7 +16,6 @@ export interface PersonaListItem {
   type: 'ai' | 'user';
   tags: string[];
   lastUsedAt: number;
-  archived: boolean;
   isActive?: boolean;
 }
 
@@ -25,7 +24,6 @@ export interface PersonaListEvents {
   onSelect: (id: string, type: 'ai' | 'user') => void;
   onCreate: (type: 'ai' | 'user') => void;
   onDelete: (id: string, type: 'ai' | 'user') => void;
-  onArchive: (id: string, archived: boolean) => void;
   onSearch: (options: SearchOptions) => void;
   onFilter: (options: FilterOptions) => void;
 }
@@ -93,7 +91,6 @@ export interface SearchConfig {
 export interface BatchOperations {
   export: boolean;
   delete: boolean;
-  archive: boolean;
   tag: boolean;
 }
 
@@ -147,7 +144,6 @@ export type ComponentEventType =
   | 'create'
   | 'update' 
   | 'delete'
-  | 'archive'
   | 'search'
   | 'filter'
   | 'preview'

@@ -203,23 +203,6 @@ export class PersonaListComponent {
     }
   }
 
-  // 归档/取消归档
-  private async toggleArchiveItem(id: string, type: 'ai' | 'user'): Promise<void> {
-    try {
-      if (type === 'ai') {
-        await this.personaService.toggleArchive(id);
-      } else {
-        await this.userRoleService.toggleArchive(id);
-      }
-      
-      // 刷新列表
-      await this.render();
-    } catch (error) {
-      console.error('归档操作失败:', error);
-      this.showError(error instanceof Error ? error.message : '归档操作失败');
-    }
-  }
-
   // 构建列表项数据
   private buildListItems(personas: Persona[], userRoles: UserRole[]): PersonaListItem[] {
     const items: PersonaListItem[] = [];
@@ -231,8 +214,7 @@ export class PersonaListComponent {
         name: persona.name,
         type: 'ai',
         tags: persona.tags,
-        lastUsedAt: persona.lastUsedAt,
-        archived: persona.archived
+        lastUsedAt: persona.lastUsedAt
       });
     });
 
@@ -243,16 +225,12 @@ export class PersonaListComponent {
         name: userRole.name,
         type: 'user',
         tags: userRole.tags,
-        lastUsedAt: userRole.lastUsedAt,
-        archived: userRole.archived
+        lastUsedAt: userRole.lastUsedAt
       });
     });
 
-    // 排序：未归档的在前，然后按最近使用时间排序
+    // 排序：按最近使用时间排序
     return items.sort((a, b) => {
-      if (a.archived !== b.archived) {
-        return a.archived ? 1 : -1;
-      }
       return b.lastUsedAt - a.lastUsedAt;
     });
   }
@@ -315,9 +293,8 @@ export class PersonaListComponent {
 
     const renderGroup = (title: string, list: PersonaListItem[], type: 'ai'|'user') => `
       <div class="item-group">
-        <div class="group-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="group-title">
           <span>${title} (${list.length})</span>
-          <button class="btn btn-secondary btn-sm" onclick="${type==='ai' ? 'window.personaCenterScreen?.createNewPersona()' : 'window.personaCenterScreen?.createNewUserRole()'}">新建角色</button>
         </div>
         ${list.map(item => this.renderListItem(item)).join('')}
       </div>`;
@@ -338,7 +315,7 @@ export class PersonaListComponent {
     const lastUsedText = this.formatLastUsed(item.lastUsedAt);
     
     return `
-      <div class="list-item ${isSelected ? 'selected' : ''} ${item.archived ? 'archived' : ''}" 
+      <div class="list-item ${isSelected ? 'selected' : ''}" 
            data-id="${item.id}" data-type="${item.type}">
         <div class="item-content" onclick="handleItemClick('${item.id}', '${item.type}')">
           <div class="item-main">
@@ -352,9 +329,6 @@ export class PersonaListComponent {
         </div>
         <div class="item-actions">
           <button class="action-btn small" onclick="handleItemAction('${item.id}', '${item.type}', 'edit')">编辑</button>
-          <button class="action-btn small" onclick="handleItemAction('${item.id}', '${item.type}', 'archive')">
-            ${item.archived ? '恢复' : '归档'}
-          </button>
           <button class="action-btn small danger" onclick="handleItemAction('${item.id}', '${item.type}', 'delete')">删除</button>
         </div>
       </div>
@@ -464,22 +438,26 @@ export class PersonaListComponent {
 
     // 新建按钮移至页面头部，不在列表中重复提供
 
-    // 顶部新增“新建”按钮（与列表同级）
+    // 顶部新增"新建"按钮（与列表同级）- 检查是否已存在以避免重复
     const header = this.container.querySelector('.persona-list-header');
     if (header) {
-      const btn = document.createElement('button');
-      // 使用常规按钮样式，避免 icon 按钮的固定宽度导致文字竖排
-      btn.className = 'btn btn-primary';
-      btn.textContent = '新建角色';
-      btn.style.marginLeft = 'auto';
-      btn.addEventListener('click', () => {
-        if (this.currentFilter.type === 'user') {
-          this.events.onCreate('user');
-        } else {
-          this.events.onCreate('ai');
-        }
-      });
-      header.appendChild(btn);
+      // 检查是否已经存在新建按钮，避免重复添加
+      const existingBtn = header.querySelector('.create-new-btn');
+      if (!existingBtn) {
+        const btn = document.createElement('button');
+        // 使用常规按钮样式，避免 icon 按钮的固定宽度导致文字竖排
+        btn.className = 'btn btn-primary create-new-btn';
+        btn.textContent = '新建角色';
+        btn.style.marginLeft = 'auto';
+        btn.addEventListener('click', () => {
+          if (this.currentFilter.type === 'user') {
+            this.events.onCreate('user');
+          } else {
+            this.events.onCreate('ai');
+          }
+        });
+        header.appendChild(btn);
+      }
     }
 
     // 全局事件处理函数
@@ -491,9 +469,6 @@ export class PersonaListComponent {
       switch (action) {
         case 'edit':
           this.selectItem(id, type);
-          break;
-        case 'archive':
-          await this.toggleArchiveItem(id, type);
           break;
         case 'delete':
           if (confirm('确定要删除这个角色吗？此操作无法撤销。')) {

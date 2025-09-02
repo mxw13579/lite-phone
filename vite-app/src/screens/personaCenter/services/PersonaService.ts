@@ -143,7 +143,6 @@ export class PersonaService {
       if (term.trim()) {
         // 使用数据库搜索
         results = await searchPersonas(term, {
-          archived: filters?.archived,
           status: filters?.status !== 'all' ? filters?.status : undefined
         });
       } else {
@@ -199,21 +198,6 @@ export class PersonaService {
     }
   }
 
-  // 归档/取消归档
-  async toggleArchive(id: string): Promise<void> {
-    try {
-      const persona = await this.getById(id);
-      if (!persona) {
-        throw new Error('角色不存在');
-      }
-
-      await this.update(id, { archived: !persona.archived });
-    } catch (error) {
-      console.error('归档操作失败:', error);
-      throw new Error('归档操作失败');
-    }
-  }
-
   // 发布/取消发布
   async togglePublish(id: string): Promise<void> {
     try {
@@ -248,23 +232,6 @@ export class PersonaService {
     return { success, failed };
   }
 
-  async bulkArchive(ids: string[], archived: boolean): Promise<{ success: string[], failed: string[] }> {
-    const success: string[] = [];
-    const failed: string[] = [];
-
-    for (const id of ids) {
-      try {
-        await this.update(id, { archived });
-        success.push(id);
-      } catch (error) {
-        console.error(`批量归档失败 ${id}:`, error);
-        failed.push(id);
-      }
-    }
-
-    return { success, failed };
-  }
-
   // 私有辅助方法
   private applyFilters(personas: Persona[], filters: FilterOptions): Persona[] {
     let filtered = personas;
@@ -275,10 +242,6 @@ export class PersonaService {
 
     if (filters.status && filters.status !== 'all') {
       filtered = filtered.filter(p => p.status === filters.status);
-    }
-
-    if (filters.archived !== undefined) {
-      filtered = filtered.filter(p => p.archived === filters.archived);
     }
 
     if (filters.tags && filters.tags.length > 0) {

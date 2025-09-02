@@ -153,9 +153,7 @@ export class UserRoleService {
 
       if (term.trim()) {
         // 使用数据库搜索
-        results = await searchUserRoles(term, {
-          archived: filters?.archived
-        });
+        results = await searchUserRoles(term, {});
       } else {
         // 仅筛选
         const allUserRoles = await this.getAll();
@@ -180,10 +178,6 @@ export class UserRoleService {
       const userRole = await this.getById(id);
       if (!userRole) {
         throw new Error('用户角色不存在');
-      }
-
-      if (userRole.archived) {
-        throw new Error('已归档的用户角色无法设为全局默认');
       }
 
       // 数据库层已处理清除其他默认状态的逻辑
@@ -258,30 +252,6 @@ export class UserRoleService {
     }
   }
 
-  // 归档/取消归档
-  async toggleArchive(id: string): Promise<void> {
-    try {
-      const userRole = await this.getById(id);
-      if (!userRole) {
-        throw new Error('用户角色不存在');
-      }
-
-      if (userRole.isGlobalDefault && !userRole.archived) {
-        throw new Error('全局默认用户角色无法归档');
-      }
-
-      await this.update(id, { archived: !userRole.archived });
-
-      // 如果取消归档的是全局默认角色，需要重新设置为默认
-      if (!userRole.archived && userRole.isGlobalDefault) {
-        await this.setGlobalDefault(id);
-      }
-    } catch (error) {
-      console.error('归档操作失败:', error);
-      throw new Error('归档操作失败');
-    }
-  }
-
   // 批量操作
   async bulkDelete(ids: string[]): Promise<{ success: string[], failed: string[] }> {
     const success: string[] = [];
@@ -293,23 +263,6 @@ export class UserRoleService {
         success.push(id);
       } catch (error) {
         console.error(`批量删除失败 ${id}:`, error);
-        failed.push(id);
-      }
-    }
-
-    return { success, failed };
-  }
-
-  async bulkArchive(ids: string[], archived: boolean): Promise<{ success: string[], failed: string[] }> {
-    const success: string[] = [];
-    const failed: string[] = [];
-
-    for (const id of ids) {
-      try {
-        await this.update(id, { archived });
-        success.push(id);
-      } catch (error) {
-        console.error(`批量归档失败 ${id}:`, error);
         failed.push(id);
       }
     }
@@ -351,10 +304,6 @@ export class UserRoleService {
 
     if (filters.type === 'user') {
       filtered = filtered.filter(ur => ur.type === 'user');
-    }
-
-    if (filters.archived !== undefined) {
-      filtered = filtered.filter(ur => ur.archived === filters.archived);
     }
 
     if (filters.tags && filters.tags.length > 0) {

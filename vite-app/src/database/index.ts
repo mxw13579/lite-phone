@@ -300,14 +300,10 @@ export async function deletePersona(id: string): Promise<void> {
 }
 
 // 搜索Persona
-export async function searchPersonas(term: string, filters?: { archived?: boolean, status?: string }): Promise<Persona[]> {
+export async function searchPersonas(term: string, filters?: { status?: string }): Promise<Persona[]> {
   await ensureDbInitialized();
   let collection = db.personas.where('name').startsWithIgnoreCase(term)
     .or('tags').anyOf(term.split(' '));
-  
-  if (filters?.archived !== undefined) {
-    collection = collection.and(persona => persona.archived === filters.archived);
-  }
   
   if (filters?.status) {
     collection = collection.and(persona => persona.status === filters.status);
@@ -349,14 +345,10 @@ export async function deleteUserRole(id: string): Promise<void> {
 }
 
 // 搜索UserRole
-export async function searchUserRoles(term: string, filters?: { archived?: boolean }): Promise<UserRole[]> {
+export async function searchUserRoles(term: string, filters?: {}): Promise<UserRole[]> {
   await ensureDbInitialized();
   let collection = db.userRoles.where('name').startsWithIgnoreCase(term)
     .or('tags').anyOf(term.split(' '));
-  
-  if (filters?.archived !== undefined) {
-    collection = collection.and(userRole => userRole.archived === filters.archived);
-  }
   
   return await collection.toArray();
 }

@@ -470,11 +470,29 @@
                 </div>
                 <div class="settings-section-content">
                 <div class="form-group" id="ai-persona-group">
-                    <label for="ai-persona">
+                    <label>
                         <span class="label-icon">🤖</span>
-                        <span>对方人设 (AI Persona)</span>
+                        <span>AI角色</span>
+                        <span class="label-hint">(从角色中心选择或自定义)</span>
                     </label>
-                    <textarea id="ai-persona" rows="3" placeholder="描述AI角色的性格、背景和行为特点..."></textarea>
+                    <div class="custom-select">
+                        <div class="select-box">
+                            <span id="selected-ai-persona-text">-- 选择角色 --</span>
+                            <span class="arrow-down">▼</span>
+                        </div>
+                        <div id="ai-persona-options-container" class="options-container">
+                            <div class="option-item" data-persona-id="">
+                                <span class="option-label">自定义角色 (使用下面的文本框)</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group nested-group">
+                        <label for="ai-persona">
+                            <span class="label-icon">📝</span>
+                            <span>角色设定 (AI Persona)</span>
+                        </label>
+                        <textarea id="ai-persona" rows="3" placeholder="描述AI角色的性格、背景和行为特点..."></textarea>
+                    </div>
                     <div class="form-group nested-group">
                         <label for="ai-pat-suffix-input">
                             <span class="label-icon">👋</span>
