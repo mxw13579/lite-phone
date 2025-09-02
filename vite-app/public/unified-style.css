@@ -888,13 +888,18 @@ body {
 .modal-content {
     width: 90%;
     max-width: 400px;
-    max-height: 90%;
+    max-height: 90vh;  /* 使用视口高度单位 */
     background-color: var(--color-bg-secondary);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-xl);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+/* 确保聊天设置模态框有足够高度 */
+#chat-settings-modal .modal-content {
+    min-height: 60vh;  /* 设置最小高度 */
 }
 
 .modal-header {
@@ -919,7 +924,8 @@ body {
 .modal-body {
     padding: var(--space-md);
     overflow-y: auto;
-    flex-grow: 1;
+    flex: 1;  /* 占据剩余空间 */
+    min-height: 0;  /* 允许flex子项缩小 */
 }
 
 .modal-footer {
@@ -929,7 +935,8 @@ body {
     display: flex;
     justify-content: space-around;
     gap: var(--space-md);
-    flex-shrink: 0;
+    flex-shrink: 0;  /* 防止footer被挤压 */
+    margin-top: auto;  /* 推送到底部 */
 }
 
 .modal-footer button {
@@ -942,11 +949,25 @@ body {
     cursor: pointer;
     transition: all var(--transition-base);
     min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+}
+
+.modal-footer button span {
+    display: inline-block;
 }
 
 .modal-footer button.cancel {
     background-color: var(--color-bg-tertiary);
     color: var(--color-text-primary);
+    border-color: var(--color-border);
+}
+
+.modal-footer button.cancel:hover {
+    background-color: #e5e5e5;
+    border-color: #999;
 }
 
 .modal-footer button.save,
@@ -956,9 +977,20 @@ body {
     border-color: var(--color-primary);
 }
 
+.modal-footer button.save:hover,
+.modal-footer button.confirm-btn:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+
 .modal-footer button:hover {
     transform: translateY(-1px);
     box-shadow: var(--shadow-base);
+}
+
+.modal-footer button:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-sm);
 }
 
 /* =============== 特殊模态框 =============== */
@@ -1212,6 +1244,112 @@ body {
 
 .avatar-upload input[type="file"] {
     display: none;
+}
+
+/* =============== 自定义选择器组件 =============== */
+.custom-select {
+    position: relative;
+    width: 100%;
+    margin-bottom: var(--space-md);
+}
+
+.custom-select .select-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-base);
+    background-color: var(--color-bg-secondary);
+    cursor: pointer;
+    transition: all var(--transition-base);
+    min-height: 48px;
+}
+
+.custom-select .select-box:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.custom-select .select-box:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.custom-select .arrow-down {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    transition: transform var(--transition-base);
+}
+
+.custom-select.active .arrow-down {
+    transform: rotate(180deg);
+}
+
+.custom-select .options-container {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-base) var(--radius-base);
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: var(--z-floating);
+    display: none;
+    box-shadow: var(--shadow-md);
+}
+
+.custom-select.active .options-container {
+    display: block;
+}
+
+.custom-select .option-item {
+    padding: var(--space-md);
+    cursor: pointer;
+    border-bottom: 1px solid var(--color-border);
+    transition: background-color var(--transition-fast);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.custom-select .option-item:last-child {
+    border-bottom: none;
+}
+
+.custom-select .option-item:hover {
+    background-color: var(--color-bg-tertiary);
+}
+
+.custom-select .option-item.selected {
+    background-color: var(--color-primary);
+    color: white;
+}
+
+.custom-select .option-item .option-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.custom-select .option-item .option-label {
+    flex: 1;
+    font-size: var(--font-size-md);
+    color: inherit;
+}
+
+.custom-select .option-item .option-type-badge {
+    font-size: var(--font-size-xs);
+    padding: 2px 6px;
+    border-radius: var(--radius-xs);
+    background-color: rgba(255, 255, 255, 0.2);
+    color: currentColor;
 }
 
 /* =============== 主题选择器美化 =============== */

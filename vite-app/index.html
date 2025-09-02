@@ -473,26 +473,21 @@
                     <label>
                         <span class="label-icon">🤖</span>
                         <span>AI角色</span>
-                        <span class="label-hint">(从角色中心选择或自定义)</span>
+                        <span class="label-hint">(从角色中心选择)</span>
                     </label>
                     <div class="custom-select">
-                        <div class="select-box">
+                        <div class="select-box" tabindex="0">
                             <span id="selected-ai-persona-text">-- 选择角色 --</span>
                             <span class="arrow-down">▼</span>
                         </div>
                         <div id="ai-persona-options-container" class="options-container">
                             <div class="option-item" data-persona-id="">
-                                <span class="option-label">自定义角色 (使用下面的文本框)</span>
+                                <span class="option-label">-- 选择角色 --</span>
                             </div>
                         </div>
                     </div>
-                    <div class="form-group nested-group">
-                        <label for="ai-persona">
-                            <span class="label-icon">📝</span>
-                            <span>角色设定 (AI Persona)</span>
-                        </label>
-                        <textarea id="ai-persona" rows="3" placeholder="描述AI角色的性格、背景和行为特点..."></textarea>
-                    </div>
+                    <!-- 移除了自定义角色设定的textarea -->
+                </div>
                     <div class="form-group nested-group">
                         <label for="ai-pat-suffix-input">
                             <span class="label-icon">👋</span>
@@ -522,28 +517,24 @@
                 <div class="form-group" id="default-user-role-group">
                     <label>
                         <span class="label-icon">🎭</span>
-                        <span>默认用户角色</span>
-                        <span class="label-hint">(在聊天中扮演的角色)</span>
+                        <span>用户角色</span>
+                        <span class="label-hint">(从角色中心选择，可选)</span>
                     </label>
                     <div class="custom-select">
-                        <div class="select-box">
+                        <div class="select-box" tabindex="0">
                             <span id="selected-user-role-text">-- 选择角色 --</span>
                             <span class="arrow-down">▼</span>
                         </div>
                         <div id="user-role-options-container" class="options-container">
                             <div class="option-item" data-role-id="">
-                                <span class="option-label">无角色 (使用原始消息)</span>
+                                <span class="option-label">无用户角色</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="form-group" id="my-persona-group">
-                    <label for="my-persona">
-                        <span class="label-icon">👨‍💼</span>
-                        <span>我的人设 (My Persona)</span>
-                    </label>
-                    <textarea id="my-persona" rows="3" placeholder="描述你的角色设定和个人特点..."></textarea>
+                <!-- 移除了"我的人设"textarea -->
+                <div class="form-group">
                     <div class="form-group nested-group">
                         <label for="my-pat-suffix-input">
                             <span class="label-icon">✋</span>
