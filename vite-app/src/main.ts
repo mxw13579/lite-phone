@@ -441,12 +441,22 @@ class EPhoneApplication {
           const option = document.createElement('div');
           option.className = 'option-item';
           option.setAttribute('data-persona-id', persona.id);
-          option.innerHTML = `
-            <span class="option-label">
-              <span class="persona-name">${persona.name}</span>
-              <span class="persona-tags">${persona.tags?.slice(0, 2).join(', ') || ''}</span>
-            </span>
-          `;
+          
+          // 安全地创建内容，避免XSS
+          const labelSpan = document.createElement('span');
+          labelSpan.className = 'option-label';
+          
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'persona-name';
+          nameSpan.textContent = persona.name;
+          labelSpan.appendChild(nameSpan);
+          
+          const tagsSpan = document.createElement('span');
+          tagsSpan.className = 'persona-tags';
+          tagsSpan.textContent = persona.tags?.slice(0, 2).join(', ') || '';
+          labelSpan.appendChild(tagsSpan);
+          
+          option.appendChild(labelSpan);
           aiPersonaContainer.appendChild(option);
         });
       }
@@ -468,12 +478,22 @@ class EPhoneApplication {
           const option = document.createElement('div');
           option.className = 'option-item';
           option.setAttribute('data-role-id', userRole.id);
-          option.innerHTML = `
-            <span class="option-label">
-              <span class="persona-name">${userRole.name}</span>
-              <span class="persona-tags">${userRole.tags?.slice(0, 2).join(', ') || ''}</span>
-            </span>
-          `;
+          
+          // 安全地创建内容，避免XSS
+          const labelSpan = document.createElement('span');
+          labelSpan.className = 'option-label';
+          
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'persona-name';
+          nameSpan.textContent = userRole.name;
+          labelSpan.appendChild(nameSpan);
+          
+          const tagsSpan = document.createElement('span');
+          tagsSpan.className = 'persona-tags';
+          tagsSpan.textContent = userRole.tags?.slice(0, 2).join(', ') || '';
+          labelSpan.appendChild(tagsSpan);
+          
+          option.appendChild(labelSpan);
           userRoleContainer.appendChild(option);
         });
       }
@@ -764,10 +784,19 @@ class EPhoneApplication {
         const optionDiv = document.createElement('div');
         optionDiv.className = 'option-item';
         optionDiv.setAttribute('data-role-id', role.id);
-        optionDiv.innerHTML = `
-          <span class="option-label">${role.name}</span>
-          ${role.isGlobalDefault ? '<span class="global-default-badge">默认</span>' : ''}
-        `;
+        
+        // 安全地创建内容，避免XSS
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'option-label';
+        labelSpan.textContent = role.name; // 使用textContent避免XSS
+        optionDiv.appendChild(labelSpan);
+        
+        if (role.isGlobalDefault) {
+          const badgeSpan = document.createElement('span');
+          badgeSpan.className = 'global-default-badge';
+          badgeSpan.textContent = '默认';
+          optionDiv.appendChild(badgeSpan);
+        }
         optionsContainer.appendChild(optionDiv);
       });
       

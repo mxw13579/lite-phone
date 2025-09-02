@@ -61,9 +61,13 @@ export class UserRoleService {
   async create(input: CreateUserRoleInput): Promise<UserRole> {
     try {
       const now = Date.now();
+      
+      // 确保input不包含id，防止覆盖新生成的ID
+      const { id: _, ...safeInput } = input as any;
+      
       const userRole: UserRole = {
         id: 'user_role_' + now,
-        ...input,
+        ...safeInput,
         type: 'user' as const,
         createdAt: now,
         updatedAt: now,

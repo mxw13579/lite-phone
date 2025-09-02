@@ -232,6 +232,7 @@ export class PersonaCenterScreen {
       const { showScreen, SCREEN_IDS } = await import('../../router');
       const win = window as any;
       win._selectedUserRoleForEdit = userRole;
+      win._personaEditorMode = 'user'; // 设置编辑器模式为用户角色
       showScreen(SCREEN_IDS.PERSONA_EDITOR);
     } catch (error) {
       console.error('跳转到编辑页面失败:', error);

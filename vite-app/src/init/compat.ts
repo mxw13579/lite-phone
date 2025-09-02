@@ -135,9 +135,15 @@ export function injectCompatibilityAPIs(): void {
       return;
     }
     
-    if (!personaCenterInstance) {
-      personaCenterInstance = new PersonaCenterScreen(container);
+    // 检查是否已有实例，如果有则先销毁
+    if (personaCenterInstance) {
+      console.log('销毁现有角色中心实例以避免重复初始化');
+      personaCenterInstance.destroy();
+      personaCenterInstance = null;
     }
+    
+    // 创建新实例
+    personaCenterInstance = new PersonaCenterScreen(container);
     
     // 初始化或重新渲染
     personaCenterInstance.initialize().catch(console.error);

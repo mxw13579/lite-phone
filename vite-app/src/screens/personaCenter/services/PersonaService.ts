@@ -56,9 +56,13 @@ export class PersonaService {
   async create(input: CreatePersonaInput): Promise<Persona> {
     try {
       const now = Date.now();
+      
+      // 确保input不包含id，防止覆盖新生成的ID
+      const { id: _, ...safeInput } = input as any;
+      
       const persona: Persona = {
         id: 'persona_' + now,
-        ...input,
+        ...safeInput,
         version: input.version || 1,
         createdAt: now,
         updatedAt: now,

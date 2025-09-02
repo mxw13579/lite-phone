@@ -23,6 +23,10 @@ export class PersonaListComponent {
   private currentFilter: FilterOptions = { type: 'all' };
   private searchTerm: string = '';
   private selectedItems: Set<string> = new Set();
+  
+  // 事件处理器引用，用于正确清理
+  private searchInputHandler?: (event: Event) => void;
+  private clearButtonHandler?: (event: Event) => void;
 
   constructor(container: HTMLElement, events: PersonaListEvents) {
     this.container = container;
@@ -169,15 +173,19 @@ export class PersonaListComponent {
     delete (window as any).handleItemClick;
     delete (window as any).handleItemAction;
     
-    // 清理DOM事件监听器
-    const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement;
-    if (searchInput) {
-      searchInput.removeEventListener('input', () => {});
+    // 清理DOM事件监听器 - 保存引用以便正确移除
+    if (this.searchInputHandler) {
+      const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement;
+      if (searchInput) {
+        searchInput.removeEventListener('input', this.searchInputHandler);
+      }
     }
     
-    const clearBtn = this.container.querySelector('#clear-search');
-    if (clearBtn) {
-      clearBtn.removeEventListener('click', () => {});
+    if (this.clearButtonHandler) {
+      const clearBtn = this.container.querySelector('#clear-search');
+      if (clearBtn) {
+        clearBtn.removeEventListener('click', this.clearButtonHandler);
+      }
     }
     
     this.container.innerHTML = '';
@@ -239,6 +247,12 @@ export class PersonaListComponent {
   private applyFilters<T extends Persona | UserRole>(items: T[], filters: FilterOptions): T[] {
     let filtered = items;
 
+    // 按类型筛选
+    if (filters.type && filters.type !== 'all') {
+      // 这里实际上不需要再次按type筛选，因为调用时已经分开处理了
+    }
+
+    // 按标签筛选
     if (filters.tags && filters.tags.length > 0) {
       filtered = filtered.filter(item => 
         filters.tags!.some(tag => item.tags.includes(tag))
@@ -413,21 +427,25 @@ export class PersonaListComponent {
     const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement;
     if (searchInput) {
       let searchTimeout: number;
-      searchInput.addEventListener('input', () => {
+      this.searchInputHandler = () => {
         clearTimeout(searchTimeout);
         searchTimeout = window.setTimeout(() => {
           this.search(searchInput.value);
         }, 300);
-      });
+      };
+      searchInput.addEventListener('input', this.searchInputHandler);
     }
 
     // 清除搜索
     const clearBtn = this.container.querySelector('#clear-search');
     if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        searchInput.value = '';
+      this.clearButtonHandler = () => {
+        if (searchInput) {
+          searchInput.value = '';
+        }
         this.search('');
-      });
+      };
+      clearBtn.addEventListener('click', this.clearButtonHandler);
     }
 
     // 类型筛选
