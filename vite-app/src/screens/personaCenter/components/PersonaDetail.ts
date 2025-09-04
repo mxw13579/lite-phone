@@ -173,17 +173,27 @@ export class PersonaDetailComponent {
 
   // 保存更改
   async saveChanges(): Promise<void> {
-    if (!this.state.currentData) return;
+    console.log('saveChanges called, currentData:', this.state.currentData);
+    
+    if (!this.state.currentData) {
+      console.warn('saveChanges: no current data');
+      return;
+    }
     
     try {
       const validation = this.validateCurrentData();
+      console.log('saveChanges validation result:', validation);
+      
       if (!validation.isValid) {
+        console.warn('saveChanges: validation failed', validation.errors);
         this.state.validationErrors = validation.errors;
         this.render();
         return;
       }
       
       this.clearValidationErrors();
+      
+      console.log('saveChanges: proceeding with save, type:', this.state.currentData.type);
       
       if (this.state.currentData.type === 'persona') {
         await this.savePersona();
@@ -194,6 +204,8 @@ export class PersonaDetailComponent {
       this.state.isEditing = false;
       this.setDirty(false);
       this.render();
+      
+      console.log('saveChanges: completed successfully');
       
     } catch (error) {
       console.error('保存失败:', error);
@@ -220,21 +232,34 @@ export class PersonaDetailComponent {
   }
 
   private async saveUserRole(): Promise<void> {
-    if (!this.state.currentData || this.state.currentData.type !== 'userRole') return;
+    console.log('saveUserRole called');
+    
+    if (!this.state.currentData || this.state.currentData.type !== 'userRole') {
+      console.warn('saveUserRole: invalid state or type');
+      return;
+    }
     
     const userRole = this.state.currentData.data;
     const isNew = !userRole.id;
     
+    console.log('saveUserRole: processing user role', { isNew, userRole });
+    
     if (isNew) {
       const input = this.buildCreateUserRoleInput(userRole);
+      console.log('saveUserRole: creating new user role with input', input);
       const created = await this.userRoleService.create(input);
+      console.log('saveUserRole: created user role', created);
       this.state.currentData.data = created;
       this.events.onUserRoleCreated?.(created);
     } else {
       const input = this.buildUpdateUserRoleInput(userRole);
+      console.log('saveUserRole: updating user role with input', input);
       await this.userRoleService.update(userRole.id, input);
+      console.log('saveUserRole: updated user role');
       this.events.onUserRoleUpdated?.(userRole);
     }
+    
+    console.log('saveUserRole: completed');
   }
 
   // 删除当前项
@@ -323,7 +348,10 @@ export class PersonaDetailComponent {
       </div>
     `;
     
-    console.log('render: Render completed, DOM updated');
+    // 确保全局引用在DOM更新后重新绑定
+    (window as any).personaCenterDetail = this;
+    
+    console.log('render: Render completed, DOM updated, global reference refreshed');
   }
 
   private renderHeader(item: Persona | UserRole, isPersona: boolean): string {
@@ -557,10 +585,17 @@ export class PersonaDetailComponent {
 
   // 添加缺少的方法
   updateField(fieldName: string, value: any): void {
-    if (!this.state.currentData || !this.state.isEditing) return;
+    console.log('updateField called:', { fieldName, value, hasCurrentData: !!this.state.currentData, isEditing: this.state.isEditing });
+    
+    if (!this.state.currentData || !this.state.isEditing) {
+      console.warn('updateField ignored: missing currentData or not editing');
+      return;
+    }
     
     (this.state.currentData.data as any)[fieldName] = value;
     this.setDirty(true);
+    
+    console.log('updateField completed, data updated:', this.state.currentData.data);
   }
 
   updatePromptField(fieldName: string, value: string): void {
@@ -607,6 +642,9 @@ export class PersonaDetailComponent {
   private attachEventListeners(): void {
     // 绑定到window便于HTML模板调用
     (window as any).personaCenterDetail = this;
+    
+    // 确保绑定成功
+    console.log('PersonaDetail组件已绑定到全局:', !!(window as any).personaCenterDetail);
   }
 
   // 辅助方法
