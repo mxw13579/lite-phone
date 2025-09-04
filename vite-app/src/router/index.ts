@@ -17,6 +17,7 @@ export type ScreenId =
 
 export type RenderFunction = () => void;
 export type PostProcessFunction = (screenId: ScreenId) => void;
+export type BeforeNavigateGuard = (from: ScreenId, to: ScreenId) => boolean;
 
 export interface RouteEntry {
   screenId: ScreenId;
@@ -43,6 +44,9 @@ export const SCREEN_IDS: Record<string, ScreenId> = {
 
 // 当前活动屏幕ID
 let currentScreenId: ScreenId = SCREEN_IDS.HOME;
+
+// 导航守卫
+let beforeNavigateGuard: BeforeNavigateGuard | null = null;
 
 // 屏幕渲染代理映射
 const screenRenderMap: Partial<Record<ScreenId, RenderFunction>> = {
@@ -90,6 +94,12 @@ const screenPostProcessMap: Partial<Record<ScreenId, PostProcessFunction | undef
 
 // 主要的屏幕切换函数
 export function showScreen(screenId: ScreenId): void {
+  // 执行导航守卫检查
+  if (beforeNavigateGuard && !beforeNavigateGuard(currentScreenId, screenId)) {
+    console.log('路由守卫拦截：从', currentScreenId, '到', screenId);
+    return;
+  }
+
   // 处理消息编辑模式 - 从多个来源检查（与原始版本保持一致）
   const win = window as any;
   const isMessageEditMode = win.STATE?.isMessageEditMode || 
@@ -170,6 +180,19 @@ export function getCurrentScreen(): ScreenId {
 // 检查指定屏幕是否为当前活动屏幕
 export function isCurrentScreen(screenId: ScreenId): boolean {
   return currentScreenId === screenId;
+}
+
+// === 导航守卫管理 ===
+
+// 设置导航前置守卫
+export function setBeforeNavigateGuard(guard: BeforeNavigateGuard | null): void {
+  beforeNavigateGuard = guard;
+  console.log('路由守卫：设置导航守卫', guard ? '已设置' : '已清除');
+}
+
+// 获取当前导航守卫
+export function getBeforeNavigateGuard(): BeforeNavigateGuard | null {
+  return beforeNavigateGuard;
 }
 
 // === 导航函数 ===
@@ -333,6 +356,8 @@ export default {
   showScreen,
   getCurrentScreen,
   isCurrentScreen,
+  setBeforeNavigateGuard,
+  getBeforeNavigateGuard,
   goHome,
   navigateToChat,
   navigateToChatList,

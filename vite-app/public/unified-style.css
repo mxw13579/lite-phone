@@ -1330,6 +1330,17 @@ body {
     color: white;
 }
 
+.custom-select .option-item.disabled {
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text-muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.custom-select .option-item.disabled:hover {
+    background-color: var(--color-bg-tertiary);
+}
+
 .custom-select .option-item .option-avatar {
     width: 24px;
     height: 24px;

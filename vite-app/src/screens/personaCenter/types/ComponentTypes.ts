@@ -30,11 +30,20 @@ export interface PersonaListEvents {
 
 // 详情组件事件回调
 export interface PersonaDetailEvents {
-  onSave: (data: Persona | UserRole) => void;
-  onCancel: () => void;
-  onDelete: (id: string) => void;
-  onPreview: (data: Persona) => void;
-  onWorldBookChange: (links: import('./PersonaTypes').WorldBookLink[]) => void;
+  onSave?: (data: Persona | UserRole) => void;
+  onCancel?: () => void;
+  onDelete?: (id: string) => void;
+  onPreview?: (data: Persona) => void;
+  onWorldBookChange?: (links: import('./PersonaTypes').WorldBookLink[]) => void;
+  onDirtyChange?: (isDirty: boolean) => void; // 新增：脏状态变更回调
+  onPersonaSelected?: (persona: Persona) => void;
+  onPersonaCreated?: (persona: Persona) => void;
+  onPersonaUpdated?: (persona: Persona) => void;
+  onPersonaDeleted?: (personaId: string) => void;
+  onUserRoleSelected?: (userRole: UserRole) => void;
+  onUserRoleCreated?: (userRole: UserRole) => void;
+  onUserRoleUpdated?: (userRole: UserRole) => void;
+  onUserRoleDeleted?: (userRoleId: string) => void;
 }
 
 // Tab项接口

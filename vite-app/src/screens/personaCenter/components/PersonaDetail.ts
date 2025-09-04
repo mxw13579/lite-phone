@@ -148,11 +148,6 @@ export class PersonaDetailComponent {
 
   // 切换标签页
   switchTab(tabId: string): void {
-    if (this.state.isDirty) {
-      const confirmed = confirm('当前有未保存的更改，确定要切换标签页吗？');
-      if (!confirmed) return;
-    }
-    
     this.state.activeTab = tabId;
     this.render();
   }
@@ -171,7 +166,7 @@ export class PersonaDetailComponent {
     }
     
     this.state.isEditing = false;
-    this.state.isDirty = false;
+    this.setDirty(false);
     this.clearValidationErrors();
     this.render();
   }
@@ -197,7 +192,7 @@ export class PersonaDetailComponent {
       }
       
       this.state.isEditing = false;
-      this.state.isDirty = false;
+      this.setDirty(false);
       this.render();
       
     } catch (error) {
@@ -385,11 +380,14 @@ export class PersonaDetailComponent {
 
   private renderBasicTab(item: Persona | UserRole, isPersona: boolean): string {
     const errors = this.state.validationErrors;
+    const idPrefix = item.id || 'new';
     return `
       <div class="tab-content basic-tab">
         <div class="form-group">
-          <label class="form-label">名称 *</label>
+          <label for="name-${idPrefix}" class="form-label">名称 *</label>
           <input 
+            id="name-${idPrefix}"
+            name="name-${idPrefix}"
             type="text" 
             class="form-input ${errors.name ? 'error' : ''}" 
             value="${item.name || ''}"
@@ -401,8 +399,10 @@ export class PersonaDetailComponent {
         </div>
         
         <div class="form-group">
-          <label class="form-label">头像</label>
+          <label for="avatar-${idPrefix}" class="form-label">头像</label>
           <input 
+            id="avatar-${idPrefix}"
+            name="avatar-${idPrefix}"
             type="text" 
             class="form-input" 
             value="${item.avatar || ''}"
@@ -413,8 +413,10 @@ export class PersonaDetailComponent {
         </div>
         
         <div class="form-group">
-          <label class="form-label">标签</label>
+          <label for="tags-${idPrefix}" class="form-label">标签</label>
           <input 
+            id="tags-${idPrefix}"
+            name="tags-${idPrefix}"
             type="text" 
             class="form-input" 
             value="${(item.tags || []).join(', ')}"
@@ -428,11 +430,14 @@ export class PersonaDetailComponent {
   }
 
   private renderPromptTab(item: Persona | UserRole, isPersona: boolean): string {
+    const uniqueId = `prompt-definition-${item.id || 'new'}`;
     return `
       <div class="tab-content prompt-tab">
         <div class="form-group">
-          <label class="form-label">角色定义</label>
+          <label for="${uniqueId}" class="form-label">角色定义</label>
           <textarea 
+            id="${uniqueId}"
+            name="${uniqueId}"
             class="form-textarea" 
             rows="10"
             ${this.state.isEditing ? '' : 'readonly'}
@@ -462,7 +467,7 @@ export class PersonaDetailComponent {
     
     const tags = value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
     this.state.currentData.data.tags = tags;
-    this.state.isDirty = true;
+    this.setDirty(true);
   }
 
   private renderTabs(isPersona: boolean): string {
@@ -498,7 +503,7 @@ export class PersonaDetailComponent {
     const persona = this.state.currentData.data as Persona;
     if (persona.worldBookLinks && persona.worldBookLinks[linkIndex]) {
       persona.worldBookLinks[linkIndex].order = parseInt(order) || 0;
-      this.state.isDirty = true;
+      this.setDirty(true);
     }
   }
 
@@ -508,7 +513,7 @@ export class PersonaDetailComponent {
     const persona = this.state.currentData.data as Persona;
     if (persona.worldBookLinks && persona.worldBookLinks[linkIndex]) {
       persona.worldBookLinks[linkIndex].enabled = enabled;
-      this.state.isDirty = true;
+      this.setDirty(true);
     }
   }
 
@@ -518,7 +523,7 @@ export class PersonaDetailComponent {
     const persona = this.state.currentData.data as Persona;
     if (persona.worldBookLinks) {
       persona.worldBookLinks.splice(linkIndex, 1);
-      this.state.isDirty = true;
+      this.setDirty(true);
       this.render(); // 重新渲染以更新索引
     }
   }
@@ -538,8 +543,16 @@ export class PersonaDetailComponent {
       order: persona.worldBookLinks.length
     });
     
-    this.state.isDirty = true;
+    this.setDirty(true);
     this.render(); // 重新渲染以显示新添加的链接
+  }
+
+  // 设置脏状态，并触发回调
+  private setDirty(dirty: boolean): void {
+    if (this.state.isDirty !== dirty) {
+      this.state.isDirty = dirty;
+      this.events.onDirtyChange?.(dirty);
+    }
   }
 
   // 添加缺少的方法
@@ -547,7 +560,7 @@ export class PersonaDetailComponent {
     if (!this.state.currentData || !this.state.isEditing) return;
     
     (this.state.currentData.data as any)[fieldName] = value;
-    this.state.isDirty = true;
+    this.setDirty(true);
   }
 
   updatePromptField(fieldName: string, value: string): void {
@@ -556,7 +569,7 @@ export class PersonaDetailComponent {
     const prompt = (this.state.currentData.data as any).prompt || {};
     prompt[fieldName] = value;
     (this.state.currentData.data as any).prompt = prompt;
-    this.state.isDirty = true;
+    this.setDirty(true);
   }
 
   // 设置编辑状态（供外部调用）
@@ -573,6 +586,16 @@ export class PersonaDetailComponent {
     this.state.activeTab = 'basic';
     this.state.isDirty = false;
     this.clearValidationErrors();
+  }
+
+  // 获取脏状态（供外部查询）
+  isDirty(): boolean {
+    return this.state.isDirty;
+  }
+
+  // 获取当前数据（供外部查询）
+  getCurrentData(): { type: 'persona' | 'userRole', data: Persona | UserRole } | null {
+    return this.state.currentData;
   }
 
   // 销毁组件

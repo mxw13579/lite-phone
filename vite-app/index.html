@@ -469,25 +469,26 @@
                     <span class="collapse-indicator">▼</span>
                 </div>
                 <div class="settings-section-content">
-                <div class="form-group" id="ai-persona-group">
-                    <label>
-                        <span class="label-icon">🤖</span>
-                        <span>AI角色</span>
-                        <span class="label-hint">(从角色中心选择)</span>
-                    </label>
-                    <div class="custom-select">
-                        <div class="select-box" tabindex="0">
-                            <span id="selected-ai-persona-text">-- 选择角色 --</span>
-                            <span class="arrow-down">▼</span>
+                    <div class="form-group" id="ai-persona-group">
+                        <div class="form-label" id="ai-persona-label">
+                            <span class="label-icon">🤖</span>
+                            <span>AI角色</span>
+                            <span class="label-hint">(从角色中心选择)</span>
                         </div>
-                        <div id="ai-persona-options-container" class="options-container">
-                            <div class="option-item" data-persona-id="">
-                                <span class="option-label">-- 选择角色 --</span>
+                        <div class="custom-select">
+                            <div class="select-box" role="combobox" aria-haspopup="listbox" aria-controls="ai-persona-options-container" aria-expanded="false" aria-labelledby="ai-persona-label" tabindex="0">
+                                <span id="selected-ai-persona-text">-- 选择角色 --</span>
+                                <span class="arrow-down">▼</span>
+                            </div>
+                            <div id="ai-persona-options-container" class="options-container" role="listbox" aria-labelledby="ai-persona-label">
+                                <div class="option-item" data-persona-id="" role="option" aria-selected="false">
+                                    <span class="option-label">-- 选择角色 --</span>
+                                </div>
                             </div>
                         </div>
+                        <!-- 移除了自定义角色设定的textarea -->
                     </div>
-                    <!-- 移除了自定义角色设定的textarea -->
-                </div>
+
                     <div class="form-group nested-group">
                         <label for="ai-pat-suffix-input">
                             <span class="label-icon">👋</span>
@@ -495,46 +496,43 @@
                         </label>
                         <input type="text" id="ai-pat-suffix-input" placeholder="例如：的脑袋瓜">
                     </div>
-                </div>
 
-                <div class="form-group" id="ai-avatar-group">
-                    <label>
-                        <span class="label-icon">🎨</span>
-                        <span>对方头像</span>
-                    </label>
-                    <div class="avatar-upload">
-                        <img id="ai-avatar-preview" alt="对方头像预览">
-                        <div class="upload-actions">
-                            <button onclick="document.getElementById('ai-avatar-input').click()">
-                                <span>🖼️</span>
-                                <span>上传对方头像</span>
-                            </button>
-                            <input type="file" id="ai-avatar-input" accept="image/*">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group" id="default-user-role-group">
-                    <label>
-                        <span class="label-icon">🎭</span>
-                        <span>用户角色</span>
-                        <span class="label-hint">(从角色中心选择，可选)</span>
-                    </label>
-                    <div class="custom-select">
-                        <div class="select-box" tabindex="0">
-                            <span id="selected-user-role-text">-- 选择角色 --</span>
-                            <span class="arrow-down">▼</span>
-                        </div>
-                        <div id="user-role-options-container" class="options-container">
-                            <div class="option-item" data-role-id="">
-                                <span class="option-label">无用户角色</span>
+                    <div class="form-group" id="ai-avatar-group">
+                        <label>
+                            <span class="label-icon">🎨</span>
+                            <span>对方头像</span>
+                        </label>
+                        <div class="avatar-upload">
+                            <img id="ai-avatar-preview" alt="对方头像预览">
+                            <div class="upload-actions">
+                                <button onclick="document.getElementById('ai-avatar-input').click()">
+                                    <span>🖼️</span>
+                                    <span>上传对方头像</span>
+                                </button>
+                                <input type="file" id="ai-avatar-input" accept="image/*">
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- 移除了"我的人设"textarea -->
-                <div class="form-group">
+                    <div class="form-group" id="default-user-role-group">
+                        <label>
+                            <span class="label-icon">🎭</span>
+                            <span>用户角色</span>
+                            <span class="label-hint">(从角色中心选择，可选)</span>
+                        </label>
+                        <div class="custom-select">
+                            <div class="select-box" tabindex="0">
+                                <span id="selected-user-role-text">-- 选择角色 --</span>
+                                <span class="arrow-down">▼</span>
+                            </div>
+                            <div id="user-role-options-container" class="options-container" role="listbox" aria-labelledby="user-role-label">
+                                <div class="option-item" data-role-id="" role="option" aria-selected="false">
+                                    <span class="option-label">无用户角色</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="form-group nested-group">
                         <label for="my-pat-suffix-input">
                             <span class="label-icon">✋</span>
@@ -542,28 +540,27 @@
                         </label>
                         <input type="text" id="my-pat-suffix-input" placeholder="例如：的肩膀">
                     </div>
-                </div>
 
-                <div class="form-group" id="my-avatar-group">
-                    <label>
-                        <span class="label-icon">👤</span>
-                        <span>我的头像</span>
-                    </label>
-                    <div class="avatar-upload">
-                        <img id="my-avatar-preview" alt="我的头像预览">
-                        <div class="upload-actions">
-                            <button onclick="document.getElementById('my-avatar-input').click()">
-                                <span>📷</span>
-                                <span>上传我的头像</span>
-                            </button>
-                            <button id="open-persona-library-btn">
-                                <span>📂</span>
-                                <span>预设</span>
-                            </button>
-                            <input type="file" id="my-avatar-input" accept="image/*">
+                    <div class="form-group" id="my-avatar-group">
+                        <label>
+                            <span class="label-icon">👤</span>
+                            <span>我的头像</span>
+                        </label>
+                        <div class="avatar-upload">
+                            <img id="my-avatar-preview" alt="我的头像预览">
+                            <div class="upload-actions">
+                                <button onclick="document.getElementById('my-avatar-input').click()">
+                                    <span>📷</span>
+                                    <span>上传我的头像</span>
+                                </button>
+                                <button id="open-persona-library-btn">
+                                    <span>📂</span>
+                                    <span>预设</span>
+                                </button>
+                                <input type="file" id="my-avatar-input" accept="image/*">
+                            </div>
                         </div>
                     </div>
-                </div>
                 </div>
             </div>
 
