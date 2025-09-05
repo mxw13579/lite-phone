@@ -11,3 +11,4 @@
 /vite-app/node_modules/
 /myPhone/
 /.playwright-mcp/
+*.js

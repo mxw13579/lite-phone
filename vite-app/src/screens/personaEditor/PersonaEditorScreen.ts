@@ -143,7 +143,9 @@ export class PersonaEditorScreen {
     return {
       id: '',
       name: '',
-      prompt: '',
+      prompt: {
+        definition: ''
+      },
       avatar: '',
       tags: [],
       archived: false,
@@ -166,7 +168,9 @@ export class PersonaEditorScreen {
     return {
       id: '',
       name: '',
-      prompt: '',
+      prompt: {
+        definition: ''
+      },
       avatar: '',
       tags: [],
       archived: false,

@@ -332,7 +332,9 @@ export class UserRoleService {
     }
 
     if ('prompt' in input && input.prompt) {
-      if (!input.prompt.persona?.trim()) {
+      // 检查definition字段（新标准），回退检查persona字段（兼容旧数据）
+      const definition = input.prompt.definition || input.prompt.persona;
+      if (!definition?.trim()) {
         errors.push('角色描述不能为空');
       }
     }
