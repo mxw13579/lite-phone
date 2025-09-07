@@ -4,9 +4,9 @@
 import type { 
   Persona, 
   UserRole, 
-  CompositionConfig, 
-  DEFAULT_COMPOSITION_CONFIG 
+  CompositionConfig
 } from '../types/PersonaTypes';
+import { DEFAULT_COMPOSITION_CONFIG } from '../types/PersonaTypes';
 
 import type { WorldBook } from '../../../state/index';
 

@@ -24,6 +24,7 @@ export interface PersonaListEvents {
   onSelect: (id: string, type: 'ai' | 'user') => void;
   onCreate: (type: 'ai' | 'user') => void;
   onDelete: (id: string, type: 'ai' | 'user') => void;
+  onArchive?: (id: string, archived: boolean) => void;
   onSearch: (options: SearchOptions) => void;
   onFilter: (options: FilterOptions) => void;
 }
@@ -124,9 +125,21 @@ export interface ComponentState {
 // 表单验证结果
 export interface ValidationResult {
   isValid: boolean;
-  errors: Record<string, string>;
+  errors: Record<string, string> | string[];
   warnings?: Record<string, string>;
 }
+
+// 详情组件状态
+export interface PersonaDetailState {
+  activeTab: 'basic' | 'prompt' | 'baseline' | 'worldBook' | 'preview';
+  isDirty: boolean;
+  isEditing: boolean;
+  validationErrors: Record<string, string>;
+  currentData: { type: 'persona' | 'userRole'; data: Persona | UserRole } | null;
+}
+
+// 便于从此模块引用基础过滤类型
+export type { FilterOptions, SearchOptions };
 
 // 快捷键配置
 export interface ShortcutConfig {
