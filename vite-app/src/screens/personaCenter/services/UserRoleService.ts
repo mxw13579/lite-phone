@@ -157,7 +157,7 @@ export class UserRoleService {
 
       if (term.trim()) {
         // 使用数据库搜索
-        results = await searchUserRoles(term, {});
+        results = await searchUserRoles(term);
       } else {
         // 仅筛选
         const allUserRoles = await this.getAll();
@@ -282,6 +282,7 @@ export class UserRoleService {
       if (!defaultUserRole) {
         console.log('未找到全局默认UserRole，创建默认角色');
         defaultUserRole = await this.create({
+          type: 'user',
           name: '默认用户',
           avatar: '',
           tags: [],

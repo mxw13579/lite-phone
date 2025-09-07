@@ -14,6 +14,7 @@ import CONSTANTS from './constants';
 import STATE from './state';
 import DB from './database';
 import ROUTER from './router';
+import type { Chat } from './state';
 
 // === 屏幕模块导入 ===
 import * as SCREENS from './screens';
@@ -22,7 +23,7 @@ import { aiResponseModule } from './screens/aiResponse';
 // === 初始化模块导入 ===
 import { initializationModule } from './init';
 // 强制使用 TypeScript 版本的兼容层，避免同名.js 被解析
-import { injectCompatibilityAPIs } from './init/compat.ts';
+import { injectCompatibilityAPIs } from './init/compat';
 
 // === 服务层导入 ===
 import * as SERVICES from './services';
@@ -40,6 +41,7 @@ console.log('  - SERVICES loaded:', Object.keys(SERVICES).length, 'services');
 class EPhoneApplication {
   private initialized = false;
   private editingMemberId: string | null = null;
+  private currentChatForSettings: Chat | null = null;
 
   // 注意selectedMessages 状态管理已转移init/index.ts，避免重复
   /**
@@ -167,9 +169,9 @@ class EPhoneApplication {
     await SCREENS.presetScreenModule.initPresetsData();
 
     console.log('初始化聊天屏幕模块...');
-    // chatScreenModule 可能有不同的初始化方式，先检查是否存在
+    // 启用聊天模块初始化并绑定到全局
     if (SCREENS.chatScreenModule && typeof SCREENS.chatScreenModule.initListeners === 'function') {
-      // SCREENS.chatScreenModule.initListeners();
+      SCREENS.chatScreenModule.initListeners();
     }
 
     console.log('初始化AI响应模块...');
@@ -382,9 +384,11 @@ class EPhoneApplication {
     // 初始化临时聊天设置数据，用于跟踪角色选择
     this.currentChatForSettings = {
       ...chat,
+      // 深拷贝 settings，避免在未保存时污染原始状态
+      settings: { ...chat.settings },
       personaId: chat.personaId || null,
       defaultUserRoleId: chat.defaultUserRoleId || null
-    };
+    } as Chat;
 
     this.populateChatSettingsForm(chat);
 
@@ -448,11 +452,12 @@ class EPhoneApplication {
           // 如果没有角色，显示提示信息
           const noRoleOption = document.createElement('div');
           noRoleOption.className = 'option-item disabled';
-          noRoleOption.innerHTML = `
-            <span class="option-label" style="color: #999; font-style: italic;">
-              暂无角色，请前往角色中心添加
-            </span>
-          `;
+          const label = document.createElement('span');
+          label.className = 'option-label';
+          label.style.color = '#999';
+          label.style.fontStyle = 'italic';
+          label.textContent = '暂无角色，请前往角色中心添加';
+          noRoleOption.appendChild(label);
           aiPersonaContainer.appendChild(noRoleOption);
         } else {
           personas.forEach(persona => {
@@ -499,11 +504,12 @@ class EPhoneApplication {
           // 如果没有用户角色，显示提示信息
           const noUserRoleOption = document.createElement('div');
           noUserRoleOption.className = 'option-item disabled';
-          noUserRoleOption.innerHTML = `
-            <span class="option-label" style="color: #999; font-style: italic;">
-              暂无用户角色，请前往角色中心添加
-            </span>
-          `;
+          const userRoleLabel = document.createElement('span');
+          userRoleLabel.className = 'option-label';
+          userRoleLabel.style.color = '#999';
+          userRoleLabel.style.fontStyle = 'italic';
+          userRoleLabel.textContent = '暂无用户角色，请前往角色中心添加';
+          noUserRoleOption.appendChild(userRoleLabel);
           userRoleContainer.appendChild(noUserRoleOption);
         } else {
           userRoles.forEach(userRole => {
@@ -866,7 +872,7 @@ class EPhoneApplication {
       // 清空群成员设置容器，防止残留内容
       const groupMembersSettings = document.getElementById('group-members-settings');
       if (groupMembersSettings) {
-        groupMembersSettings.innerHTML = '';
+        groupMembersSettings.textContent = '';
       }
     }
 
@@ -897,7 +903,16 @@ class EPhoneApplication {
       const userRoles = await (window as any).DB.getAllUserRoles();
 
       // 清空选项容器
-      optionsContainer.innerHTML = '<div class="option-item" data-role-id=""><span class="option-label">无角色(使用原始消息)</span></div>';
+      // 安全重建默认选项，避免使用 innerHTML
+      optionsContainer.textContent = '';
+      const defaultItem = document.createElement('div');
+      defaultItem.className = 'option-item';
+      defaultItem.setAttribute('data-role-id', '');
+      const label = document.createElement('span');
+      label.className = 'option-label';
+      label.textContent = '无角色(使用原始消息)';
+      defaultItem.appendChild(label);
+      optionsContainer.appendChild(defaultItem);
 
       // 添加用户角色选项
       userRoles.forEach((role: any) => {
@@ -1322,7 +1337,7 @@ class EPhoneApplication {
     const container = document.getElementById('group-members-settings');
     if (!container) return;
 
-    container.innerHTML = '';
+    container.textContent = '';
 
     members.forEach((member, index) => {
       const memberDiv = document.createElement('div');
@@ -1408,7 +1423,10 @@ class EPhoneApplication {
       const defaultOption = document.createElement('div');
       defaultOption.className = 'option-item';
       defaultOption.setAttribute('data-persona-id', '');
-      defaultOption.innerHTML = '<span class="option-label">手动输入</span>';
+      const manualLabel = document.createElement('span');
+      manualLabel.className = 'option-label';
+      manualLabel.textContent = '手动输入';
+      defaultOption.appendChild(manualLabel);
       roleOptionsContainer.appendChild(defaultOption);
 
       // 从角色中心加载角色
@@ -1453,14 +1471,22 @@ class EPhoneApplication {
       if (personas.length === 0) {
         const noRoleOption = document.createElement('div');
         noRoleOption.className = 'option-item disabled';
-        noRoleOption.innerHTML = '<span class="option-label" style="color: #999; font-style: italic;">暂无角色，请前往角色中心添加</span>';
+        const noRoleLabel = document.createElement('span');
+        noRoleLabel.className = 'option-label';
+        noRoleLabel.style.color = '#999';
+        noRoleLabel.style.fontStyle = 'italic';
+        noRoleLabel.textContent = '暂无角色，请前往角色中心添加';
+        noRoleOption.appendChild(noRoleLabel);
         container.appendChild(noRoleOption);
       } else {
         personas.forEach(persona => {
           const option = document.createElement('div');
           option.className = 'option-item';
           option.setAttribute('data-persona-id', persona.id);
-          option.innerHTML = `<span class="option-label">${persona.name}</span>`;
+          const optLabel = document.createElement('span');
+          optLabel.className = 'option-label';
+          optLabel.textContent = persona.name;
+          option.appendChild(optLabel);
           container.appendChild(option);
         });
       }
@@ -1575,7 +1601,3 @@ export { CONSTANTS, STATE, DB, ROUTER, SCREENS, SERVICES };
 
 // 向后兼容的导出函数
 export const initApp = () => app.initialize();
-
-
-
-

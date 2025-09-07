@@ -1,21 +1,7 @@
-/**
- * 音乐播放服务模块 - 独立版本
- * Phase 2: 使用DB仓库访问替换直接Dexie调用
- * 
- * 提供完整的音乐播放功能，包括：
- * - 播放控制（播放/暂停、上一首/下一首）
- * - 播放模式切换（顺序/随机/单曲循环）
- * - 播放列表管理（添加/删除歌曲）
- * - "一起听"功能（多聊天对象音乐会话）
- * - UI更新与状态同步
- * Repository化改造：使用统一的数据库访问层
- */
-
+// TypeScript（优化版）
 import DB from '../database';
-
 import type { Chat } from '../state';
 
-// === 类型定义 ===
 interface ModalOptions {
   confirmText?: string;
   confirmButtonClass?: string;
@@ -29,11 +15,13 @@ interface Track {
   requiresReupload?: boolean;
 }
 
+type PlayMode = 'order' | 'random' | 'single';
+
 interface MusicState {
   playlist: Track[];
   currentIndex: number;
   isPlaying: boolean;
-  playMode: 'order' | 'random' | 'single';
+  playMode: PlayMode;
   totalElapsedTime: number;
   isActive: boolean;
   activeChatId: string | null;
@@ -51,337 +39,406 @@ interface StateManager {
   musicState: MusicState;
 }
 
-interface DatabaseManager {
-  db: {
-    tables: any[];
-    transaction: (mode: string, tables: any[], callback: () => Promise<void>) => Promise<void>;
-    chats: any;
-    userStickers: any;
-    worldBooks: any;
-    personaPresets: any;
-    apiConfig: any;
-    globalSettings: any;
-    musicLibrary: any;
+const MODES: PlayMode[] = ['order', 'random', 'single'] as const;
+const MODE_LABEL: Record<PlayMode, string> = { order: '顺序', random: '随机', single: '单曲' };
+
+// Blob URL 缓存（空间换时间）+ 反查，用于统一释放
+const blobURLCache = new WeakMap<Blob, string>();
+const activeBlobURLs = new Set<string>();
+
+// DOM 工具
+const $id = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null;
+const $svg = (selector: string) => document.querySelector(selector) as SVGElement | null;
+const setText = (el: Element | null, text: string) => { if (el) el.textContent = text; };
+const setClass = (el: Element | null, on: boolean, cls: string) => { if (!el) return; el.classList[on ? 'add' : 'remove'](cls); };
+
+// 状态/音频访问
+const getState = () => (window as any).STATE as StateManager | null ?? null;
+const getMusicState = () => getState()?.musicState ?? null;
+// 缓存 audio 节点，避免重复查询
+const audioEl: HTMLAudioElement | null = $id<HTMLAudioElement>('audio-player');
+
+// 去抖
+function debounce<T extends (...args: any[]) => any>(fn: T, wait = 200) {
+  let t: number | null = null;
+  return (...args: Parameters<T>) => {
+    if (t) window.clearTimeout(t);
+    t = window.setTimeout(() => { t = null; fn(...args); }, wait);
   };
 }
 
-// === 音乐播放服务类 ===
+// 格式化
+const formatHours = (seconds: number) => (seconds / 3600).toFixed(1);
+
+// 播放安全封装：统一处理异常与状态
+async function playSafe(): Promise<boolean> {
+  const ms = getMusicState();
+  if (!ms || !audioEl) return false;
+  try {
+    await audioEl.play();
+    ms.isPlaying = true;
+    return true;
+  } catch (e) {
+    // 常见：NotAllowedError, AbortError
+    ms.isPlaying = false;
+    return false;
+  }
+}
+
+// 统一释放 blob URL
+function revokeIfBlob(url: string) {
+  if (url.startsWith('blob:') && activeBlobURLs.has(url)) {
+    URL.revokeObjectURL(url);
+    activeBlobURLs.delete(url);
+  }
+}
+
+// 页面关闭时清理
+window.addEventListener('unload', () => {
+  for (const url of Array.from(activeBlobURLs)) revokeIfBlob(url);
+});
+
+// Page Visibility：不可见时暂停计时器自增（不暂停播放）
+document.addEventListener('visibilitychange', () => {
+  const ms = getMusicState();
+  if (!ms || ms.timerId == null) return;
+  const hidden = document.hidden;
+  // 标记：隐藏时不自增，由计时器分支判断
+  (ms as any).__pageHidden__ = hidden;
+});
+
 export class MusicService {
-  // 音乐播放控制
+  // UI 批量更新
+  private withUIUpdate<T>(fn: () => T, options: { player?: boolean; playlist?: boolean } = { player: true, playlist: true }): T {
+    const ret = fn();
+    if (options.player) this.updatePlayerUI();
+    if (options.playlist) this.updatePlaylistUI();
+    return ret;
+  }
+
+  // 播放/暂停
   togglePlayPause(): void {
-    const audioPlayer = document.getElementById('audio-player') as HTMLAudioElement;
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    
-    if (!audioPlayer || !musicState) return;
+    const ms = getMusicState();
+    if (!ms || !audioEl) return;
 
-    if (audioPlayer.paused) {
-      if (musicState.currentIndex === -1 && musicState.playlist.length > 0) {
+    if (audioEl.paused) {
+      if (ms.currentIndex === -1 && ms.playlist.length > 0) {
         this.playSong(0);
-      } else if (musicState.currentIndex > -1) {
-        audioPlayer.play();
+      } else if (ms.currentIndex > -1) {
+        playSafe().finally(() => this.updatePlayerUI());
       }
     } else {
-      audioPlayer.pause();
+      audioEl.pause();
+      ms.isPlaying = false;
+      this.updatePlayerUI();
     }
   }
 
-  // 播放指定歌曲
-  playSong(index: number): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    const audioPlayer = document.getElementById('audio-player') as HTMLAudioElement;
-    
-    if (!musicState || !audioPlayer || index < 0 || index >= musicState.playlist.length) return;
-
-    musicState.currentIndex = index;
-    const track = musicState.playlist[index];
-    
+  // 组装音源并设置 src（本地 Blob 复用并记录 URL，减少 createObjectURL 次数）
+  private setAudioSource(track: Track): boolean {
+    if (!audioEl) return false;
     if (track.isLocal && track.src instanceof Blob) {
-      audioPlayer.src = URL.createObjectURL(track.src);
-    } else if (!track.isLocal) {
-      audioPlayer.src = track.src as string;
-    } else {
-      console.error('本地歌曲源错误:', track);
-      return;
-    }
-
-    audioPlayer.play();
-    this.updatePlaylistUI();
-    this.updatePlayerUI();
-  }
-
-  // 播放下一首
-  playNext(): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState || musicState.playlist.length === 0) return;
-
-    let nextIndex: number;
-    switch (musicState.playMode) {
-      case 'random':
-        nextIndex = Math.floor(Math.random() * musicState.playlist.length);
-        break;
-      case 'single':
-        this.playSong(musicState.currentIndex);
-        return;
-      case 'order':
-      default:
-        nextIndex = (musicState.currentIndex + 1) % musicState.playlist.length;
-        break;
-    }
-    this.playSong(nextIndex);
-  }
-
-  // 播放上一首
-  playPrev(): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState || musicState.playlist.length === 0) return;
-
-    const newIndex = (musicState.currentIndex - 1 + musicState.playlist.length) % musicState.playlist.length;
-    this.playSong(newIndex);
-  }
-
-  // 切换播放模式
-  changePlayMode(): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState) return;
-
-    const modes: Array<'order' | 'random' | 'single'> = ['order', 'random', 'single'];
-    const currentModeIndex = modes.indexOf(musicState.playMode);
-    musicState.playMode = modes[(currentModeIndex + 1) % modes.length];
-    
-    const modeBtn = document.getElementById('music-mode-btn');
-    if (modeBtn) {
-      modeBtn.textContent = {
-        'order': '顺序',
-        'random': '随机',
-        'single': '单曲'
-      }[musicState.playMode];
-    }
-  }
-
-  // 从URL添加歌曲
-  async addSongFromURL(): Promise<void> {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState) return;
-
-    const url = await this.showCustomPrompt("添加网络歌曲", "请输入歌曲的URL", "", "url");
-    if (!url) return;
-    
-    const name = await this.showCustomPrompt("歌曲信息", "请输入歌名");
-    if (!name) return;
-    
-    const artist = await this.showCustomPrompt("歌曲信息", "请输入歌手名");
-    if (!artist) return;
-
-    musicState.playlist.push({name, artist, src: url, isLocal: false});
-    await this.saveGlobalPlaylist();
-    this.updatePlaylistUI();
-    
-    if (musicState.currentIndex === -1) {
-      musicState.currentIndex = musicState.playlist.length - 1;
-      this.updatePlayerUI();
-    }
-  }
-
-  // 从本地添加歌曲
-  async addSongFromLocal(files: FileList): Promise<void> {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState || !files.length) return;
-
-    for (const file of Array.from(files)) {
-      const name = await this.showCustomPrompt("歌曲信息", "请输入歌名", "");
-      if (name === null) continue;
-      
-      const artist = await this.showCustomPrompt("歌曲信息", "请输入歌手名", "");
-      if (artist === null) continue;
-
-      musicState.playlist.push({name, artist, src: file, isLocal: true});
-    }
-
-    await this.saveGlobalPlaylist();
-    this.updatePlaylistUI();
-    
-    if (musicState.currentIndex === -1 && musicState.playlist.length > 0) {
-      musicState.currentIndex = 0;
-      this.updatePlayerUI();
-    }
-  }
-
-  // 删除曲目
-  async deleteTrack(index: number): Promise<void> {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    const audioPlayer = document.getElementById('audio-player') as HTMLAudioElement;
-    
-    if (!musicState || !audioPlayer || index < 0 || index >= musicState.playlist.length) return;
-
-    const track = musicState.playlist[index];
-    const wasPlaying = musicState.isPlaying && musicState.currentIndex === index;
-
-    // 清理本地URL
-    if (track.isLocal && audioPlayer.src.startsWith('blob:') && musicState.currentIndex === index) {
-      URL.revokeObjectURL(audioPlayer.src);
-    }
-
-    musicState.playlist.splice(index, 1);
-    await this.saveGlobalPlaylist();
-
-    if (musicState.playlist.length === 0) {
-      if (musicState.isPlaying) audioPlayer.pause();
-      audioPlayer.src = '';
-      musicState.currentIndex = -1;
-      musicState.isPlaying = false;
-    } else {
-      if (wasPlaying) {
-        this.playNext();
-      } else {
-        if (musicState.currentIndex >= index) {
-          musicState.currentIndex = Math.max(0, musicState.currentIndex - 1);
-        }
+      let url = blobURLCache.get(track.src);
+      if (!url) {
+        url = URL.createObjectURL(track.src);
+        blobURLCache.set(track.src, url);
+        activeBlobURLs.add(url);
       }
+      audioEl.src = url;
+      return true;
     }
-
-    this.updatePlayerUI();
-    this.updatePlaylistUI();
+    if (!track.isLocal && typeof track.src === 'string') {
+      audioEl.src = track.src;
+      return true;
+    }
+    console.warn('无效的歌曲源:', track);
+    return false;
   }
 
-  // 更新播放器UI
-  updatePlayerUI(): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState) return;
+  // 播放指定索引
+  playSong(index: number): void {
+    const ms = getMusicState();
+    if (!ms || !audioEl) return;
+    if (index < 0 || index >= ms.playlist.length) return;
 
-    this.updateListenTogetherIcon(musicState.activeChatId);
+    // 释放上一首 blob URL（仅在切歌且是本地 URL 时）
+    if (ms.currentIndex >= 0) revokeIfBlob(audioEl.src);
+
+    ms.currentIndex = index;
+    const track = ms.playlist[index];
+    if (!this.setAudioSource(track)) return;
+
+    // 单曲循环通过 audio.loop 控制，避免自定义 next 逻辑多处判断
+    audioEl.loop = ms.playMode === 'single';
+
+    playSafe().then((ok) => {
+      this.updateListenTogetherIcon(ms.activeChatId || null);
+      // 播放失败时也更新 UI，保持一致
+      this.updatePlayerUI();
+      this.updatePlaylistUI();
+    });
+  }
+
+  // 计算下一首（随机模式避免重复：多次抽样 + 回退）
+  private nextIndexByMode(ms: MusicState): number {
+    const len = ms.playlist.length;
+    if (len === 0) return -1;
+    if (ms.playMode === 'single') return ms.currentIndex;
+
+    if (ms.playMode === 'random') {
+      if (len === 1) return 0;
+      // 尝试最多 3 次避免重复，否则顺移
+      for (let i = 0; i < 3; i++) {
+        const r = Math.floor(Math.random() * len);
+        if (r !== ms.currentIndex) return r;
+      }
+      return (ms.currentIndex + 1) % len;
+    }
+
+    // order
+    return (ms.currentIndex + 1) % len;
+  }
+
+  playNext(): void {
+    const ms = getMusicState();
+    if (!ms || ms.playlist.length === 0) return;
+    const next = this.nextIndexByMode(ms);
+    if (next !== -1) this.playSong(next);
+  }
+
+  playPrev(): void {
+    const ms = getMusicState();
+    if (!ms || ms.playlist.length === 0) return;
+    const len = ms.playlist.length;
+    const idx = ms.currentIndex < 0 ? 0 : (ms.currentIndex - 1 + len) % len;
+    this.playSong(idx);
+  }
+
+  changePlayMode(): void {
+    const ms = getMusicState();
+    if (!ms) return;
+    const i = MODES.indexOf(ms.playMode);
+    ms.playMode = MODES[(i + 1) % MODES.length];
+    if (audioEl) audioEl.loop = ms.playMode === 'single';
+
+    const modeBtn = $id('music-mode-btn');
+    setText(modeBtn, MODE_LABEL[ms.playMode]);
+  }
+
+  async addSongFromURL(): Promise<void> {
+    const ms = getMusicState();
+    if (!ms) return;
+
+    // 并行收集输入，减少交互等待
+    const url = await this.showCustomPrompt('添加网络歌曲', '请输入歌曲的URL', '', 'url');
+    if (!url) return;
+    const [name, artist] = await Promise.all([
+      this.showCustomPrompt('歌曲信息', '请输入歌名'),
+      this.showCustomPrompt('歌曲信息', '请输入歌手名'),
+    ]);
+    if (!name || !artist) return;
+
+    await this.withUIUpdate(async () => {
+      ms.playlist.push({ name, artist, src: url, isLocal: false });
+      await this.saveGlobalPlaylist();
+      if (ms.currentIndex === -1) ms.currentIndex = ms.playlist.length - 1;
+    });
+  }
+
+  async addSongFromLocal(files: FileList): Promise<void> {
+    const ms = getMusicState();
+    if (!ms || !files.length) return;
+
+    const toAdd: Track[] = [];
+    for (const file of Array.from(files)) {
+      const [name, artist] = await Promise.all([
+        this.showCustomPrompt('歌曲信息', '请输入歌名', file.name.replace(/\.[^.]+$/, '')),
+        this.showCustomPrompt('歌曲信息', '请输入歌手名', ''),
+      ]);
+      if (!name || !artist) continue;
+      toAdd.push({ name, artist, src: file, isLocal: true, requiresReupload: false });
+    }
+    if (!toAdd.length) return;
+
+    await this.withUIUpdate(async () => {
+      ms.playlist.push(...toAdd);
+      await this.saveGlobalPlaylist();
+      if (ms.currentIndex === -1 && ms.playlist.length > 0) ms.currentIndex = 0;
+    });
+  }
+
+  async deleteTrack(index: number): Promise<void> {
+    const ms = getMusicState();
+    if (!ms || !audioEl) return;
+    if (index < 0 || index >= ms.playlist.length) return;
+
+    const track = ms.playlist[index];
+    const wasCurrent = ms.currentIndex === index;
+    const wasPlaying = ms.isPlaying && wasCurrent;
+
+    // 如当前正在播放本地 URL，释放
+    if (wasCurrent) revokeIfBlob(audioEl.src);
+
+    await this.withUIUpdate(async () => {
+      ms.playlist.splice(index, 1);
+      await this.saveGlobalPlaylist();
+
+      if (ms.playlist.length === 0) {
+        if (!audioEl.paused) audioEl.pause();
+        audioEl.src = '';
+        ms.currentIndex = -1;
+        ms.isPlaying = false;
+        return;
+      }
+
+      if (wasPlaying) {
+        ms.currentIndex = Math.min(index, ms.playlist.length - 1);
+        this.playNext();
+      } else if (ms.currentIndex >= index) {
+        ms.currentIndex = Math.max(0, ms.currentIndex - 1);
+      }
+    });
+  }
+
+  updatePlayerUI(): void {
+    const ms = getMusicState();
+    if (!ms) return;
+
+    this.updateListenTogetherIcon(ms.activeChatId);
     this.updateElapsedTimeDisplay();
 
-    const titleEl = document.getElementById('music-player-song-title');
-    const artistEl = document.getElementById('music-player-artist');
-    const playPauseBtn = document.getElementById('music-play-pause-btn');
+    const titleEl = $id('music-player-song-title');
+    const artistEl = $id('music-player-artist');
+    const playPauseBtn = $id('music-play-pause-btn');
 
-    if (titleEl && artistEl) {
-      if (musicState.currentIndex > -1 && musicState.playlist.length > 0) {
-        const track = musicState.playlist[musicState.currentIndex];
-        titleEl.textContent = track.name;
-        artistEl.textContent = track.artist;
-      } else {
-        titleEl.textContent = '请添加歌曲';
-        artistEl.textContent = '...';
-      }
+    if (ms.currentIndex > -1 && ms.playlist.length > 0) {
+      const track = ms.playlist[ms.currentIndex];
+      setText(titleEl, track.name);
+      setText(artistEl, track.artist);
+    } else {
+      setText(titleEl, '请添加歌曲');
+      setText(artistEl, '...');
     }
 
     if (playPauseBtn) {
-      playPauseBtn.textContent = musicState.isPlaying ? '❚❚' : '▶';
+      const playing = audioEl ? !audioEl.paused : ms.isPlaying;
+      playPauseBtn.textContent = playing ? '❚❚' : '▶';
     }
   }
 
-  // 更新播放时间显示
   updateElapsedTimeDisplay(): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState) return;
-
-    const timeCounter = document.getElementById('music-time-counter');
+    const ms = getMusicState();
+    if (!ms) return;
+    const timeCounter = $id('music-time-counter');
     if (timeCounter) {
-      const hours = (musicState.totalElapsedTime / 3600).toFixed(1);
-      timeCounter.textContent = `已经一起听了${hours}小时`;
+      timeCounter.textContent = `已经一起听了${formatHours(ms.totalElapsedTime)}小时`;
     }
   }
 
-  // 更新播放列表UI
+  // 列表渲染：keyed diff，避免全量重建
   updatePlaylistUI(): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    if (!musicState) return;
+    const ms = getMusicState();
+    const container = $id('playlist-body');
+    if (!ms || !container) return;
 
-    const playlistBody = document.getElementById('playlist-body');
-    if (!playlistBody) return;
+    // 一次性委托绑定
+    if (!(container as any).__delegated__) {
+      container.addEventListener('click', async (e) => {
+        const target = e.target as HTMLElement;
+        if (!target) return;
 
-    // 安全：清空播放列表
-    while (playlistBody.firstChild) {
-      playlistBody.removeChild(playlistBody.firstChild);
+        const delBtn = target.closest('.delete-track-btn') as HTMLElement | null;
+        if (delBtn?.dataset.index) {
+          e.stopPropagation();
+          const idx = Number(delBtn.dataset.index);
+          const track = ms.playlist[idx];
+          if (!track) return;
+          const c = await this.showCustomConfirm('删除歌曲', `确定要从播放列表中删除《${track.name}》吗？`);
+          if (c) this.deleteTrack(idx);
+          return;
+        }
+
+        const item = target.closest('.playlist-item') as HTMLElement | null;
+        if (item?.dataset.index) this.playSong(Number(item.dataset.index));
+      });
+      (container as any).__delegated__ = true;
     }
 
-    if (musicState.playlist.length === 0) {
-      // 安全：使用DOM构建代替innerHTML
+    // 空列表
+    if (ms.playlist.length === 0) {
+      container.textContent = '';
       const emptyP = document.createElement('p');
       emptyP.style.textAlign = 'center';
       emptyP.style.padding = '20px';
       emptyP.style.color = '#888';
       emptyP.textContent = '播放列表是空的~';
-      playlistBody.appendChild(emptyP);
+      container.appendChild(emptyP);
       return;
     }
 
-    musicState.playlist.forEach((track, index) => {
-      const item = document.createElement('div');
-      item.className = 'playlist-item';
-      if (index === musicState.currentIndex) item.classList.add('playing');
-      
-      // 安全：使用DOM构建代替innerHTML
-      const playlistItemInfo = document.createElement('div');
-      playlistItemInfo.className = 'playlist-item-info';
-      
-      const titleDiv = document.createElement('div');
-      titleDiv.className = 'title';
-      titleDiv.textContent = track.name;
-      playlistItemInfo.appendChild(titleDiv);
-      
-      const artistDiv = document.createElement('div');
-      artistDiv.className = 'artist';
-      artistDiv.textContent = track.artist;
-      playlistItemInfo.appendChild(artistDiv);
-      
-      const deleteBtn = document.createElement('span');
-      deleteBtn.className = 'delete-track-btn';
-      deleteBtn.dataset.index = index.toString();
-      deleteBtn.textContent = '×'; // 使用textContent替代innerHTML
-      
-      item.appendChild(playlistItemInfo);
-      item.appendChild(deleteBtn);
+    // keyed diff by index（稳定索引）
+    const existing = Array.from(container.querySelectorAll<HTMLElement>('.playlist-item'));
+    const used = new Set<number>();
 
-      playlistItemInfo.addEventListener('click', () => this.playSong(index));
-      deleteBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const confirmed = await this.showCustomConfirm('删除歌曲', `确定要从播放列表中删除《${track.name}》吗？`);
-        if (confirmed) this.deleteTrack(index);
-      });
+    // 更新/创建
+    const frag = document.createDocumentFragment();
+    ms.playlist.forEach((track, index) => {
+      let node = existing[index];
+      if (!node) {
+        node = document.createElement('div');
+        node.className = 'playlist-item';
+        const info = document.createElement('div');
+        info.className = 'playlist-item-info';
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'title';
+        const artistDiv = document.createElement('div');
+        artistDiv.className = 'artist';
+        info.appendChild(titleDiv);
+        info.appendChild(artistDiv);
 
-      playlistBody.appendChild(item);
+        const deleteBtn = document.createElement('span');
+        deleteBtn.className = 'delete-track-btn';
+        deleteBtn.textContent = '×';
+
+        node.appendChild(info);
+        node.appendChild(deleteBtn);
+      }
+      node.dataset.index = String(index);
+      node.classList.toggle('playing', index === ms.currentIndex);
+      (node.querySelector('.title') as HTMLElement).textContent = track.name;
+      (node.querySelector('.artist') as HTMLElement).textContent = track.artist;
+      const del = node.querySelector('.delete-track-btn') as HTMLElement;
+      del.dataset.index = String(index);
+
+      frag.appendChild(node);
+      used.add(index);
     });
+
+    // 清空并一次性插入（避免逐个 DOM 操作）
+    container.textContent = '';
+    container.appendChild(frag);
   }
 
-  // "一起听"功能 - 开始会话
   async startListenTogetherSession(chatId: string): Promise<void> {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    const state: StateManager = win.STATE;
-    
-    if (!musicState || !state?.state) return;
+    const ms = getMusicState();
+    const state = getState();
+    if (!ms || !state?.state) return;
 
     const chat = state.state.chats[chatId];
     if (!chat) return;
 
-    musicState.totalElapsedTime = chat.musicData?.totalTime || 0;
-    musicState.isActive = true;
-    musicState.activeChatId = chatId;
+    ms.totalElapsedTime = chat.musicData?.totalTime || 0;
+    ms.isActive = true;
+    ms.activeChatId = chatId;
 
-    if (musicState.playlist.length > 0) {
-      musicState.currentIndex = 0;
-    } else {
-      musicState.currentIndex = -1;
-    }
+    if (ms.currentIndex < 0 && ms.playlist.length > 0) ms.currentIndex = 0;
 
-    // 启动计时器
-    if (musicState.timerId) clearInterval(musicState.timerId);
-    musicState.timerId = window.setInterval(() => {
-      if (musicState.isPlaying) {
-        musicState.totalElapsedTime++;
+    if (ms.timerId) clearInterval(ms.timerId);
+    ms.timerId = window.setInterval(() => {
+      const playing = audioEl ? !audioEl.paused : ms.isPlaying;
+      const hidden = (ms as any).__pageHidden__ as boolean | undefined;
+      if (playing && !hidden) {
+        ms.totalElapsedTime++;
         this.updateElapsedTimeDisplay();
       }
     }, 1000);
@@ -389,149 +446,116 @@ export class MusicService {
     this.updatePlayerUI();
     this.updatePlaylistUI();
 
-    const musicPlayerOverlay = document.getElementById('music-player-overlay');
-    if (musicPlayerOverlay) {
-      musicPlayerOverlay.classList.add('visible');
-    }
+    const overlay = $id('music-player-overlay');
+    setClass(overlay, true, 'visible');
   }
 
-  // "一起听"功能 - 结束会话
   async endListenTogetherSession(saveState = true): Promise<void> {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    const state: StateManager = win.STATE;
-    const audioPlayer = document.getElementById('audio-player') as HTMLAudioElement;
-    
-    if (!musicState || !musicState.isActive) return;
+    const ms = getMusicState();
+    const state = getState();
+    if (!ms || !ms.isActive) return;
 
-    const oldChatId = musicState.activeChatId;
+    const oldChatId = ms.activeChatId;
 
-    // 清理计时器
-    if (musicState.timerId) clearInterval(musicState.timerId);
+    if (ms.timerId) clearInterval(ms.timerId);
+    if (audioEl && !audioEl.paused) audioEl.pause();
+    ms.isPlaying = false;
 
-    // 停止播放
-    if (musicState.isPlaying && audioPlayer) {
-      audioPlayer.pause();
-    }
-
-    // 保存状态到聊天记录
     if (saveState && oldChatId && state?.state.chats[oldChatId]) {
       const chat = state.state.chats[oldChatId];
       if (!chat.musicData) chat.musicData = { totalTime: 0 };
-      chat.musicData.totalTime = musicState.totalElapsedTime;
+      chat.musicData.totalTime = ms.totalElapsedTime;
       await DB.saveChat(chat);
     }
 
-    // 重置状态
-    musicState.isActive = false;
-    musicState.activeChatId = null;
-    musicState.totalElapsedTime = 0;
-    musicState.timerId = null;
+    ms.isActive = false;
+    ms.activeChatId = null;
+    ms.totalElapsedTime = 0;
+    ms.timerId = null;
 
-    // 隐藏UI
-    const musicPlayerOverlay = document.getElementById('music-player-overlay');
-    const musicPlaylistPanel = document.getElementById('music-playlist-panel');
-    
-    if (musicPlayerOverlay) {
-      musicPlayerOverlay.classList.remove('visible');
-    }
-    if (musicPlaylistPanel) {
-      musicPlaylistPanel.classList.remove('visible');
-    }
+    const overlay = $id('music-player-overlay');
+    const panel = $id('music-playlist-panel');
+    setClass(overlay, false, 'visible');
+    setClass(panel, false, 'visible');
 
     this.updateListenTogetherIcon(oldChatId, true);
   }
 
-  // 更新"一起听"图标
   updateListenTogetherIcon(chatId: string | null, forceReset = false): void {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    const iconSvg = document.querySelector('#listen-together-icon') as SVGElement;
-    
-    if (!iconSvg) return;
+    const ms = getMusicState();
+    const icon = $svg('#listen-together-icon');
+    if (!icon) return;
 
-    if (forceReset || !musicState?.isActive || musicState.activeChatId !== chatId) {
-      // 默认状态：移除所有状态类
-      iconSvg.classList.remove('rotating', 'paused');
+    if (forceReset || !ms?.isActive || ms.activeChatId !== chatId) {
+      icon.classList.remove('rotating', 'paused');
       return;
     }
+    icon.classList.add('rotating');
 
-    // 活跃状态：添加旋转动画
-    iconSvg.classList.add('rotating');
-    
-    if (musicState.isPlaying) {
-      iconSvg.classList.remove('paused');
-    } else {
-      iconSvg.classList.add('paused');
-    }
+    const playing = audioEl ? !audioEl.paused : !!ms.isPlaying;
+    icon.classList.toggle('paused', !playing);
   }
 
-  // 处理"一起听"点击
   async handleListenTogetherClick(): Promise<void> {
-    const win = window as any;
-    const state: StateManager = win.STATE;
-    const musicState: MusicState = win.STATE?.musicState;
-    
-    if (!state?.state || !musicState) return;
+    const state = getState();
+    const ms = getMusicState();
+    if (!state?.state || !ms) return;
 
     const targetChatId = state.state.activeChatId;
     if (!targetChatId) return;
 
-    if (!musicState.isActive) {
+    if (!ms.isActive) {
       this.startListenTogetherSession(targetChatId);
       return;
     }
 
-    if (musicState.activeChatId === targetChatId) {
-      const musicPlayerOverlay = document.getElementById('music-player-overlay');
-      if (musicPlayerOverlay) {
-        musicPlayerOverlay.classList.add('visible');
-      }
+    if (ms.activeChatId === targetChatId) {
+      const overlay = $id('music-player-overlay');
+      setClass(overlay, true, 'visible');
     } else {
-      const oldChatName = state.state.chats[musicState.activeChatId!]?.name || '未知';
-      const newChatName = state.state.chats[targetChatId]?.name || '当前';
-      const confirmed = await this.showCustomConfirm(
-        '切换听歌对象',
-        `您正和「${oldChatName}」听歌。要结束并开始和「${newChatName}」的新会话吗？`,
-        {confirmButtonClass: 'btn-danger'}
-      );
+      const oldName = state.state.chats[ms.activeChatId!]?.name || '未知';
+      const newName = state.state.chats[targetChatId]?.name || '当前';
+      const confirmed = await this.showCustomConfirm('切换听歌对象', `您正和「${oldName}」听歌。要结束并开始和「${newName}」的新会话吗？`, { confirmButtonClass: 'btn-danger' });
       if (confirmed) {
         await this.endListenTogetherSession(true);
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(r => setTimeout(r, 50));
         this.startListenTogetherSession(targetChatId);
       }
     }
   }
 
-  // 保存全局播放列表
-  private async saveGlobalPlaylist(): Promise<void> {
-    const win = window as any;
-    const musicState: MusicState = win.STATE?.musicState;
-    
-    if (musicState) {
-      // Phase 2: 使用DB仓库替换直接Dexie调用
-      const musicLibrary = {id: 'main', playlist: musicState.playlist};
-      await DB.saveMusicLibrary(musicLibrary);
-    }
-  }
+  // 持久化：不存 Blob 本体，仅存元数据；避免空间放大与不可序列化
+  private saveGlobalPlaylistImpl = async (): Promise<void> => {
+    const ms = getMusicState();
+    if (!ms) return;
+    const serializable = ms.playlist.map(t => {
+      if (t.isLocal && t.src instanceof Blob) {
+        const { name, artist } = t;
+        return { name, artist, isLocal: true, src: '', requiresReupload: true } as Track;
+      }
+      return t;
+    });
+    await DB.saveMusicLibrary({ playlist: serializable as any });
+  };
+  private saveGlobalPlaylist = debounce(this.saveGlobalPlaylistImpl, 250);
 
-  // 辅助函数
+  // 交互
   private showCustomPrompt(title: string, placeholder: string, initialValue = '', type = 'text'): Promise<string | null> {
     const win = window as any;
-    if (win.showCustomPrompt) {
+    if (typeof win.showCustomPrompt === 'function') {
       return win.showCustomPrompt(title, placeholder, initialValue, type);
     }
-    return Promise.resolve(prompt(title));
+    const val = prompt(`${title}\n${placeholder}`, initialValue);
+    return Promise.resolve(val);
   }
 
   private showCustomConfirm(title: string, message: string, options: ModalOptions = {}): Promise<boolean> {
     const win = window as any;
-    if (win.showCustomConfirm) {
+    if (typeof win.showCustomConfirm === 'function') {
       return win.showCustomConfirm(title, message, options);
     }
-    return Promise.resolve(confirm(message));
+    return Promise.resolve(confirm(`${title}\n${message}`));
   }
 }
 
-// 导出服务实例
 export const musicService = new MusicService();
