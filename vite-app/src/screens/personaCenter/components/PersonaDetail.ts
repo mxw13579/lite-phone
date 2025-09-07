@@ -147,7 +147,7 @@ export class PersonaDetailComponent {
   }
 
   // 切换标签页
-  switchTab(tabId: string): void {
+switchTab(tabId: 'basic' | 'prompt' | 'baseline' | 'worldBook' | 'preview'): void {
     this.state.activeTab = tabId;
     this.render();
   }
@@ -186,7 +186,13 @@ export class PersonaDetailComponent {
       
       if (!validation.isValid) {
         console.warn('saveChanges: validation failed', validation.errors);
-        this.state.validationErrors = validation.errors;
+        const errs = Array.isArray(validation.errors)
+          ? validation.errors.reduce<Record<string, string>>((acc, msg, i) => {
+              acc[`error_${i}`] = String(msg);
+              return acc;
+            }, {})
+          : validation.errors;
+        this.state.validationErrors = errs;
         this.render();
         return;
       }
@@ -216,7 +222,7 @@ export class PersonaDetailComponent {
   private async savePersona(): Promise<void> {
     if (!this.state.currentData || this.state.currentData.type !== 'persona') return;
     
-    const persona = this.state.currentData.data;
+    const persona = this.state.currentData.data as Persona;
     const isNew = !persona.id;
     
     if (isNew) {
@@ -239,7 +245,7 @@ export class PersonaDetailComponent {
       return;
     }
     
-    const userRole = this.state.currentData.data;
+    const userRole = this.state.currentData.data as UserRole;
     const isNew = !userRole.id;
     
     console.log('saveUserRole: processing user role', { isNew, userRole });
@@ -313,7 +319,7 @@ export class PersonaDetailComponent {
   // 更新世界书数据
   updateWorldBooks(worldBooks: Record<string, WorldBook>): void {
     this.currentWorldBooks = worldBooks;
-    if (this.state.activeTab === 'worldbook' || this.state.activeTab === 'preview') {
+    if (this.state.activeTab === 'worldBook' || this.state.activeTab === 'preview') {
       this.render();
     }
   }
@@ -397,7 +403,7 @@ export class PersonaDetailComponent {
         return this.renderPromptTab(item, isPersona);
       case 'baseline':
         return isPersona ? this.renderBaselineTab(item as Persona) : '';
-      case 'worldbook':
+      case 'worldBook':
         return isPersona ? this.renderWorldBookTab(item as Persona) : '';
       case 'preview':
         return this.renderPreviewTab(item, isPersona);
@@ -679,6 +685,7 @@ export class PersonaDetailComponent {
 
   private buildCreatePersonaInput(persona: Persona): CreatePersonaInput {
     return {
+      type: 'ai',
       name: persona.name,
       avatar: persona.avatar,
       tags: persona.tags,
@@ -703,6 +710,7 @@ export class PersonaDetailComponent {
 
   private buildCreateUserRoleInput(userRole: UserRole): CreateUserRoleInput {
     return {
+      type: 'user',
       name: userRole.name,
       avatar: userRole.avatar,
       tags: userRole.tags,

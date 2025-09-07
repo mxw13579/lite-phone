@@ -142,6 +142,7 @@ export class PersonaEditorScreen {
   private createDefaultPersona(): Persona {
     return {
       id: '',
+      type: 'ai',
       name: '',
       prompt: {
         definition: ''
@@ -149,17 +150,13 @@ export class PersonaEditorScreen {
       avatar: '',
       tags: [],
       archived: false,
-      published: false,
-      baselineConfig: {
-        enabled: false,
-        content: '',
-        strength: 0.5,
-        insertionPosition: 'after_scenario'
-      },
       worldBookLinks: [],
+      status: 'draft',
+      version: 1,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       lastUsedAt: Date.now(),
-      usageCount: 0
+      publishedAt: undefined
     };
   }
 
@@ -167,6 +164,7 @@ export class PersonaEditorScreen {
   private createDefaultUserRole(): UserRole {
     return {
       id: '',
+      type: 'user',
       name: '',
       prompt: {
         definition: ''
@@ -176,8 +174,8 @@ export class PersonaEditorScreen {
       archived: false,
       isGlobalDefault: false,
       createdAt: Date.now(),
-      lastUsedAt: Date.now(),
-      usageCount: 0
+      updatedAt: Date.now(),
+      lastUsedAt: Date.now()
     };
   }
 
