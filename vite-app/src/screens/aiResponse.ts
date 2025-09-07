@@ -4,6 +4,7 @@
 
 import type { Message, Chat, StateManager, DatabaseManager, ApiConfig, MusicState, Preset } from '../state';
 import DB from '../database';
+import CONSTANTS from '../constants';
 import { showApiConfigError } from '../services/errorHandling';
 import { SystemPromptService } from '../services/systemPrompt';
 
@@ -100,29 +101,29 @@ export class AiResponseModule {
     // === 系统提示生成：使用新的SystemPromptService ===
     let systemPrompt: string;
     let compositionHash: string;
-    
+
     try {
       // 使用SystemPromptService生成系统提示
       const promptResult = await this.systemPromptService.generateSystemPrompt(
-        chat, 
+        chat,
         {}, // worldBooksMap由SystemPromptService内部根据persona.worldBookLinks处理
         undefined // TODO: 记忆包集成
       );
-      
+
       systemPrompt = promptResult.systemPrompt;
       compositionHash = promptResult.compositionHash;
-      
+
       // 更新chat的compositionHash（用于版本一致性检查）
       if (chat.compositionHash !== compositionHash) {
         chat.compositionHash = compositionHash;
         await win.saveChat(chat);
       }
-      
+
       console.log('✅ 使用新的SystemPromptService生成系统提示');
-      
+
     } catch (error) {
       console.error('SystemPromptService失败，回退到原有逻辑:', error);
-      
+
       // === 原有的系统提示生成逻辑（回退方案） ===
       const activePreset = win.getActivePreset();
       const constants: Constants = win.CONSTANTS;
@@ -233,10 +234,11 @@ export class AiResponseModule {
 
       return null;
     }));
-    
+
     // 过滤空消息
     messagesPayload = messagesPayload.filter(Boolean) as Array<{role: string, content: any}>;
 
+    console.log("正在发送消息.........")
     try {
       const response = await fetch(`${proxyUrl}/v1/chat/completions`, {
         method: 'POST',
@@ -329,7 +331,7 @@ export class AiResponseModule {
 
         if (!isViewingThisChat && !notificationShown) {
           let notificationText: string;
-          const STICKER_REGEX = constants?.STICKER_REGEX || /^(https:\/\/i\.postimg\.cc\/.+|data:image)/;
+          const STICKER_REGEX = CONSTANTS?.STICKER_REGEX || /^(https:\/\/i\.postimg\.cc\/.+|data:image)/;
           if (aiMessage.type === 'transfer') notificationText = `[收到一笔转账]`;
           else if (aiMessage.type === 'ai_image') notificationText = `[图片]`;
           else if (aiMessage.type === 'voice_message') notificationText = `[语音]`;

@@ -4,39 +4,9 @@
  */
 
 // 全局类型扩展
-declare global {
-  interface Window {
-    STATE: any;
-    DB: any;
-    CONSTANTS: any;
-    getCurrentScreen(): string;
-    SCREEN_IDS: any;
-    showCustomModal: Function;
-    initBatteryManager: Function;
-    exportData: Function;
-    togglePlayPause: Function;
-    openPersonaLibrary: Function;
-    setActiveChatId: Function;
-    updateGlobalSettings: Function;
-    loadAllDataFromDB: Function;
-    navigateToChat: Function;
-    getFullState: Function;
-    db: any;
-    showScreen: Function;
-    viteAppSnapshot: any;
-    originalAppSnapshot: any;
-    executeStateComparison: Function;
-    captureOriginalSnapshot: Function;
-    captureStateSnapshot: Function;
-    exportSnapshot: Function;
-    importSnapshot: Function;
-    runValidationMatrix: Function;
-    generateComparisonReport: Function;
-    printComparisonReport: Function;
-    initializeDatabase: Function;
-  }
-}
+// 为了避免与应用中的全局声明冲突，不在此扩展 Window 类型。
 
+export {};
 // 等待两个版本的状态数据加载完成
 function waitForStates(): Promise<void> {
   return new Promise((resolve) => {
