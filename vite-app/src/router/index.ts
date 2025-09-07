@@ -1,32 +1,7 @@
-// 路由管理模块 - TypeScript版本  
-// 处理屏幕切换逻辑和页面导航
+// 路由管理模块 - 优化版 TypeScript（修复 Array.at 兼容性）
 
-// === TypeScript类型定义 ===
-export type ScreenId = 
-  | 'home-screen'
-  | 'chat-list-screen' 
-  | 'chat-interface-screen'
-  | 'api-settings-screen'
-  | 'wallpaper-screen'
-  | 'world-book-screen'
-  | 'world-book-editor-screen'
-  | 'preset-list-screen'
-  | 'preset-editor-screen'
-  | 'persona-center-screen'
-  | 'persona-editor-screen';
-
-export type RenderFunction = () => void;
-export type PostProcessFunction = (screenId: ScreenId) => void;
-export type BeforeNavigateGuard = (from: ScreenId, to: ScreenId) => boolean;
-
-export interface RouteEntry {
-  screenId: ScreenId;
-  timestamp: number;
-  params?: Record<string, any>;
-}
-
-// 屏幕ID常量
-export const SCREEN_IDS: Record<string, ScreenId> = {
+// === 常量与类型 ===
+export const SCREEN_IDS = {
   HOME: 'home-screen',
   CHAT_LIST: 'chat-list-screen',
   CHAT_INTERFACE: 'chat-interface-screen',
@@ -39,240 +14,291 @@ export const SCREEN_IDS: Record<string, ScreenId> = {
   PERSONA_CENTER: 'persona-center-screen',
   PERSONA_EDITOR: 'persona-editor-screen'
 } as const;
+export type ScreenId = typeof SCREEN_IDS[keyof typeof SCREEN_IDS];
 
-// === 路由状态管理 ===
+export type RenderFunction = () => void;
+export type PostProcessFunction = (screenId: ScreenId) => void;
+export type BeforeNavigateGuard = (from: ScreenId, to: ScreenId) => boolean;
 
-// 当前活动屏幕ID
+export interface RouteEntry {
+  screenId: ScreenId;
+  timestamp: number;
+  params?: Record<string, any>;
+}
+
+// === 内部工具 ===
+const __DEV__ = true; // 构建时可替换
+const log = {
+  info: (...a: any[]) => __DEV__ && console.log('[router]', ...a),
+  warn: (...a: any[]) => console.warn('[router]', ...a),
+  error: (...a: any[]) => console.error('[router]', ...a),
+};
+
+const getWin = () => (window as any);
+
+const isMsgEditMode = (): boolean => {
+  const w = getWin();
+  return (
+      (w.STATE && typeof w.STATE.isMessageEditMode !== 'undefined' ? w.STATE.isMessageEditMode : undefined) ??
+      (typeof w.isMessageEditMode !== 'undefined' ? w.isMessageEditMode : w.getIsMessageEditMode?.() ?? false)
+  );
+};
+
+// === 路由状态 ===
 let currentScreenId: ScreenId = SCREEN_IDS.HOME;
-
-// 导航守卫
 let beforeNavigateGuard: BeforeNavigateGuard | null = null;
 
-// 屏幕渲染代理映射
-const screenRenderMap: Partial<Record<ScreenId, RenderFunction>> = {
-  [SCREEN_IDS.HOME]: () => {},
-  [SCREEN_IDS.CHAT_LIST]: () => (window as any).renderChatListProxy?.(),
-  [SCREEN_IDS.CHAT_INTERFACE]: () => {
-    const activeChatId = (window as any).STATE?.state?.activeChatId;
-    if (activeChatId) {
-      (window as any).renderChatInterfaceProxy?.(activeChatId);
-    } else {
-      console.warn('无法渲染聊天界面：没有激活的聊天ID');
-    }
-  },
-  [SCREEN_IDS.API_SETTINGS]: () => (window as any).renderApiSettingsProxy?.(),
-  [SCREEN_IDS.WALLPAPER]: () => (window as any).renderWallpaperScreenProxy?.(),
-  [SCREEN_IDS.WORLD_BOOK]: () => (window as any).renderWorldBookScreenProxy?.(),
-  [SCREEN_IDS.WORLD_BOOK_EDITOR]: () => (window as any).renderWorldBookEditorProxy?.(),
-  [SCREEN_IDS.PRESET_LIST]: () => (window as any).renderPresetListProxy?.(),
-  [SCREEN_IDS.PRESET_EDITOR]: () => (window as any).renderPresetEditorProxy?.(),
-  [SCREEN_IDS.PERSONA_CENTER]: () => (window as any).renderPersonaCenterProxy?.(),
-  [SCREEN_IDS.PERSONA_EDITOR]: () => (window as any).renderPersonaEditorProxy?.()
-};
+// 渲染与后处理使用 Map
+const screenRenderMap = new Map<ScreenId, RenderFunction>();
+const screenPostProcessMap = new Map<ScreenId, PostProcessFunction>();
 
-// 特殊屏幕的后处理函数
-const screenPostProcessMap: Partial<Record<ScreenId, PostProcessFunction | undefined>> = {
-  [SCREEN_IDS.HOME]: undefined,
-  [SCREEN_IDS.CHAT_LIST]: undefined,
-  [SCREEN_IDS.CHAT_INTERFACE]: (screenId: ScreenId) => {
-    const state = (window as any).state;
-    if (state && (window as any).updateListenTogetherIconProxy) {
-      (window as any).updateListenTogetherIconProxy(state.activeChatId);
+// 初始化内置渲染函数
+const ensureProxy = (name: string) => getWin()[name] ?? (() => {});
+const defaultRenderers: Partial<Record<ScreenId, RenderFunction>> = {
+  [SCREEN_IDS.HOME]: () => {},
+  [SCREEN_IDS.CHAT_LIST]: () => ensureProxy('renderChatListProxy')(),
+  [SCREEN_IDS.CHAT_INTERFACE]: () => {
+    const w = getWin();
+    const activeChatId = w.STATE?.state?.activeChatId ?? w.state?.activeChatId;
+    if (activeChatId) {
+      ensureProxy('renderChatInterfaceProxy')(activeChatId);
+    } else {
+      log.warn('无法渲染聊天界面：没有激活的聊天ID');
     }
   },
-  [SCREEN_IDS.API_SETTINGS]: undefined,
-  [SCREEN_IDS.WALLPAPER]: undefined,
-  [SCREEN_IDS.WORLD_BOOK]: undefined,
-  [SCREEN_IDS.WORLD_BOOK_EDITOR]: undefined,
-  [SCREEN_IDS.PRESET_LIST]: undefined,
-  [SCREEN_IDS.PRESET_EDITOR]: undefined,
-  [SCREEN_IDS.PERSONA_CENTER]: undefined,
-  [SCREEN_IDS.PERSONA_EDITOR]: undefined
+  [SCREEN_IDS.API_SETTINGS]: () => ensureProxy('renderApiSettingsProxy')(),
+  [SCREEN_IDS.WALLPAPER]: () => ensureProxy('renderWallpaperScreenProxy')(),
+  [SCREEN_IDS.WORLD_BOOK]: () => ensureProxy('renderWorldBookScreenProxy')(),
+  [SCREEN_IDS.WORLD_BOOK_EDITOR]: () => ensureProxy('renderWorldBookEditorProxy')(),
+  [SCREEN_IDS.PRESET_LIST]: () => ensureProxy('renderPresetListProxy')(),
+  [SCREEN_IDS.PRESET_EDITOR]: () => ensureProxy('renderPresetEditorProxy')(),
+  [SCREEN_IDS.PERSONA_CENTER]: () => ensureProxy('renderPersonaCenterProxy')(),
+  [SCREEN_IDS.PERSONA_EDITOR]: () => ensureProxy('renderPersonaEditorProxy')(),
 };
+Object.entries(defaultRenderers).forEach(([k, v]) => v && screenRenderMap.set(k as ScreenId, v));
+
+const defaultPostProcess: Partial<Record<ScreenId, PostProcessFunction>> = {
+  [SCREEN_IDS.CHAT_INTERFACE]: (screenId: ScreenId) => {
+    const w = getWin();
+    const state = w.state ?? w.STATE?.state;
+    if (state?.activeChatId) {
+      ensureProxy('updateListenTogetherIconProxy')(state.activeChatId);
+    }
+  },
+};
+Object.entries(defaultPostProcess).forEach(([k, v]) => v && screenPostProcessMap.set(k as ScreenId, v));
+
+// === 屏幕元素缓存（避免每次全量查询） ===
+const screenElementCache = new Map<ScreenId, HTMLElement>();
+let activeEl: HTMLElement | null = null;
+
+export function registerScreenElement(id: ScreenId, el: HTMLElement | null): void {
+  if (!el) return;
+  screenElementCache.set(id, el);
+}
+
+function getScreenElement(id: ScreenId): HTMLElement | null {
+  const cached = screenElementCache.get(id);
+  if (cached) return cached;
+  const el = document.getElementById(id);
+  if (el) screenElementCache.set(id, el);
+  return el;
+}
+
+// 仅切换必要元素的类，提高性能
+function switchScreenDisplay(screenId: ScreenId): boolean {
+  const next = getScreenElement(screenId);
+  if (!next) {
+    log.error('屏幕切换：未找到屏幕元素', screenId);
+    return false;
+  }
+  // 防御：清理所有误置的 active，确保只有目标屏幕可见
+  document.querySelectorAll('.screen.active').forEach(el => {
+    if (el !== next) el.classList.remove('active');
+  });
+
+  if (activeEl !== next) {
+    if (activeEl) activeEl.classList.remove('active');
+    next.classList.add('active');
+    activeEl = next;
+  }
+  log.info('屏幕切换：激活屏幕', screenId);
+  return true;
+}
+
+// === 历史记录（环形缓冲区） ===
+const MAX_HISTORY = 10;
+const historyBuffer = new Array<RouteEntry>(MAX_HISTORY);
+let histSize = 0;
+let histHead = 0; // 指向下一个写入位置
+
+function pushRoute(screenId: ScreenId, params?: Record<string, any>): void {
+  const entry: RouteEntry = { screenId, timestamp: Date.now(), params };
+  historyBuffer[histHead] = entry;
+  histHead = (histHead + 1) % MAX_HISTORY;
+  if (histSize < MAX_HISTORY) histSize++;
+}
+
+function peekPrev(): RouteEntry | null {
+  if (histSize <= 1) return null;
+  const idx = (histHead - 2 + MAX_HISTORY) % MAX_HISTORY;
+  return historyBuffer[idx] || null;
+}
+
+export function getRouteHistory(): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < histSize; i++) {
+    const idx = (histHead - histSize + i + MAX_HISTORY) % MAX_HISTORY;
+    const e = historyBuffer[idx];
+    if (e) out.push(e.screenId);
+  }
+  return out;
+}
+
+export function getRouteHistoryEntries(): RouteEntry[] {
+  const out: RouteEntry[] = [];
+  for (let i = 0; i < histSize; i++) {
+    const idx = (histHead - histSize + i + MAX_HISTORY) % MAX_HISTORY;
+    const e = historyBuffer[idx];
+    if (e) out.push({ ...e });
+  }
+  return out;
+}
+
+export function clearRouteHistory(): void {
+  histSize = 0;
+  histHead = 0;
+  pushRoute(currentScreenId);
+}
+
+export function goBack(): boolean {
+  if (histSize <= 1) return false;
+  // 移除当前
+  histHead = (histHead - 1 + MAX_HISTORY) % MAX_HISTORY;
+  histSize--;
+  // 使用不含 .at 的安全回退
+  const prev = peekPrev();
+  let target: ScreenId | null = null;
+  if (prev && prev.screenId) {
+    target = prev.screenId;
+  } else {
+    const entries = getRouteHistoryEntries();
+    if (entries.length > 0) {
+      target = entries[entries.length - 1].screenId;
+    }
+  }
+  if (!target) return false;
+  // 使用强制跳转，确保返回操作总是成功
+  return showScreen(target, true);
+}
 
 // === 核心路由函数 ===
+export function showScreen(screenId: ScreenId, force: boolean = false): boolean {
+  // 早返回：相同屏幕不重复渲染和写历史（除非强制跳转）
+  if (currentScreenId === screenId && !force) {
+    log.info('忽略重复路由：', screenId);
+    return true;
+  }
 
-// 主要的屏幕切换函数
-export function showScreen(screenId: ScreenId): void {
-  // 执行导航守卫检查
   if (beforeNavigateGuard && !beforeNavigateGuard(currentScreenId, screenId)) {
-    console.log('路由守卫拦截：从', currentScreenId, '到', screenId);
-    return;
+    log.info('路由守卫拦截：从', currentScreenId, '到', screenId);
+    return false;
   }
 
-  // 处理消息编辑模式 - 从多个来源检查（与原始版本保持一致）
-  const win = window as any;
-  const isMessageEditMode = win.STATE?.isMessageEditMode || 
-                           (typeof win.isMessageEditMode !== 'undefined' ? win.isMessageEditMode : 
-                           (win.getIsMessageEditMode?.() ?? false));
-  
-  if (isMessageEditMode && screenId !== SCREEN_IDS.CHAT_INTERFACE) {
-    if (win.exitMessageEditMode) {
-      win.exitMessageEditMode(false);
-    }
+  // 退出消息编辑模式（若目标非聊天界面）
+  if (isMsgEditMode() && screenId !== SCREEN_IDS.CHAT_INTERFACE) {
+    getWin().exitMessageEditMode?.(false);
   }
 
-  // 调用对应屏幕的渲染函数
-  const renderFunction = screenRenderMap[screenId];
-  console.log(`查找屏幕渲染函数: ${screenId}`, { 
-    found: !!renderFunction, 
-    availableScreens: Object.keys(screenRenderMap),
-    screenRenderMap: screenRenderMap 
-  });
-  
-  if (renderFunction) {
+  const render = screenRenderMap.get(screenId);
+  if (render) {
     try {
-      console.log(`执行屏幕渲染函数: ${screenId}`);
-      renderFunction();
-    } catch (error) {
-      console.error(`屏幕渲染函数执行失败: ${screenId}`, error);
+      render();
+    } catch (e) {
+      log.error(`屏幕渲染函数执行失败: ${screenId}`, e);
     }
   } else {
-    console.warn(`未找到屏幕渲染函数: ${screenId}`);
+    log.warn(`未找到屏幕渲染函数: ${screenId}`);
   }
 
-  // 切换屏幕显示状态
-  switchScreenDisplay(screenId);
+  const switched = switchScreenDisplay(screenId);
+  if (!switched) return false;
 
-  // 执行屏幕特定的后处理
-  const postProcess = screenPostProcessMap[screenId];
-  if (postProcess) {
+  const post = screenPostProcessMap.get(screenId);
+  if (post) {
     try {
-      postProcess(screenId);
-    } catch (error) {
-      console.error(`屏幕后处理函数执行失败: ${screenId}`, error);
+      post(screenId);
+    } catch (e) {
+      log.error(`屏幕后处理函数执行失败: ${screenId}`, e);
     }
   }
 
-  // 记录路由历史
   pushRoute(screenId);
-
-  // 更新当前屏幕ID
   currentScreenId = screenId;
-  console.log('路由切换：当前屏幕 =', screenId);
+  log.info('路由切换：当前屏幕 =', screenId);
+  return true;
 }
 
-// 屏幕显示状态切换的核心逻辑
-function switchScreenDisplay(screenId: ScreenId): void {
-  // 移除所有屏幕的active类
-  const screens = document.querySelectorAll('.screen');
-  screens.forEach(screen => {
-    screen.classList.remove('active');
-  });
-
-  // 添加目标屏幕的active类
-  const targetScreen = document.getElementById(screenId);
-  if (targetScreen) {
-    targetScreen.classList.add('active');
-    console.log('屏幕切换：激活屏幕', screenId);
-  } else {
-    console.error('屏幕切换：未找到屏幕元素', screenId);
-  }
-}
-
-// === 路由查询函数 ===
-
-// 获取当前活动的屏幕ID
+// === 查询函数 ===
 export function getCurrentScreen(): ScreenId {
   return currentScreenId;
 }
-
-// 检查指定屏幕是否为当前活动屏幕
 export function isCurrentScreen(screenId: ScreenId): boolean {
   return currentScreenId === screenId;
 }
 
-// === 导航守卫管理 ===
-
-// 设置导航前置守卫
+// === 守卫管理 ===
 export function setBeforeNavigateGuard(guard: BeforeNavigateGuard | null): void {
   beforeNavigateGuard = guard;
-  console.log('路由守卫：设置导航守卫', guard ? '已设置' : '已清除');
+  log.info('路由守卫：', guard ? '已设置' : '已清除');
 }
-
-// 获取当前导航守卫
 export function getBeforeNavigateGuard(): BeforeNavigateGuard | null {
   return beforeNavigateGuard;
 }
 
-// === 导航函数 ===
-
-// 回到主屏幕
-export function goHome(): void {
-  showScreen(SCREEN_IDS.HOME);
+// === 导航API（保留原有别名以兼容） ===
+export function navigate(screenId: ScreenId, params?: Record<string, any>): boolean {
+  // params 目前仅保留给未来扩展，showScreen 内部 pushRoute 已处理
+  return showScreen(screenId, false) && (params ? (void 0) : true);
 }
 
-// 导航到聊天界面
+export function goHome(): void { showScreen(SCREEN_IDS.HOME); }
+
 export function navigateToChat(chatId?: string | null): void {
-  if (chatId && (window as any).setActiveChatId) {
-    (window as any).setActiveChatId(chatId);
+  const w = getWin();
+  if (chatId && w.setActiveChatId && w.state?.activeChatId !== chatId) {
+    w.setActiveChatId(chatId);
   }
   showScreen(SCREEN_IDS.CHAT_INTERFACE);
 }
+export function navigateToChatList(): void { showScreen(SCREEN_IDS.CHAT_LIST); }
+export function navigateToApiSettings(): void { showScreen(SCREEN_IDS.API_SETTINGS); }
+export function navigateToWorldBook(): void { showScreen(SCREEN_IDS.WORLD_BOOK); }
+export function navigateToWorldBookEditor(): void { showScreen(SCREEN_IDS.WORLD_BOOK_EDITOR); }
+export function navigateToPresets(): void { showScreen(SCREEN_IDS.PRESET_LIST); }
+export function navigateToPresetEditor(): void { showScreen(SCREEN_IDS.PRESET_EDITOR); }
+export function navigateToWallpaper(): void { showScreen(SCREEN_IDS.WALLPAPER); }
+export function navigateToPersonaCenter(): void { showScreen(SCREEN_IDS.PERSONA_CENTER); }
 
-// 导航到聊天列表
-export function navigateToChatList(): void {
-  showScreen(SCREEN_IDS.CHAT_LIST);
+// === 渲染/后处理注册（返回取消注册函数，便于释放） ===
+export function registerScreenRenderer(screenId: ScreenId, fn: RenderFunction): () => void {
+  screenRenderMap.set(screenId, fn);
+  log.info('路由注册：渲染', screenId);
+  return () => screenRenderMap.delete(screenId);
+}
+export function registerScreenPostProcess(screenId: ScreenId, fn: PostProcessFunction): () => void {
+  screenPostProcessMap.set(screenId, fn);
+  log.info('路由注册：后处理', screenId);
+  return () => screenPostProcessMap.delete(screenId);
 }
 
-// 导航到API设置
-export function navigateToApiSettings(): void {
-  showScreen(SCREEN_IDS.API_SETTINGS);
-}
-
-// 导航到世界书
-export function navigateToWorldBook(): void {
-  showScreen(SCREEN_IDS.WORLD_BOOK);
-}
-
-// 导航到世界书编辑器
-export function navigateToWorldBookEditor(): void {
-  showScreen(SCREEN_IDS.WORLD_BOOK_EDITOR);
-}
-
-// 导航到预设列表
-export function navigateToPresets(): void {
-  showScreen(SCREEN_IDS.PRESET_LIST);
-}
-
-// 导航到预设编辑器
-export function navigateToPresetEditor(): void {
-  showScreen(SCREEN_IDS.PRESET_EDITOR);
-}
-
-// 导航到壁纸设置
-export function navigateToWallpaper(): void {
-  showScreen(SCREEN_IDS.WALLPAPER);
-}
-
-// 导航到角色中心
-export function navigateToPersonaCenter(): void {
-  showScreen(SCREEN_IDS.PERSONA_CENTER);
-}
-
-// === 渲染函数注册系统 ===
-
-// 注册屏幕渲染函数（供屏幕模块使用）
-export function registerScreenRenderer(screenId: ScreenId, renderFunction: RenderFunction): void {
-  screenRenderMap[screenId] = renderFunction;
-  console.log('路由注册：注册屏幕渲染函数', screenId);
-}
-
-// 注册屏幕后处理函数
-export function registerScreenPostProcess(screenId: ScreenId, postProcessFunction: PostProcessFunction): void {
-  screenPostProcessMap[screenId] = postProcessFunction;
-  console.log('路由注册：注册屏幕后处理函数', screenId);
-}
-
-// 批量注册代理函数映射（用于兼容现有代码）
+// === 代理函数准备（与原实现兼容） ===
 export function setupProxyMappings(): void {
-  const win = window as any;
-  
-  // 确保全局代理函数存在
-  const proxyFunctions = [
+  const w = getWin();
+  const names = [
     'renderChatListProxy',
     'renderChatInterfaceProxy',
-    'renderApiSettingsProxy', 
+    'renderApiSettingsProxy',
     'renderWallpaperScreenProxy',
     'renderWorldBookScreenProxy',
     'renderWorldBookEditorProxy',
@@ -281,76 +307,33 @@ export function setupProxyMappings(): void {
     'renderPersonaCenterProxy',
     'updateListenTogetherIconProxy'
   ];
-
-  proxyFunctions.forEach(fnName => {
-    if (!win[fnName]) {
-      win[fnName] = () => {};
-    }
-  });
-  
-  console.log('路由初始化：代理函数映射已设置');
+  names.forEach(n => { if (!w[n]) w[n] = () => {}; });
+  log.info('路由初始化：代理函数映射已设置');
 }
 
-// === 路由历史记录系统 ===
-
-// 路由历史记录（简单实现）
-const routeHistory: RouteEntry[] = [];
-const MAX_HISTORY = 10;
-
-export function pushRoute(screenId: ScreenId, params?: Record<string, any>): void {
-  const entry: RouteEntry = {
-    screenId,
-    timestamp: Date.now(),
-    params
-  };
-  
-  routeHistory.push(entry);
-  if (routeHistory.length > MAX_HISTORY) {
-    routeHistory.shift();
-  }
-}
-
-export function goBack(): boolean {
-  if (routeHistory.length > 1) {
-    routeHistory.pop(); // 移除当前路由
-    const previousRoute = routeHistory[routeHistory.length - 1];
-    if (previousRoute) {
-      showScreen(previousRoute.screenId);
-      return true;
-    }
-  }
-  return false;
-}
-
-// 获取路由历史记录（返回screenId数组以保持兼容性）
-export function getRouteHistory(): string[] {
-  return routeHistory.map(entry => entry.screenId);
-}
-
-// 获取完整路由历史记录（包含时间戳和参数）
-export function getRouteHistoryEntries(): RouteEntry[] {
-  return [...routeHistory];
-}
-
-export function clearRouteHistory(): void {
-  routeHistory.length = 0;
-  pushRoute(currentScreenId);
-}
-
-// === 路由模块初始化 ===
-
+// === 初始化 ===
 export function initRouter(): void {
   setupProxyMappings();
-  
-  // 记录初始路由
   pushRoute(currentScreenId);
-  
-  console.log('路由模块初始化完成');
+  // 启动时尝试缓存已存在的屏幕元素（可选）
+  (Object.values(SCREEN_IDS) as ScreenId[]).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) registerScreenElement(id, el);
+  });
+  // 同步初始活动元素：index.html 默认给 home-screen 添加了 active
+  // 这里将内部 activeEl 与 DOM 对齐，并清理其他误置的 active，避免多屏并显
+  const initialEl = getScreenElement(currentScreenId);
+  if (initialEl) {
+    document.querySelectorAll('.screen.active').forEach(el => {
+      if (el !== initialEl) el.classList.remove('active');
+    });
+    initialEl.classList.add('active');
+    activeEl = initialEl;
+  }
+  log.info('路由模块初始化完成');
 }
 
-// === 向后兼容：已统一迁移到init/compat.ts ===
-
-// 默认导出
+// 默认导出保持兼容
 export default {
   SCREEN_IDS,
   showScreen,
@@ -371,10 +354,13 @@ export default {
   registerScreenRenderer,
   registerScreenPostProcess,
   setupProxyMappings,
-  pushRoute,
-  goBack,
+  // 历史API
   getRouteHistory,
   getRouteHistoryEntries,
   clearRouteHistory,
-  initRouter
+  goBack,
+  initRouter,
+  // 新增
+  navigate,
+  registerScreenElement
 };

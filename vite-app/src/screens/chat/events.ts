@@ -1,146 +1,239 @@
 // 事件处理模块 - 负责DOM事件绑定、键盘事件和用户交互处理
-// 提取自 chat.ts 的事件处理相关功能
-// Phase 4: 使用统一错误处理
+// Phase 4: 使用统一错误处理 + 可选链委托 + 事件优化
 
 import type { Message, Chat } from '../../state';
 import DB from '../../database';
 import { showError, showOperationError } from '../../services/errorHandling';
 
-// === 事件处理模块类 ===
+// —— 工具与辅助 ——
+
+// 统一获取 window 并封装外部依赖访问
+function getWin(): any {
+  return window as any;
+}
+
+// 简化事件绑定
+function on<K extends keyof HTMLElementEventMap>(
+    el: HTMLElement,
+    type: K,
+    handler: (ev: HTMLElementEventMap[K]) => void,
+    options?: boolean | AddEventListenerOptions
+): void {
+  el.addEventListener(type, handler as EventListener, options);
+}
+
+// 简化选择器
+function qs<T extends HTMLElement = HTMLElement>(id: string): T | null {
+  return document.getElementById(id) as T | null;
+}
+
+// 安全委托外部模块函数调用
+async function safeCall<F extends (...args: any[]) => any>(
+    fn: F | undefined,
+    args: Parameters<F>,
+    errMsg: string,
+    onMissing?: () => void
+): Promise<ReturnType<F> | void> {
+  if (!fn) {
+    console.error(errMsg);
+    onMissing?.();
+    return;
+  }
+  try {
+    return await fn(...args);
+  } catch (e) {
+    console.error(errMsg, e);
+    showOperationError(errMsg, e as Error);
+  }
+}
+
+// 使用 rAF 优化滚动到底部
+function deferScroll(containerId: string, delay = 50): void {
+  const exec = () => {
+    const el = qs(containerId);
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+  if ('requestAnimationFrame' in window) {
+    requestAnimationFrame(() => setTimeout(exec, delay));
+  } else {
+    setTimeout(exec, delay);
+  }
+}
+
+// —— 主模块 ——
+
 export class EventHandlerModule {
-  // 长按监听器
-  addLongPressListener(element: HTMLElement, callback: (e: Event) => void): void {
-    let pressTimer: number;
-    const startPress = (e: Event) => {
-      const win = window as any;
-      if (win.getIsSelectionMode && win.getIsSelectionMode()) return;
-      pressTimer = window.setTimeout(() => callback(e), 500);
+  // 使用 Pointer Events 优先，回退 mouse/touch。避免多事件重复与泄漏
+  addLongPressListener(
+      element: HTMLElement,
+      callback: (e: Event) => void,
+      holdMs = 500
+  ): void {
+    let timer: number | null = null;
+    let startX = 0;
+    let startY = 0;
+    const moveThreshold = 6; // 像素阈值：避免移动触发
+
+    const win = getWin();
+
+    const clear = () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
     };
-    const cancelPress = () => clearTimeout(pressTimer);
-    element.addEventListener('mousedown', startPress);
-    element.addEventListener('mouseup', cancelPress);
-    element.addEventListener('mouseleave', cancelPress);
-    element.addEventListener('touchstart', startPress, {passive: true});
-    element.addEventListener('touchend', cancelPress);
-    element.addEventListener('touchmove', cancelPress);
+
+    const start = (e: Event) => {
+      if (win.getIsSelectionMode?.()) return;
+      clear();
+
+      // 记录起点
+      const point =
+          (e as PointerEvent).clientX !== undefined
+              ? (e as PointerEvent)
+              : (e as TouchEvent).touches?.[0];
+
+      startX = point?.clientX ?? 0;
+      startY = point?.clientY ?? 0;
+
+      timer = window.setTimeout(() => {
+        callback(e);
+        clear();
+      }, holdMs);
+    };
+
+    const cancel = () => clear();
+
+    const maybeCancelByMove = (e: Event) => {
+      const pe = e as PointerEvent;
+      const te = e as TouchEvent;
+      const point =
+          pe.clientX !== undefined ? pe : te.touches?.[0] ?? te.changedTouches?.[0];
+      if (!point) return;
+      const dx = (point.clientX ?? 0) - startX;
+      const dy = (point.clientY ?? 0) - startY;
+      if (dx * dx + dy * dy > moveThreshold * moveThreshold) clear();
+    };
+
+    // Pointer 事件优先
+    if ('onpointerdown' in window) {
+      on(element, 'pointerdown', start as any, { passive: true });
+      on(element, 'pointerup', cancel as any);
+      on(element, 'pointerleave', cancel as any);
+      on(element, 'pointercancel', cancel as any);
+      on(element, 'pointermove', maybeCancelByMove as any, { passive: true });
+      return;
+    }
+
+    // 回退 mouse/touch
+    on(element, 'mousedown', start as any);
+    on(element, 'mouseup', cancel as any);
+    on(element, 'mouseleave', cancel as any);
+    on(element, 'mousemove', maybeCancelByMove as any);
+
+    on(element, 'touchstart', start as any, { passive: true });
+    on(element, 'touchend', cancel as any);
+    on(element, 'touchcancel', cancel as any);
+    on(element, 'touchmove', maybeCancelByMove as any, { passive: true });
   }
 
-  // 初始化聊天模块事件监听器
   initListeners(): void {
     this.initSendButtonListeners();
     this.initInputListeners();
   }
 
-  // 初始化发送按钮监听器
   private initSendButtonListeners(): void {
-    const sendBtn = document.getElementById('send-btn');
-    const waitReplyBtn = document.getElementById('wait-reply-btn');
-    
+    const sendBtn = qs('send-btn');
+    const waitReplyBtn = qs('wait-reply-btn');
+
     if (sendBtn) {
-      sendBtn.addEventListener('click', async () => {
+      on(sendBtn, 'click', async () => {
         await this.handleSendMessage();
       });
     }
-    
+
     if (waitReplyBtn) {
-      waitReplyBtn.addEventListener('click', () => {
+      on(waitReplyBtn, 'click', () => {
         this.triggerAiResponse();
-        setTimeout(() => {
-          const messagesContainer = document.getElementById('chat-messages');
-          if (messagesContainer) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-          }
-        }, 50);
+        deferScroll('chat-messages', 40);
       });
     }
   }
 
-  // 初始化输入框监听器
   private initInputListeners(): void {
-    const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
-    
-    if (chatInput) {
-      // 回车发送消息
-      chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          const sendBtn = document.getElementById('send-btn');
-          if (sendBtn) {
-            sendBtn.click();
-          }
-        }
-      });
-      
-      // 自动调整输入框高度
-      chatInput.addEventListener('input', () => {
+    const chatInput = qs<HTMLTextAreaElement>('chat-input');
+    if (!chatInput) return;
+
+    // 使用 keydown 代替已被弃用的 keypress
+    on(chatInput, 'keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        qs('send-btn')?.click();
+      }
+    });
+
+    // 自适应高度：仅在高度变化时设置，rAF 降低布局抖动
+    let prevHeight = chatInput.offsetHeight;
+    on(chatInput, 'input', () => {
+      const apply = () => {
         chatInput.style.height = 'auto';
-        chatInput.style.height = (chatInput.scrollHeight) + 'px';
-      });
-    }
-  }
-
-  // 处理发送消息逻辑
-  private async handleSendMessage(): Promise<void> {
-    const win = window as any;
-    
-    // 委托给消息编写模块处理
-    if (win.CHAT_MODULES?.composerModule?.handleSendMessage) {
-      return await win.CHAT_MODULES.composerModule.handleSendMessage();
-    } else {
-      console.error('消息编写模块未找到，请检查模块加载');
-    }
-  }
-
-  // AI响应触发 - 委托给专用的AI响应模块
-  private async triggerAiResponse(): Promise<void> {
-    const win = window as any;
-    console.log('事件模块：委托给AI响应模块处理');
-    
-    // 使用专用的AI响应模块处理所有逻辑
-    if (win.SCREENS?.aiResponseModule?.triggerAiResponse) {
-      return await win.SCREENS.aiResponseModule.triggerAiResponse();
-    } else {
-      console.error('AI响应模块未找到，请检查模块加载');
-      showError('AI响应功能暂时不可用，请刷新页面重试');
-    }
-  }
-
-  // 拍一拍功能处理事件绑定
-  bindPatEvent(bubble: HTMLElement, msg: Message): void {
-    bubble.addEventListener('dblclick', () => {
-      const win = window as any;
-      // 编辑模式下禁止拍一拍
-      if (win.getIsMessageEditMode && win.getIsMessageEditMode()) return;
-      
-      // 委托给事件处理模块
-      if (win.CHAT_MODULES?.eventsModule?.handlePat) {
-        win.CHAT_MODULES.eventsModule.handlePat(msg);
-      } else if (win.handlePat) {
-        win.handlePat(msg);
-      }
-    });
-  }
-
-  // 选择模式点击事件绑定
-  bindSelectionEvent(bubble: HTMLElement, timestamp: number): void {
-    bubble.addEventListener('click', () => {
-      const win = window as any;
-      if (win.getIsSelectionMode && win.getIsSelectionMode()) {
-        if (win.toggleMessageSelection) {
-          win.toggleMessageSelection(timestamp);
+        const next = chatInput.scrollHeight;
+        if (next !== prevHeight) {
+          chatInput.style.height = next + 'px';
+          prevHeight = next;
         }
+      };
+      if ('requestAnimationFrame' in window) {
+        requestAnimationFrame(apply);
+      } else {
+        apply();
       }
     });
   }
 
-  // 为消息元素绑定所有必要的事件
+  private async handleSendMessage(): Promise<void> {
+    const win = getWin();
+    await safeCall(
+        win.CHAT_MODULES?.composerModule?.handleSendMessage,
+        [],
+        '发送消息失败'
+    );
+  }
+
+  private async triggerAiResponse(): Promise<void> {
+    const win = getWin();
+    const ok = await safeCall(
+        win.SCREENS?.aiResponseModule?.triggerAiResponse,
+        [],
+        'AI响应触发失败',
+        () => showError('AI响应功能暂时不可用，请刷新页面重试')
+    );
+    return ok as any;
+  }
+
+  bindPatEvent(bubble: HTMLElement, msg: Message): void {
+    on(bubble, 'dblclick', () => {
+      const win = getWin();
+      if (win.getIsMessageEditMode?.()) return;
+      const handler =
+          win.CHAT_MODULES?.eventsModule?.handlePat ?? win.handlePat?.bind(win);
+      if (handler) handler(msg);
+    });
+  }
+
+  bindSelectionEvent(bubble: HTMLElement, timestamp: number): void {
+    on(bubble, 'click', () => {
+      const win = getWin();
+      if (!win.getIsSelectionMode?.()) return;
+      win.toggleMessageSelection?.(timestamp);
+    });
+  }
+
   bindMessageEvents(wrapper: HTMLElement, bubble: HTMLElement, msg: Message): void {
     // 长按进入选择模式
     this.addLongPressListener(bubble, () => {
-      const win = window as any;
-      if (win.enterSelectionMode) {
-        win.enterSelectionMode(msg.timestamp);
-      }
+      const win = getWin();
+      win.enterSelectionMode?.(msg.timestamp);
     });
 
     // 双击拍一拍
@@ -150,112 +243,136 @@ export class EventHandlerModule {
     this.bindSelectionEvent(bubble, msg.timestamp);
   }
 
-  // 聊天列表项事件绑定
   bindChatListItemEvents(item: HTMLElement, chat: Chat): void {
-    // 点击打开聊天
-    item.addEventListener('click', async () => {
-      const win = window as any;
-      if (win.openChat) {
-        win.openChat(chat.id);
-      }
+    on(item, 'click', () => {
+      const win = getWin();
+      win.openChat?.(chat.id);
     });
-    
+
     // 长按删除聊天
-    this.addLongPressListener(item, async (e) => {
-      const confirmed = await this.showCustomConfirm('删除对话', `确定要删除与 "${chat.name}" 的整个对话吗？此操作不可撤销。`, {confirmButtonClass: 'btn-danger'});
-      if (confirmed) {
-        try {
-          const win = window as any;
-          const state = win.STATE;
-          
-          // 检查音乐状态
-          const musicState = state.musicState;
-          if (musicState?.isActive && musicState.activeChatId === chat.id) {
-            if (win.endListenTogetherSession) {
-              await win.endListenTogetherSession(false);
-            }
-          }
-          
-          // 删除聊天
-          delete state.state.chats[chat.id];
-          if (state.state.activeChatId === chat.id) state.state.activeChatId = null;
-          await DB.deleteChat(chat.id);
-          
-          // 重新渲染列表
-          if (win.CHAT_MODULES?.renderModule?.renderChatList) {
-            win.CHAT_MODULES.renderModule.renderChatList();
-          }
-        } catch (error) {
-          console.error("删除聊天失败:", error);
-          showOperationError("删除聊天", error as Error);
+    this.addLongPressListener(item, async () => {
+      const confirmed = await this.showCustomConfirm(
+          '删除对话',
+          `确定要删除与 "${chat.name}" 的整个对话吗？此操作不可撤销。`,
+          { confirmButtonClass: 'btn-danger' }
+      );
+      if (!confirmed) return;
+
+      const win = getWin();
+      try {
+        const state = win.STATE;
+        // 停止音乐会话（若关联此聊天）
+        const musicState = state?.musicState;
+        if (musicState?.isActive && musicState.activeChatId === chat.id) {
+          await win.endListenTogetherSession?.(false);
         }
+
+        // 本地状态更新
+        const prevChat = state.state.chats[chat.id];
+        const prevActive = state.state.activeChatId;
+        delete state.state.chats[chat.id];
+        if (prevActive === chat.id) state.state.activeChatId = null;
+
+        // DB 删除
+        try {
+          await DB.deleteChat(chat.id);
+        } catch (dbErr) {
+          // 简单回滚，保证一致性
+          state.state.chats[chat.id] = prevChat;
+          state.state.activeChatId = prevActive;
+          throw dbErr;
+        }
+
+        // 重新渲染
+        win.CHAT_MODULES?.renderModule?.renderChatList?.();
+      } catch (error) {
+        console.error('删除聊天失败:', error);
+        showOperationError('删除聊天', error as Error);
       }
     });
   }
 
-  // 表情包项事件绑定
-  bindStickerItemEvents(item: HTMLElement, sticker: { id: string; url: string; name: string }): void {
-    // 点击发送表情
-    item.addEventListener('click', () => {
-      const win = window as any;
-      if (win.CHAT_MODULES?.composerModule?.sendSticker) {
-        win.CHAT_MODULES.composerModule.sendSticker(sticker);
-      }
+  bindStickerItemEvents(
+      item: HTMLElement,
+      sticker: { id: string; url: string; name: string }
+  ): void {
+    on(item, 'click', () => {
+      const win = getWin();
+      win.CHAT_MODULES?.composerModule?.sendSticker?.(sticker);
     });
-    
-    // 长按显示删除按钮
+
     this.addLongPressListener(item, () => {
-      const win = window as any;
-      if (win.getIsSelectionMode && win.getIsSelectionMode()) return;
-      
-      const existingDeleteBtn = item.querySelector('.delete-btn');
-      if (existingDeleteBtn) return;
-      
-      const deleteBtn = document.createElement('div');
+      const win = getWin();
+      if (win.getIsSelectionMode?.()) return;
+
+      if ((item as any)._hasDeleteBtn) return;
+
+      const deleteBtn = document.createElement('button');
       deleteBtn.className = 'delete-btn';
+      deleteBtn.type = 'button';
       deleteBtn.textContent = '×';
+
       deleteBtn.onclick = async (e) => {
         e.stopPropagation();
-        const confirmed = await this.showCustomConfirm('删除表情', `确定要删除表情 "${sticker.name}" 吗？`, {confirmButtonClass: 'btn-danger'});
-        if (confirmed) {
-          const state = win.STATE;
+        const confirmed = await this.showCustomConfirm(
+            '删除表情',
+            `确定要删除表情 "${sticker.name}" 吗？`,
+            { confirmButtonClass: 'btn-danger' }
+        );
+        if (!confirmed) return;
+
+        try {
+          const win2 = getWin();
+          const state = win2.STATE;
           await DB.deleteUserSticker(sticker.id);
-          state.state.userStickers = state.state.userStickers.filter((s: any) => s.id !== sticker.id);
-          
-          // 重新渲染表情面板
-          if (win.CHAT_MODULES?.composerModule?.renderStickerPanel) {
-            win.CHAT_MODULES.composerModule.renderStickerPanel();
-          }
+          state.state.userStickers = state.state.userStickers.filter(
+              (s: any) => s.id !== sticker.id
+          );
+          win2.CHAT_MODULES?.composerModule?.renderStickerPanel?.();
+        } catch (err) {
+          showOperationError('删除表情', err as Error);
         }
       };
+
+      (item as any)._hasDeleteBtn = true;
       item.appendChild(deleteBtn);
       deleteBtn.style.display = 'block';
-      setTimeout(() => item.addEventListener('mouseleave', () => deleteBtn.remove(), {once: true}), 3000);
+
+      // 3秒后若鼠标离开则移除按钮，一次性监听
+      setTimeout(() => {
+        on(
+            item,
+            'mouseleave',
+            () => {
+              deleteBtn.remove();
+              (item as any)._hasDeleteBtn = false;
+            },
+            { once: true }
+        );
+      }, 3000);
     });
   }
 
-  // 加载更多按钮事件绑定
   bindLoadMoreButtonEvents(button: HTMLElement): void {
-    button.addEventListener('click', () => {
-      const win = window as any;
-      if (win.CHAT_MODULES?.renderModule?.loadMoreMessages) {
-        win.CHAT_MODULES.renderModule.loadMoreMessages();
-      }
+    on(button, 'click', () => {
+      const win = getWin();
+      win.CHAT_MODULES?.renderModule?.loadMoreMessages?.();
     });
   }
 
-  // 辅助函数
-  private async showCustomConfirm(title: string, message: string, options: any = {}): Promise<boolean> {
-    const win = window as any;
+  private async showCustomConfirm(
+      title: string,
+      message: string,
+      options: any = {}
+  ): Promise<boolean> {
+    const win = getWin();
     if (win.showCustomConfirm) {
       return win.showCustomConfirm(title, message, options);
     }
-    return confirm(message);
+    return Promise.resolve(confirm(message));
   }
 }
 
-// === 全局单例实例 ===
+// 全局单例
 export const eventHandlerModule = new EventHandlerModule();
-
-// === 默认导出 ===
 export default eventHandlerModule;

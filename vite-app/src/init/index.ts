@@ -1,457 +1,418 @@
-// 应用初始化模块 - TypeScript版本
-// 包含所有DOM事件监听器的初始化设置
+// 应用初始化模块 - 优化版 TypeScript
+// 关键优化：
+// 1) 统一工具函数与DOM缓存，减少重复DOM查询
+// 2) 批量事件注册 + AbortController，支持销毁与重绑
+// 3) 通过 window 访问服务，降低耦合
+// 4) 早返回与可选链，增强健壮性
 
-import type { StateManager, DatabaseManager, Chat, Member, Message } from '../state';
-import DB from '../database';
+import type { StateManager, Chat, Member, Message } from '../state';
+
+type WinLike = any;
+
+function getWin(): WinLike {
+  return window as any;
+}
+
+function id<T extends HTMLElement = HTMLElement>(elId: string): T | null {
+  return document.getElementById(elId) as T | null;
+}
+
+function on(
+    el: Element | null,
+    event: string,
+    handler: EventListenerOrEventListenerObject,
+    options?: AddEventListenerOptions
+) {
+  if (el) el.addEventListener(event, handler, options);
+}
+
+function showPanel(el: HTMLElement | null) {
+  if (el) el.classList.add('visible');
+}
+
+function hidePanel(el: HTMLElement | null) {
+  if (el) el.classList.remove('visible');
+}
+
+function toggleClass(el: Element | null, className: string, enabled: boolean) {
+  if (!el) return;
+  if (enabled) el.classList.add(className);
+  else el.classList.remove(className);
+}
+
+function getActiveChatOrNull(): Chat | null {
+  const win = getWin();
+  const st: StateManager | undefined = win.STATE;
+  const chatId = st?.state?.activeChatId;
+  return chatId ? st!.state.chats[chatId] : null;
+}
 
 export class InitializationModule {
-  private selectedMessages = new Set<number>();
+  // 修正：允许字符串或数字，兼容消息id类型
+  private selectedMessages = new Set<string | number>();
   private editingMemberId: string | null = null;
+  private initialized = false;
+  private controller: AbortController | null = null;
 
-  /**
-   * 初始化应用的所有事件监听器和UI组件
-   */
+  // DOM 缓存
+  private els = {
+    // chat
+    backToListBtn: null as HTMLElement | null,
+    editMessagesBtn: null as HTMLElement | null,
+    transferBtn: null as HTMLElement | null,
+    transferModal: null as HTMLElement | null,
+    transferConfirmBtn: null as HTMLElement | null,
+    transferCancelBtn: null as HTMLElement | null,
+    openStickerBtn: null as HTMLElement | null,
+    closeStickerBtn: null as HTMLElement | null,
+    stickerPanel: null as HTMLElement | null,
+    sendPhotoBtn: null as HTMLElement | null,
+    uploadImgBtn: null as HTMLElement | null,
+    voiceMsgBtn: null as HTMLElement | null,
+    chatInterfaceScreen: null as HTMLElement | null,
+
+    // group members
+    addMemberBtn: null as HTMLElement | null,
+    saveMemberBtn: null as HTMLElement | null,
+    cancelMemberEditBtn: null as HTMLElement | null,
+    memberEditor: null as HTMLElement | null,
+    memberNameInput: null as HTMLInputElement | null,
+    memberPersonaInput: null as HTMLTextAreaElement | null,
+    memberPatSuffixInput: null as HTMLInputElement | null,
+
+    // persona library
+    openPersonaLibBtn: null as HTMLElement | null,
+    closePersonaLibBtn: null as HTMLElement | null,
+    createPersonaBtn: null as HTMLElement | null,
+    savePersonaBtn: null as HTMLElement | null,
+    cancelPersonaBtn: null as HTMLElement | null,
+
+    // music
+    musicPlayPauseBtn: null as HTMLElement | null,
+    musicNextBtn: null as HTMLElement | null,
+    musicPrevBtn: null as HTMLElement | null,
+    musicModeBtn: null as HTMLElement | null,
+    addSongUrlBtn: null as HTMLElement | null,
+    addSongFileBtn: null as HTMLElement | null,
+    backToChatBtn: null as HTMLElement | null,
+    musicPlaylistBtn: null as HTMLElement | null,
+    closePlaylistBtn: null as HTMLElement | null,
+    playlistPanel: null as HTMLElement | null,
+
+    // UI modal
+    customModalClose: null as HTMLElement | null,
+    customConfirmOk: null as HTMLElement | null,
+    customConfirmCancel: null as HTMLElement | null,
+    customPromptOk: null as HTMLElement | null,
+    customPromptCancel: null as HTMLElement | null,
+    customPromptInput: null as HTMLInputElement | null,
+  };
+
   async initializeApp(): Promise<void> {
-    const win = window as any;
-    const state: StateManager = win.STATE;
-    const db: DatabaseManager = win.DB;
-    const musicState = state?.musicState;
-    
-    // 获取默认头像常量
-    const defaultAvatar = win.CONSTANTS?.DEFAULT_AVATAR || 'https://i.postimg.cc/PxZrFFFL/o-o-1.jpg';
-    const defaultMyGroupAvatar = win.CONSTANTS?.DEFAULT_MY_GROUP_AVATAR || 'https://i.postimg.cc/cLPP10Vm/4.jpg';
-    const defaultGroupMemberAvatar = win.CONSTANTS?.DEFAULT_GROUP_MEMBER_AVATAR || 'https://i.postimg.cc/VkQfgzGJ/1.jpg';
-    const defaultGroupAvatar = win.CONSTANTS?.DEFAULT_GROUP_AVATAR || 'https://i.postimg.cc/gc3QYCDy/1-NINE7-Five.jpg';
-    
+    if (this.initialized) {
+      console.log('初始化已完成，跳过重复绑定');
+      return;
+    }
+
+    // 若之前存在控制器，先中止（防御）
+    this.controller?.abort();
+    this.controller = new AbortController();
+    const signal = this.controller.signal;
+
+    this.cacheDom();
+
     console.log('开始初始化应用事件监听器...');
-    
-    // 初始化各类事件监听器
-    this.initChatInterfaceListeners();
-    this.initGroupMemberListeners();
-    this.initPersonaLibraryListeners();
-    this.initMusicPlayerListeners();
-    this.initUIModalListeners();
-    
+    this.initChatInterfaceListeners(signal);
+    this.initGroupMemberListeners(signal);
+    this.initPersonaLibraryListeners(signal);
+    this.initMusicPlayerListeners(signal);
+    this.initUIModalListeners(signal);
+    this.initialized = true;
     console.log('应用事件监听器初始化完成');
   }
 
-  /**
-   * 聊天界面事件监听器
-   */
-  private initChatInterfaceListeners(): void {
-    const win = window as any;
-    
-    // 返回聊天列表按钮
-    document.getElementById('back-to-list-btn')?.addEventListener('click', () => {
+  // 选做增强：提供销毁能力，便于热替换/重绑定
+  public destroy(): void {
+    this.controller?.abort();
+    this.controller = null;
+    this.initialized = false;
+  }
+
+  private cacheDom() {
+    this.els.backToListBtn = id('back-to-list-btn');
+    this.els.editMessagesBtn = id('edit-messages-btn');
+    this.els.transferBtn = id('transfer-btn');
+    this.els.transferModal = id('transfer-modal');
+    this.els.transferConfirmBtn = id('transfer-confirm-btn');
+    this.els.transferCancelBtn = id('transfer-cancel-btn');
+    this.els.openStickerBtn = id('open-sticker-panel-btn');
+    this.els.closeStickerBtn = id('close-sticker-panel-btn');
+    this.els.stickerPanel = id('sticker-panel');
+    this.els.sendPhotoBtn = id('send-photo-btn');
+    this.els.uploadImgBtn = id('upload-image-btn');
+    this.els.voiceMsgBtn = id('voice-message-btn');
+    this.els.chatInterfaceScreen = id('chat-interface-screen');
+
+    this.els.addMemberBtn = id('add-member-btn');
+    this.els.saveMemberBtn = id('save-member-btn');
+    this.els.cancelMemberEditBtn = id('cancel-member-edit-btn');
+    this.els.memberEditor = id('member-editor');
+    this.els.memberNameInput = id<HTMLInputElement>('member-name-input');
+    this.els.memberPersonaInput = id<HTMLTextAreaElement>('member-persona-input');
+    this.els.memberPatSuffixInput = id<HTMLInputElement>('member-pat-suffix-input');
+
+    this.els.openPersonaLibBtn = id('open-persona-library-btn');
+    this.els.closePersonaLibBtn = id('close-persona-library-btn');
+    this.els.createPersonaBtn = id('create-persona-btn');
+    this.els.savePersonaBtn = id('save-persona-btn');
+    this.els.cancelPersonaBtn = id('cancel-persona-btn');
+
+    this.els.musicPlayPauseBtn = id('music-play-pause-btn');
+    this.els.musicNextBtn = id('music-next-btn');
+    this.els.musicPrevBtn = id('music-prev-btn');
+    this.els.musicModeBtn = id('music-mode-btn');
+    this.els.addSongUrlBtn = id('add-song-url-btn');
+    this.els.addSongFileBtn = id('add-song-file-btn');
+    this.els.backToChatBtn = id('back-to-chat-btn');
+    this.els.musicPlaylistBtn = id('music-playlist-btn');
+    this.els.closePlaylistBtn = id('close-playlist-btn');
+    this.els.playlistPanel = id('music-playlist-panel');
+
+    this.els.customModalClose = id('custom-modal-close');
+    this.els.customConfirmOk = id('custom-confirm-ok');
+    this.els.customConfirmCancel = id('custom-confirm-cancel');
+    this.els.customPromptOk = id('custom-prompt-ok');
+    this.els.customPromptCancel = id('custom-prompt-cancel');
+    this.els.customPromptInput = id<HTMLInputElement>('custom-prompt-input');
+  }
+
+  private initChatInterfaceListeners(signal: AbortSignal): void {
+    const win = getWin();
+
+    on(this.els.backToListBtn, 'click', () => {
       this.exitMessageEditMode(false);
       this.exitSelectionMode();
       win.STATE.setActiveChatId(null);
-      win.ROUTER.showScreen('chat-list-screen');
-    });
+      win.ROUTER?.showScreen?.('chat-list-screen');
+    }, { signal });
 
-    // 编辑消息按钮
-    document.getElementById('edit-messages-btn')?.addEventListener('click', () => {
-      this.toggleMessageEditMode();
-    });
+    on(this.els.editMessagesBtn, 'click', () => this.toggleMessageEditMode(), { signal });
 
-    // 发送转账按钮（打开模态框）
-    document.getElementById('transfer-btn')?.addEventListener('click', () => {
-      const transferModal = document.getElementById('transfer-modal');
-      if (transferModal) {
-        transferModal.classList.add('visible');
-      }
-    });
+    on(this.els.transferBtn, 'click', () => showPanel(this.els.transferModal), { signal });
+    on(this.els.transferConfirmBtn, 'click', () => this.sendUserTransfer(), { signal });
+    on(this.els.transferCancelBtn, 'click', () => hidePanel(this.els.transferModal), { signal });
 
-    // 表情面板打开按钮
-    document.getElementById('open-sticker-panel-btn')?.addEventListener('click', () => {
-      win.ChatModule?.renderStickerPanel();
-      const stickerPanel = document.getElementById('sticker-panel');
-      if (stickerPanel) {
-        stickerPanel.classList.add('visible');
-      }
-    });
+    on(this.els.openStickerBtn, 'click', () => {
+      win.ChatModule?.renderStickerPanel?.();
+      showPanel(this.els.stickerPanel);
+    }, { signal });
+    on(this.els.closeStickerBtn, 'click', () => hidePanel(this.els.stickerPanel), { signal });
 
-    // 表情面板关闭按钮
-    document.getElementById('close-sticker-panel-btn')?.addEventListener('click', () => {
-      const stickerPanel = document.getElementById('sticker-panel');
-      if (stickerPanel) {
-        stickerPanel.classList.remove('visible');
-      }
-    });
+    on(this.els.sendPhotoBtn, 'click', async () => {
+      const desc = await win.showCustomPrompt?.('发送照片', '请用文字描述您要发送的照片：');
+      const text = desc?.trim?.();
+      if (!text) return;
 
-    // 转账模态框确认按钮
-    document.getElementById('transfer-confirm-btn')?.addEventListener('click', () => {
-      this.sendUserTransfer();
-    });
+      const chat = getActiveChatOrNull();
+      if (!chat) return;
 
-    // 转账模态框取消按钮
-    document.getElementById('transfer-cancel-btn')?.addEventListener('click', () => {
-      const transferModal = document.getElementById('transfer-modal');
-      if (transferModal) {
-        transferModal.classList.remove('visible');
-      }
-    });
+      const msg: Message = {
+        id: `msg_${Date.now()}_${Math.random()}`,
+        role: 'user',
+        content: text,
+        type: 'user_photo',
+        sender: chat.isGroup ? (chat.settings.myGroupNickname || '我') : '我',
+        timestamp: Date.now(),
+      };
+      chat.history.push(msg);
 
-    // 发送照片按钮（文字描述照片）
-    document.getElementById('send-photo-btn')?.addEventListener('click', async () => {
-      const photoDescription = await win.showCustomPrompt('发送照片', '请用文字描述您要发送的照片：');
-      if (photoDescription && photoDescription.trim() && win.STATE?.state?.activeChatId) {
-        const state = win.STATE.state;
-        const chat = state.chats[state.activeChatId];
-        if (chat) {
-          const msg: any = {
-            id: `msg_${Date.now()}_${Math.random()}`,
-            role: 'user',
-            content: photoDescription.trim(),
-            type: 'user_photo',
-            sender: chat.isGroup ? (chat.settings.myGroupNickname || '我') : '我',
-            timestamp: Date.now()
-          };
-          
-          chat.history.push(msg);
-          await win.DB.saveChat(chat);
-          
-          if (win.ChatModule?.renderModule?.appendMessage) {
-            win.ChatModule.renderModule.appendMessage(msg, chat);
-          }
-          if (win.ChatModule?.renderModule?.renderChatList) {
-            win.ChatModule.renderModule.renderChatList();
-          }
-        }
-      }
-    });
+      await win.DB?.saveChat?.(chat);
+      win.ChatModule?.renderModule?.appendMessage?.(msg, chat);
+      win.ChatModule?.renderModule?.renderChatList?.();
+    }, { signal });
 
-    // 上传图片按钮（实际文件上传）
-    document.getElementById('upload-image-btn')?.addEventListener('click', () => {
+    on(this.els.uploadImgBtn, 'click', () => {
       win.ChatModule?.attachmentsModule?.handleImageSelect?.();
-    });
+    }, { signal });
 
-    // 发送语音按钮
-    document.getElementById('voice-message-btn')?.addEventListener('click', async () => {
-      const voiceContent = await win.showCustomPrompt('发送语音', '请输入你想说的内容：');
-      if (voiceContent && voiceContent.trim()) {
-        win.ChatModule?.playbackModule?.sendVoiceMessage?.(voiceContent.trim());
-      }
-    });
+    on(this.els.voiceMsgBtn, 'click', async () => {
+      const content = await win.showCustomPrompt?.('发送语音', '请输入你想说的内容：');
+      const text = content?.trim?.();
+      if (text) win.ChatModule?.playbackModule?.sendVoiceMessage?.(text);
+    }, { signal });
 
     console.log('聊天界面事件监听器初始化完成');
   }
 
-  /**
-   * 群聊成员管理事件监听器
-   */
-  private initGroupMemberListeners(): void {
-    const win = window as any;
-    
-    // 添加成员按钮
-    document.getElementById('add-member-btn')?.addEventListener('click', async () => {
-      const memberName = await win.showCustomPrompt('添加群成员', '请输入成员名称');
-      if (memberName && memberName.trim()) {
-        const state = win.STATE?.state;
-        const chat = state?.chats[state.activeChatId];
-        if (chat && chat.isGroup) {
-          const newMember: Member = {
-            id: `member_${Date.now()}`,
-            name: memberName.trim(),
-            persona: '一个有趣的人',
-            avatar: win.CONSTANTS?.DEFAULT_GROUP_MEMBER_AVATAR || '',
-            patSuffix: '的脑袋瓜'
-          };
-          if (!chat.members) chat.members = [];
-          chat.members.push(newMember);
-          await DB.saveChat(chat);
-          this.renderGroupMemberSettings();
-        }
-      }
-    });
+  private initGroupMemberListeners(signal: AbortSignal): void {
+    const win = getWin();
 
-    // 成员编辑保存按钮
-    document.getElementById('save-member-btn')?.addEventListener('click', async () => {
+    on(this.els.addMemberBtn, 'click', async () => {
+      const name = await win.showCustomPrompt?.('添加群成员', '请输入成员名称');
+      const memberName = name?.trim?.();
+      if (!memberName) return;
+
+      const chat = getActiveChatOrNull();
+      if (!chat || !chat.isGroup) return;
+
+      const newMember: Member = {
+        id: `member_${Date.now()}`,
+        name: memberName,
+        persona: '一个有趣的人',
+        avatar: win.CONSTANTS?.DEFAULT_GROUP_MEMBER_AVATAR || '',
+        patSuffix: '的脑袋瓜',
+      };
+      if (!chat.members) chat.members = [];
+      chat.members.push(newMember);
+
+      await win.DB?.saveChat?.(chat);
+      this.renderGroupMemberSettings();
+    }, { signal });
+
+    on(this.els.saveMemberBtn, 'click', async () => {
       await this.saveMemberChanges();
-    });
+    }, { signal });
 
-    // 成员编辑取消按钮
-    document.getElementById('cancel-member-edit-btn')?.addEventListener('click', () => {
-      this.closeMemberEditor();
-    });
+    on(this.els.cancelMemberEditBtn, 'click', () => this.closeMemberEditor(), { signal });
 
     console.log('群聊成员事件监听器初始化完成');
   }
 
-  /**
-   * 人设库事件监听器
-   */
-  private initPersonaLibraryListeners(): void {
-    const win = window as any;
-    
-    // 打开人设库按钮
-    document.getElementById('open-persona-library-btn')?.addEventListener('click', () => {
-      win.PersonaService?.openPersonaLibrary();
-    });
+  private initPersonaLibraryListeners(signal: AbortSignal): void {
+    const win = getWin();
 
-    // 关闭人设库按钮
-    document.getElementById('close-persona-library-btn')?.addEventListener('click', () => {
-      win.PersonaService?.closePersonaLibrary();
-    });
-
-    // 创建新人设按钮
-    document.getElementById('create-persona-btn')?.addEventListener('click', () => {
-      win.PersonaService?.openPersonaEditorForCreate();
-    });
-
-    // 保存人设按钮
-    document.getElementById('save-persona-btn')?.addEventListener('click', () => {
-      win.PersonaService?.savePersonaPreset();
-    });
-
-    // 取消人设编辑按钮
-    document.getElementById('cancel-persona-btn')?.addEventListener('click', () => {
-      win.PersonaService?.closePersonaEditor();
-    });
+    on(this.els.openPersonaLibBtn, 'click', () => win.PersonaService?.openPersonaLibrary?.(), { signal });
+    on(this.els.closePersonaLibBtn, 'click', () => win.PersonaService?.closePersonaLibrary?.(), { signal });
+    on(this.els.createPersonaBtn, 'click', () => win.PersonaService?.openPersonaEditorForCreate?.(), { signal });
+    on(this.els.savePersonaBtn, 'click', () => win.PersonaService?.savePersonaPreset?.(), { signal });
+    on(this.els.cancelPersonaBtn, 'click', () => win.PersonaService?.closePersonaEditor?.(), { signal });
 
     console.log('人设库事件监听器初始化完成');
   }
 
-  /**
-   * 音乐播放器事件监听器
-   */
-  private initMusicPlayerListeners(): void {
-    const win = window as any;
-    
-    // 播放/暂停按钮
-    document.getElementById('music-play-pause-btn')?.addEventListener('click', () => {
-      win.MusicService?.togglePlayPause();
-    });
+  private initMusicPlayerListeners(signal: AbortSignal): void {
+    const win = getWin();
 
-    // 下一首按钮
-    document.getElementById('music-next-btn')?.addEventListener('click', () => {
-      win.MusicService?.playNext();
-    });
+    on(this.els.musicPlayPauseBtn, 'click', () => win.MusicService?.togglePlayPause?.(), { signal });
+    on(this.els.musicNextBtn, 'click', () => win.MusicService?.playNext?.(), { signal });
+    on(this.els.musicPrevBtn, 'click', () => win.MusicService?.playPrev?.(), { signal });
+    on(this.els.musicModeBtn, 'click', () => win.MusicService?.changePlayMode?.(), { signal });
+    on(this.els.addSongUrlBtn, 'click', () => win.MusicService?.addSongFromURL?.(), { signal });
+    on(this.els.addSongFileBtn, 'click', () => win.MusicService?.addSongFromLocal?.(), { signal });
+    on(this.els.backToChatBtn, 'click', () => win.MusicService?.returnToChat?.(), { signal });
 
-    // 上一首按钮
-    document.getElementById('music-prev-btn')?.addEventListener('click', () => {
-      win.MusicService?.playPrev();
-    });
+    on(this.els.musicPlaylistBtn, 'click', () => {
+      win.MusicService?.updatePlaylistUI?.();
+      showPanel(this.els.playlistPanel);
+    }, { signal });
 
-    // 播放模式切换按钮
-    document.getElementById('music-mode-btn')?.addEventListener('click', () => {
-      win.MusicService?.changePlayMode();
-    });
-
-    // 添加URL歌曲按钮
-    document.getElementById('add-song-url-btn')?.addEventListener('click', () => {
-      win.MusicService?.addSongFromURL();
-    });
-
-    // 添加本地歌曲按钮
-    document.getElementById('add-song-file-btn')?.addEventListener('click', () => {
-      win.MusicService?.addSongFromLocal();
-    });
-
-    // 返回聊天按钮
-    document.getElementById('back-to-chat-btn')?.addEventListener('click', () => {
-      win.MusicService?.returnToChat();
-    });
-
-    // 音乐播放列表按钮
-    document.getElementById('music-playlist-btn')?.addEventListener('click', () => {
-      // 先刷新播放列表UI
-      if (win.MusicService?.updatePlaylistUI) {
-        win.MusicService.updatePlaylistUI();
-      }
-      const playlistPanel = document.getElementById('music-playlist-panel');
-      if (playlistPanel) {
-        playlistPanel.classList.add('visible');
-      }
-    });
-
-    // 关闭播放列表按钮
-    document.getElementById('close-playlist-btn')?.addEventListener('click', () => {
-      const playlistPanel = document.getElementById('music-playlist-panel');
-      if (playlistPanel) {
-        playlistPanel.classList.remove('visible');
-      }
-    });
+    on(this.els.closePlaylistBtn, 'click', () => hidePanel(this.els.playlistPanel), { signal });
 
     console.log('音乐播放器事件监听器初始化完成');
   }
 
-  /**
-   * UI模态框事件监听器
-   */
-  private initUIModalListeners(): void {
-    // 自定义模态框关闭按钮
-    document.getElementById('custom-modal-close')?.addEventListener('click', () => {
-      const modal = document.getElementById('custom-modal');
-      if (modal) {
-        modal.classList.remove('visible');
-      }
-    });
+  private initUIModalListeners(signal: AbortSignal): void {
+    const win = getWin();
 
-    // 自定义确认对话框按钮
-    document.getElementById('custom-confirm-ok')?.addEventListener('click', () => {
-      const win = window as any;
-      win._confirmResolve?.(true);
-    });
+    on(this.els.customModalClose, 'click', () => {
+      hidePanel(id('custom-modal'));
+    }, { signal });
 
-    document.getElementById('custom-confirm-cancel')?.addEventListener('click', () => {
-      const win = window as any;
-      win._confirmResolve?.(false);
-    });
+    on(this.els.customConfirmOk, 'click', () => win._confirmResolve?.(true), { signal });
+    on(this.els.customConfirmCancel, 'click', () => win._confirmResolve?.(false), { signal });
 
-    // 自定义提示输入对话框按钮
-    document.getElementById('custom-prompt-ok')?.addEventListener('click', () => {
-      const win = window as any;
-      const input = document.getElementById('custom-prompt-input') as HTMLInputElement;
-      win._promptResolve?.(input?.value || '');
-    });
+    on(this.els.customPromptOk, 'click', () => {
+      const val = this.els.customPromptInput?.value || '';
+      win._promptResolve?.(val);
+    }, { signal });
 
-    document.getElementById('custom-prompt-cancel')?.addEventListener('click', () => {
-      const win = window as any;
-      win._promptResolve?.(null);
-    });
+    on(this.els.customPromptCancel, 'click', () => win._promptResolve?.(null), { signal });
 
     console.log('UI模态框事件监听器初始化完成');
   }
 
   // ============ 辅助功能函数 ============
 
-  /**
-   * 退出消息编辑模式
-   */
   private exitMessageEditMode(shouldSave = false): void {
-    const win = window as any;
-    if (win.ChatModule?.exitMessageEditMode) {
-      win.ChatModule.exitMessageEditMode(shouldSave);
-    }
+    const win = getWin();
+    win.ChatModule?.exitMessageEditMode?.(shouldSave);
   }
 
-  /**
-   * 退出选择模式
-   */
-  /**
-   * 退出选择模式（公开方法，供外部调用）
-   */
+  // 公开：退出选择模式
   exitSelectionMode(): void {
     this.selectedMessages.clear();
-    document.getElementById('chat-interface-screen')?.classList.remove('selection-mode');
-    document.querySelectorAll('.message-bubble.selected').forEach(bubble => {
-      bubble.classList.remove('selected');
-    });
+    toggleClass(this.els.chatInterfaceScreen, 'selection-mode', false);
+    document.querySelectorAll('.message-bubble.selected').forEach(b => b.classList.remove('selected'));
   }
 
-  /**
-   * 切换消息编辑模式
-   */
   public toggleMessageEditMode(): void {
-    const win = window as any;
-    if (win.ChatModule?.toggleMessageEditMode) {
-      win.ChatModule.toggleMessageEditMode();
-    }
+    const win = getWin();
+    win.ChatModule?.toggleMessageEditMode?.();
   }
 
-  /**
-   * 发送用户转账
-   */
   public sendUserTransfer(): void {
-    const win = window as any;
-    if (win.ChatModule?.sendUserTransfer) {
-      win.ChatModule.sendUserTransfer();
-    }
+    const win = getWin();
+    win.ChatModule?.sendUserTransfer?.();
   }
 
-  /**
-   * 打开成员编辑器
-   */
   private openMemberEditor(memberId: string): void {
-    const win = window as any;
-    const state = win.STATE?.state;
-    
+    const chat = getActiveChatOrNull();
+    if (!chat?.isGroup || !chat.members) return;
+
     this.editingMemberId = memberId;
-    const chat = state?.chats[state.activeChatId];
-    if (!chat || !chat.isGroup || !chat.members) return;
-    
     const member = chat.members.find(m => m.id === memberId);
     if (!member) return;
 
-    const nameInput = document.getElementById('member-name-input') as HTMLInputElement;
-    const personaInput = document.getElementById('member-persona-input') as HTMLTextAreaElement;
-    const patSuffixInput = document.getElementById('member-pat-suffix-input') as HTMLInputElement;
+    if (this.els.memberNameInput) this.els.memberNameInput.value = member.name;
+    if (this.els.memberPersonaInput) this.els.memberPersonaInput.value = member.persona;
+    if (this.els.memberPatSuffixInput) this.els.memberPatSuffixInput.value = member.patSuffix || '';
 
-    if (nameInput) nameInput.value = member.name;
-    if (personaInput) personaInput.value = member.persona;
-    if (patSuffixInput) patSuffixInput.value = member.patSuffix || '';
-
-    const memberEditor = document.getElementById('member-editor');
-    if (memberEditor) {
-      memberEditor.classList.add('active');
-    }
+    toggleClass(this.els.memberEditor, 'active', true);
   }
 
-  /**
-   * 保存成员更改
-   */
   private async saveMemberChanges(): Promise<void> {
-    const win = window as any;
-    const state = win.STATE?.state;
-    
     if (!this.editingMemberId) return;
 
-    const chat = state?.chats[state.activeChatId];
-    if (!chat || !chat.isGroup || !chat.members) return;
+    const win = getWin();
+    const chat = getActiveChatOrNull();
+    if (!chat?.isGroup || !chat.members) return;
 
     const member = chat.members.find(m => m.id === this.editingMemberId);
     if (!member) return;
 
-    const nameInput = document.getElementById('member-name-input') as HTMLInputElement;
-    const personaInput = document.getElementById('member-persona-input') as HTMLTextAreaElement;
-    const patSuffixInput = document.getElementById('member-pat-suffix-input') as HTMLInputElement;
+    const name = this.els.memberNameInput?.value?.trim();
+    const persona = this.els.memberPersonaInput?.value?.trim();
+    const pat = this.els.memberPatSuffixInput?.value?.trim();
 
-    if (nameInput) member.name = nameInput.value.trim() || member.name;
-    if (personaInput) member.persona = personaInput.value.trim() || member.persona;
-    if (patSuffixInput) member.patSuffix = patSuffixInput.value.trim();
+    if (name) member.name = name;
+    if (persona) member.persona = persona;
+    member.patSuffix = pat || '';
 
-    await DB.saveChat(chat);
+    await win.DB?.saveChat?.(chat);
     this.renderGroupMemberSettings();
     this.closeMemberEditor();
   }
 
-  /**
-   * 关闭成员编辑器
-   */
   private closeMemberEditor(): void {
     this.editingMemberId = null;
-    const memberEditor = document.getElementById('member-editor');
-    if (memberEditor) {
-      memberEditor.classList.remove('active');
-    }
+    toggleClass(this.els.memberEditor, 'active', false);
   }
 
-  /**
-   * 渲染群成员设置
-   */
   private renderGroupMemberSettings(): void {
-    const win = window as any;
-    if (win.PersonaService?.renderGroupMemberSettings) {
-      win.PersonaService.renderGroupMemberSettings();
-    }
+    const win = getWin();
+    win.PersonaService?.renderGroupMemberSettings?.();
   }
 
-  /**
-   * 删除群成员
-   */
   private async deleteMember(memberId: string): Promise<void> {
-    const win = window as any;
-    const state = win.STATE?.state;
-    
-    const confirmed = await win.showCustomConfirm('删除成员', '确定要删除这个群成员吗？');
-    if (!confirmed) return;
+    const win = getWin();
+    const ok = await win.showCustomConfirm?.('删除成员', '确定要删除这个群成员吗？');
+    if (!ok) return;
 
-    const chat = state?.chats[state.activeChatId];
-    if (!chat || !chat.isGroup || !chat.members) return;
+    const chat = getActiveChatOrNull();
+    if (!chat?.isGroup || !chat.members) return;
 
     chat.members = chat.members.filter(m => m.id !== memberId);
-    await DB.saveChat(chat);
+    await win.DB?.saveChat?.(chat);
     this.renderGroupMemberSettings();
   }
 }
@@ -459,28 +420,21 @@ export class InitializationModule {
 // === 全局单例实例 ===
 export const initializationModule = new InitializationModule();
 
-// === 向后兼容：注入到window对象（类型声明移至init/compat.ts） ===
-
 // 注入到window对象，保持向后兼容性
 if (typeof window !== 'undefined') {
-  const win = window as any;
-  
-  // 主模块实例
+  const win = getWin();
   win.InitializationModule = initializationModule;
-  
-  // 初始化API
   win.initializeApp = () => initializationModule.initializeApp();
-  
-  // 导出UI状态管理方法，避免在main.ts中重复
   win.exitSelectionMode = () => initializationModule.exitSelectionMode();
   win.toggleMessageEditMode = () => initializationModule.toggleMessageEditMode();
   win.sendUserTransfer = () => initializationModule.sendUserTransfer();
+  // 额外暴露销毁方法，便于热替换/重绑
+  win.destroyInitialization = () => initializationModule.destroy();
 }
 
-// 默认导出
 export default {
   initializationModule,
-  InitializationModule
+  InitializationModule,
 };
 
-console.log('初始化模块(TypeScript版)已加载');
+console.log('初始化模块(TypeScript优化版)已加载');
