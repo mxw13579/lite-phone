@@ -258,7 +258,7 @@ export class AiResponseModule {
 
       const data = await response.json();
       const aiResponseContent = data.choices[0].message.content;
-      const messagesArray = this.parseAiResponse(aiResponseContent);
+    const messagesArray = AiResponseModule.parseAiResponse(aiResponseContent);
       let notificationShown = false;
       const isViewingThisChat = document.getElementById('chat-interface-screen')?.classList.contains('active') && state.state.activeChatId === chatId;
 
@@ -369,7 +369,7 @@ export class AiResponseModule {
   }
 
   // 解析AI响应内容
-  parseAiResponse(content: string): any[] {
+  static parseAiResponse(content: string): any[] {
     if (!content || typeof content !== 'string') return [content];
 
     // 策略1: 直接JSON.parse

@@ -8,6 +8,11 @@ import * as SCREENS from '../screens/index';
 import * as SERVICES from '../services/index';
 import { aiResponseModule } from '../screens/aiResponse';
 import { PersonaCenterScreen } from '../screens/personaCenter/PersonaCenterScreen';
+import type { MessageRenderModule } from '../screens/chat/render';
+import type { EventHandlerModule } from '../screens/chat/events';
+import type { MessageComposerModule } from '../screens/chat/composer';
+import type { AttachmentHandlerModule } from '../screens/chat/attachments';
+import type { VoicePlaybackModule } from '../screens/chat/playback';
 
 // 缓存常用模块，减少链式读取与重复绑定成本
 const {
@@ -120,6 +125,22 @@ export function injectCompatibilityAPIs(): void {
     openChat: (chatId: string) => chatScreenModule?.openChat?.(chatId),
   });
 
+  // 5.1) 暴露聊天子模块（统一在 compat 处注入，避免分散）
+  {
+    const cm = (SCREENS as any).chatScreenModule;
+    Object.assign(window, {
+      CHAT_MODULES: cm
+        ? {
+            renderModule: cm.renderModule,
+            eventsModule: cm.eventsModule,
+            composerModule: cm.composerModule,
+            attachmentsModule: cm.attachmentsModule,
+            playbackModule: cm.playbackModule,
+          }
+        : undefined,
+    });
+  }
+
   // 6) 屏幕与渲染代理（统一可选链，避免 NPE）
   bindToWindow('screenManager', screenManager);
   Object.assign(window, {
@@ -222,6 +243,15 @@ declare global {
     parseAiResponse: (content: string) => any;
     ChatModule: any;
     openChat: (chatId: string) => void;
+
+    // 调试：聊天子模块聚合
+    CHAT_MODULES?: {
+      renderModule: MessageRenderModule;
+      eventsModule: EventHandlerModule;
+      composerModule: MessageComposerModule;
+      attachmentsModule: AttachmentHandlerModule;
+      playbackModule: VoicePlaybackModule;
+    };
 
     // 屏幕与代理
     screenManager: any;

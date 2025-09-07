@@ -1,104 +1,181 @@
-// 角色中心类型定义
-// 定义Persona、UserRole和相关接口
+// 类型与常量优化：强约束、抽公、可扩展、提高可读性
 
-// BaselineRecord - 与记忆系统对齐
+// ========= 基础枚举与常量 =========
+export const RoleType = {
+  AI: 'ai',
+  USER: 'user',
+} as const;
+export type RoleType = typeof RoleType[keyof typeof RoleType];
+
+export const PublishStatus = {
+  DRAFT: 'draft',
+  PUBLISHED: 'published',
+} as const;
+export type PublishStatus = typeof PublishStatus[keyof typeof PublishStatus];
+
+export const ConflictStrategy = {
+  PRESERVE: 'preserve',
+  OVERRIDE: 'override',
+  REGEN_ID: 'regenId',
+} as const;
+export type ConflictStrategy = typeof ConflictStrategy[keyof typeof ConflictStrategy];
+
+export const EntityType = {
+  PERSONA: 'persona',
+  USER_ROLE: 'userRole',
+  MIXED: 'mixed',
+} as const;
+export type EntityType = typeof EntityType[keyof typeof EntityType];
+
+export const RuntimeMode = {
+  PREVIEW: 'preview',
+  SEND: 'send',
+} as const;
+export type RuntimeMode = typeof RuntimeMode[keyof typeof RuntimeMode];
+
+export const BaselineKind = {
+  PREFERENCE: 'baseline.preference',
+  SKILL: 'baseline.skill',
+  STYLE: 'baseline.style',
+  VALUE: 'baseline.value',
+  BACKGROUND: 'baseline.background',
+} as const;
+export type BaselineKind = typeof BaselineKind[keyof typeof BaselineKind];
+
+// ========= 基础工具与公共接口 =========
+type ReadonlyArrayOf<T> = readonly T[];
+
+interface Timestamped {
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt: number;
+}
+
+interface Identifiable {
+  id: string;
+  name: string;
+  avatar: string;
+  tags: ReadonlyArrayOf<string>;
+  archived: boolean;
+}
+
+type WithType<T extends RoleType> = { type: T };
+
+type OptionalRecord<K extends string, V> = {
+  [P in K]?: V;
+};
+
+// Prompt 统一与兼容字段（仅存储，UI 不展示兼容字段）
+interface BasePrompt {
+  definition?: string; // 统一字段
+  style?: string;
+}
+
+// 旧字段兼容，不在 UI 展示
+interface AIPromptCompat {
+  system?: string;
+  safety?: string;
+}
+interface UserPromptCompat {
+  persona?: string;
+}
+
+// ========= 领域模型 =========
 export interface BaselineRecord {
-  kind: 'baseline.preference' | 'baseline.skill' | 'baseline.style' | 'baseline.value' | 'baseline.background';
+  kind: BaselineKind;
   topicKey: string;
   domain?: string;
   subdomain?: string;
   value?: string;
   text?: string;
-  tags?: string[];
+  tags?: ReadonlyArrayOf<string>;
   pinned?: boolean;
   order?: number;
 }
 
-// WorldBookLink - WorldBook关联配置
 export interface WorldBookLink {
   worldBookId: string;
   enabled: boolean;
   order: number;
 }
 
-// Persona - AI角色定义
-export interface Persona {
-  id: string;
-  name: string;
-  avatar: string;
-  type: 'ai';
-  tags: string[];
-  prompt: {
-    // 统一为“角色设定”，兼容旧字段
-    definition?: string;
-    // 兼容字段（读取时作回退，不在UI中展示）
-    system?: string;
-    style?: string;
-    safety?: string;
-  };
-  baseline?: BaselineRecord[];
-  worldBookLinks: WorldBookLink[];
-  status: 'draft' | 'published';
+// Persona
+export interface Persona
+    extends Identifiable,
+        Timestamped,
+        WithType<typeof RoleType.AI> {
+  prompt: BasePrompt & AIPromptCompat;
+  baseline?: ReadonlyArrayOf<BaselineRecord>;
+  worldBookLinks: ReadonlyArrayOf<WorldBookLink>;
+  status: PublishStatus;
   version: number;
-  archived: boolean;
-  createdAt: number;
-  updatedAt: number;
-  lastUsedAt: number;
   publishedAt?: number;
 }
 
-// UserRole - 用户扮演角色定义
-export interface UserRole {
-  id: string;
-  name: string;
-  avatar: string;
-  type: 'user';
-  tags: string[];
-  prompt: {
-    // 统一为“角色设定”，兼容旧字段
-    definition?: string;
-    // 兼容字段（读取时作回退，不在UI中展示）
-    persona?: string;
-    style?: string;
-  };
-  archived: boolean;
+// UserRole
+export interface UserRole
+    extends Identifiable,
+        Timestamped,
+        WithType<typeof RoleType.USER> {
+  prompt: BasePrompt & UserPromptCompat;
   isGlobalDefault: boolean;
-  createdAt: number;
-  updatedAt: number;
-  lastUsedAt: number;
 }
 
-// 创建Persona的输入类型
-export type CreatePersonaInput = Omit<Persona, 'id' | 'createdAt' | 'updatedAt' | 'lastUsedAt' | 'publishedAt' | 'version'> & {
+// ========= 输入类型工厂（避免重复 Omit/Partial） =========
+type CreateInput<T, K extends keyof T = never> = Omit<T, 'id' | 'createdAt' | 'updatedAt' | 'lastUsedAt' | K> &
+    OptionalRecord<'id', string>; // 允许外部自带 id（可选）
+
+type UpdateInput<T> = Partial<Omit<T, 'id' | 'createdAt'>>;
+
+export type CreatePersonaInput = Omit<
+    CreateInput<Persona, 'publishedAt' | 'version'>,
+    'type'
+> & {
+  type?: typeof RoleType.AI;
   version?: number;
 };
 
-// 更新Persona的输入类型
-export type UpdatePersonaInput = Partial<Omit<Persona, 'id' | 'createdAt'>>;
+export type UpdatePersonaInput = UpdateInput<Persona>;
 
-// 创建UserRole的输入类型
-export type CreateUserRoleInput = Omit<UserRole, 'id' | 'createdAt' | 'updatedAt' | 'lastUsedAt'>;
+export type CreateUserRoleInput = Omit<CreateInput<UserRole>, 'type'> & {
+  type?: typeof RoleType.USER;
+};
 
-// 更新UserRole的输入类型
-export type UpdateUserRoleInput = Partial<Omit<UserRole, 'id' | 'createdAt'>>;
+export type UpdateUserRoleInput = UpdateInput<UserRole>;
 
-// 筛选选项
+// ========= 筛选 / 搜索 =========
 export interface FilterOptions {
-  type?: 'ai' | 'user' | 'all';
-  tags?: string[];
+  type?: RoleType | 'all';
+  status?: PublishStatus | 'all';
+  archived?: boolean;
+  tags?: ReadonlyArrayOf<string>;
 }
 
-// 搜索选项
+// 键路径工具：从对象类型安全推导可搜索字段
+type DotPath<T, Prev extends string = ''> = {
+  [K in keyof T & string]:
+  T[K] extends string | ReadonlyArrayOf<string>
+      ? `${Prev}${K}`
+      : T[K] extends object
+          ? DotPath<T[K], `${Prev}${K}.`>
+          : never;
+}[keyof T & string];
+
+// 允许搜索 Persona/UserRole 公共字段以及 AI 兼容 Prompt 字段
+type CommonSearchable = 'name' | 'tags';
+type AIPromptSearchable = DotPath<AIPromptCompat | BasePrompt>;
+export type SearchField = CommonSearchable | Extract<AIPromptSearchable, 'prompt.system' | 'prompt.style' | 'prompt.safety' | 'prompt.definition'>;
+
 export interface SearchOptions {
   term: string;
-  fields?: ('name' | 'tags' | 'prompt.system' | 'prompt.style' | 'prompt.safety')[];
+  fields?: ReadonlyArrayOf<SearchField>;
   filters?: FilterOptions;
 }
 
-// 导入导出相关类型
+// ========= 导入导出 =========
 export interface ImportExportMeta {
   schemaVersion: number;
-  entityType: 'persona' | 'userRole' | 'mixed';
+  entityType: EntityType;
   exportedAt: number;
   sourceApp: string;
   appVersion: string;
@@ -106,47 +183,58 @@ export interface ImportExportMeta {
 
 export interface PersonaExportData {
   meta: ImportExportMeta;
-  personas?: Persona[];
-  userRoles?: UserRole[];
+  personas?: ReadonlyArrayOf<Persona>;
+  userRoles?: ReadonlyArrayOf<UserRole>;
 }
 
-// 冲突处理策略
-export type ConflictStrategy = 'preserve' | 'override' | 'regenId';
+export interface ImportResultSummary {
+  personas: number;
+  userRoles: number;
+}
+
+export const ImportErrorCode = {
+  INVALID_SCHEMA: 'INVALID_SCHEMA',
+  DUPLICATE_ID: 'DUPLICATE_ID',
+  CONFLICT: 'CONFLICT',
+  UNKNOWN: 'UNKNOWN',
+} as const;
+export type ImportErrorCode = typeof ImportErrorCode[keyof typeof ImportErrorCode];
+
+export interface ImportError {
+  code: ImportErrorCode;
+  message: string;
+  entityId?: string;
+}
 
 export interface ImportResult {
   success: boolean;
-  imported: {
-    personas: number;
-    userRoles: number;
-  };
-  skipped: {
-    personas: number;
-    userRoles: number;
-  };
-  errors: string[];
+  imported: ImportResultSummary;
+  skipped: ImportResultSummary;
+  errors: ReadonlyArrayOf<ImportError>;
 }
 
-// 合成配置
+// ========= 合成配置 =========
 export interface CompositionConfig {
   separator: string;
   showSectionTitles: boolean;
   includeWorldBookTitles: boolean;
   previewIncludeMemory: boolean;
   memoryTokenBudget: number;
-  runtimeMode: 'preview' | 'send';
+  runtimeMode: RuntimeMode;
 }
 
-// 默认配置常量
-export const DEFAULT_COMPOSITION_CONFIG: CompositionConfig = {
+export const DEFAULT_COMPOSITION_CONFIG: Readonly<CompositionConfig> = Object.freeze({
   separator: '----',
   showSectionTitles: true,
   includeWorldBookTitles: true,
   previewIncludeMemory: false,
   memoryTokenBudget: 600,
-  runtimeMode: 'preview'
-};
+  runtimeMode: RuntimeMode.PREVIEW,
+});
 
-// Persona Center 屏幕状态
+// ========= UI 状态 =========
+export type PersonaCenterMenu = 'overview' | 'ai' | 'user' | 'worldbook' | 'import' | 'settings';
+
 export interface PersonaCenterState {
   loading: boolean;
   error: string | null;
@@ -155,5 +243,5 @@ export interface PersonaCenterState {
   viewMode: 'list' | 'detail';
   searchTerm: string;
   filterOptions: FilterOptions;
-  activeMenu?: 'overview' | 'ai' | 'user' | 'worldbook' | 'import' | 'settings';
+  activeMenu?: PersonaCenterMenu;
 }

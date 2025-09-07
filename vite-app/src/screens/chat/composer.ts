@@ -1,11 +1,11 @@
-﻿// 娑堟伅缂栧啓妯″潡 - 璐熻矗鏂囨湰娑堟伅鍙戦€併€佸懡浠よВ鏋愩€丄I鍥炲瑙﹀彂鍜岀兢鑱婇€昏緫
-// Phase 2+4: 浣跨敤DB浠撳簱璁块棶 + 缁熶竴閿欒澶勭悊
+﻿// 消息编写模块 - 负责文本消息发送、指令解析、AI回复触发与群聊交互
+// Phase 2+4: 使用DB仓库访问 + 统一错误处理
 
 import type { Chat, Message, GlobalSettings, ApiConfig, Preset } from '../../state';
 import DB from '../../database';
 import { showError, showValidationError } from '../../services/errorHandling';
 
-// === 绫诲瀷瀹氫箟 ===
+// === 类型定义 ===
 interface StateManager {
   state: {
     chats: Record<string, Chat>;
@@ -57,7 +57,7 @@ type WinType = (Window & typeof globalThis) & {
   showCustomAlert?: (title: string, msg: string) => void;
 };
 
-// === 甯搁噺/宸ュ叿 ===
+// === 常量/工具 ===
 const SEL = {
   chatInput: '#chat-input',
   stickerGrid: '#sticker-grid',
@@ -90,7 +90,7 @@ function genIdNow() {
   return { id: String(now), timestamp: now };
 }
 
-// 缁熶竴鑾峰彇 State/DB/娓叉煋妯″潡锛岄伩鍏嶆瘡澶勯噸澶嶅垽绌?
+// 统一获取 State/DB/渲染模块，避免每次重复判空
 function getWinStateDb() {
   const win = getWin();
   const state = win.STATE;
@@ -104,10 +104,10 @@ function getActiveChatOrNull(state?: StateManager): Chat | null {
   return state.state.chats[state.state.activeChatId] || null;
 }
 
-// 缁熶竴杩藉姞娑堟伅銆佷繚瀛樸€佸埛鏂癠I
+// 统一追加消息、保存、刷新UI
 async function appendAndPersist(chat: Chat, msg: Message, opts?: { refreshList?: boolean; appendOnly?: boolean }) {
   chat.history.push(msg);
-  // Phase 2: 缁熶竴 DB 浠撳簱璋冪敤
+  // Phase 2: 统一 DB 仓库调用
   await DB.saveChat(chat);
   const { win } = getWinStateDb();
   const render = win.CHAT_MODULES?.renderModule;
@@ -127,9 +127,9 @@ function isContentEditableCandidate(bubble: Element): boolean {
   return !list.some(c => bubble.classList.contains(c));
 }
 
-// === 妯″潡 ===
+// === 模块 ===
 export class MessageComposerModule {
-  // 鍙戦€佹枃鏈秷鎭?
+  // 发送文本消息
   async handleSendMessage(): Promise<void> {
     const { state } = getWinStateDb();
     const chatInput = qs<HTMLTextAreaElement>(SEL.chatInput);
@@ -150,13 +150,13 @@ export class MessageComposerModule {
 
     await appendAndPersist(chat, msg);
 
-    // 閲嶇疆杈撳叆妗?
+    // 重置输入框
     chatInput.value = '';
     chatInput.style.height = 'auto';
     chatInput.focus();
   }
 
-  // 鎷嶄竴鎷?
+  // 拍一拍
   async handlePat(msg: Message): Promise<void> {
     const { win, state } = getWinStateDb();
     if (win.getIsSelectionMode?.() || !state) return;
@@ -165,7 +165,7 @@ export class MessageComposerModule {
     if (!chat) return;
 
     const myName = chat.isGroup ? (chat.settings.myGroupNickname || '我') : '我';
-    let patteeName = '鑷繁';
+    let patteeName = '自己';
     let patteeSuffix = '';
 
     if (msg.role === 'assistant') {
@@ -178,10 +178,10 @@ export class MessageComposerModule {
         patteeSuffix = chat.settings.aiPatSuffix || '';
       }
     } else if (chat.isGroup && chat.settings.myGroupNickname === msg.senderName) {
-      patteeName = '鑷繁';
+      patteeName = '自己';
     }
 
-    const content = `${myName}鎷嶄簡鎷?{patteeName}${patteeSuffix || ''}`;
+    const content = `${myName}拍了拍${patteeName}${patteeSuffix || ''}`;
     const meta = genIdNow();
 
     const patMessage: Message = {
@@ -195,18 +195,18 @@ export class MessageComposerModule {
 
     await appendAndPersist(chat, patMessage, { refreshList: false });
 
-    // 灞€閮?append 宸插湪 appendAndPersist 鎵ц
+    // 注：append 已在 appendAndPersist 执行
   }
 
-  // AI 鍝嶅簲瑙ｆ瀽
+  // AI 响应解析
   parseAiResponse(content: string): string[] {
-    // 浼樺厛 JSON 鏁扮粍
+    // 优先 JSON 数组
     try {
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) return parsed;
     } catch (_) {}
 
-    // 瀹芥澗鍖归厤棣栦釜涓嫭鍙?JSON
+    // 局部匹配第一个中括号JSON
     const match = content.match(/\[[\s\S]*?\]/);
     if (match) {
       try {
@@ -215,7 +215,7 @@ export class MessageComposerModule {
       } catch (_) {}
     }
 
-    // 鎸夎鎷嗗垎锛岃繃婊や唬鐮佸潡鏍囪
+    // 按行切分，过滤代码块标记
     const lines = content
         .split('\n')
         .map(l => l.trim())
@@ -223,7 +223,7 @@ export class MessageComposerModule {
     return lines.length ? lines : [content];
   }
 
-  // 濮旀墭 AI 鍝嶅簲
+  // 触发 AI 响应
   async triggerAiResponse(): Promise<void> {
     const { win } = getWinStateDb();
     const mod = win.SCREENS?.aiResponseModule;
@@ -231,11 +231,11 @@ export class MessageComposerModule {
       await mod.triggerAiResponse();
       return;
     }
-    console.error('AI鍝嶅簲妯″潡鏈壘鍒帮紝璇锋鏌ユā鍧楀姞杞?);
-    showError('AI鍝嶅簲鍔熻兘鏆傛椂涓嶅彲鐢紝璇峰埛鏂伴〉闈㈤噸璇?);
+    console.error('AI响应模块未找到，请检查模块加载');
+    showError('AI响应功能暂时不可用，请刷新页面重试');
   }
 
-  // 娓叉煋琛ㄦ儏鍖呴潰鏉?
+  // 渲染表情面板
   renderStickerPanel(): void {
     const { win, state } = getWinStateDb();
     if (!state) return;
@@ -243,7 +243,7 @@ export class MessageComposerModule {
     const grid = qs<HTMLDivElement>(SEL.stickerGrid);
     if (!grid) return;
 
-    // 鎬ц兘锛氫竴娆℃€ф竻绌?
+    // 性能：一次性清空
     grid.textContent = '';
 
     if (state.state.userStickers.length === 0) {
@@ -251,12 +251,12 @@ export class MessageComposerModule {
       emptyMsg.style.textAlign = 'center';
       emptyMsg.style.color = 'var(--text-secondary)';
       emptyMsg.style.gridColumn = '1 / -1';
-      emptyMsg.textContent = '澶т汉璇风偣鍑诲彸涓婅"娣诲姞"鎴?涓婁紶"鏉ユ坊鍔犱綘鐨勭涓€涓〃鎯呭惂锛?;
+      emptyMsg.textContent = '达人请点击右上角“添加”或“上传”来添加你的第一个表情哦！';
       grid.appendChild(emptyMsg);
       return;
     }
 
-    // 鎬ц兘锛氫娇鐢?DocumentFragment 鎵归噺鎻掑叆
+    // 性能：使用DocumentFragment批量插入
     const frag = document.createDocumentFragment();
     for (const sticker of state.state.userStickers) {
       const item = document.createElement('div');
@@ -270,7 +270,7 @@ export class MessageComposerModule {
     grid.appendChild(frag);
   }
 
-  // 鍙戦€佽〃鎯?
+  // 发送表情
   async sendSticker(sticker: { id: string; url: string; name: string }): Promise<void> {
     const { state } = getWinStateDb();
     const chat = getActiveChatOrNull(state);
@@ -292,7 +292,7 @@ export class MessageComposerModule {
     stickerPanel?.classList.remove(CLASS.visible);
   }
 
-  // 鍙戦€佺敤鎴疯浆璐?
+  // 发送用户转账
   async sendUserTransfer(): Promise<void> {
     const { state } = getWinStateDb();
     const chat = getActiveChatOrNull(state);
@@ -306,12 +306,12 @@ export class MessageComposerModule {
     const note = noteInput.value.trim();
 
     if (Number.isNaN(amount) || amount < 0 || amount > 9999) {
-      showValidationError('璇疯緭鍏ユ湁鏁堢殑閲戦 (0 鍒?9999 涔嬮棿)');
+      showValidationError('请输入有效的金额 (0 到 9999 之间)');
       return;
     }
 
     const senderName = chat.isGroup ? (chat.settings.myGroupNickname || '我') : '我';
-    const receiverName = chat.isGroup ? '缇よ亰' : chat.name;
+    const receiverName = chat.isGroup ? '群聊' : chat.name;
     const meta = genIdNow();
 
     const msg: Message = {
@@ -334,7 +334,7 @@ export class MessageComposerModule {
     noteInput.value = '';
   }
 
-  // 閫€鍑虹紪杈戞ā寮?
+  // 退出编辑模式
   async exitMessageEditMode(shouldSave = false): Promise<void> {
     const { win, state } = getWinStateDb();
     if (!win.getIsMessageEditMode?.()) return;
@@ -342,15 +342,15 @@ export class MessageComposerModule {
     const img = qs<HTMLImageElement>(SEL.editBtnImg);
     if (img) {
       img.src = 'https://i.postimg.cc/V60TWbGr/image.png';
-      img.alt = '缂栬緫';
+      img.alt = '编辑';
     }
     const btn = qs<HTMLElement>(SEL.editBtn);
-    if (btn) btn.title = '缂栬緫娑堟伅';
+    if (btn) btn.title = '编辑消息';
 
     let changesMade = false;
     const chat = getActiveChatOrNull(state);
     if (shouldSave && chat) {
-      // 鎬ц兘锛氫竴娆℃€ф姄鍙栨墍鏈夊彲缂栬緫鍏冪礌
+      // 性能：一次性批量遍历所有可编辑元素
       const nodes = qsAll<HTMLElement>(SEL.editableMessageContents);
       nodes.forEach(contentEl => {
         const bubble = contentEl.closest('.message-bubble') as HTMLElement | null;
@@ -365,11 +365,11 @@ export class MessageComposerModule {
       });
       if (changesMade) {
         await DB.saveChat(chat);
-        win.showCustomAlert?.('淇濆瓨鎴愬姛', '娑堟伅宸叉洿鏂般€?);
+        win.showCustomAlert?.('保存成功', '消息已更新。');
       }
     }
 
-    // 鍏抽棴鍙紪杈戠姸鎬?
+    // 关闭可编辑状态
     qsAll<HTMLElement>(SEL.editableMessageContents).forEach(el => {
       el.contentEditable = 'false';
       el.classList.remove(CLASS.editable);
@@ -378,7 +378,7 @@ export class MessageComposerModule {
     win.setIsMessageEditMode?.(false);
   }
 
-  // 杩涘叆缂栬緫妯″紡
+  // 进入编辑模式
   enterMessageEditMode(): void {
     const { win } = getWinStateDb();
     if (win.getIsMessageEditMode?.()) return;
@@ -386,12 +386,12 @@ export class MessageComposerModule {
     const img = qs<HTMLImageElement>(SEL.editBtnImg);
     if (img) {
       img.src = 'https://i.postimg.cc/GtrQTBZ1/image.png';
-      img.alt = '淇濆瓨';
+      img.alt = '保存';
     }
     const btn = qs<HTMLElement>(SEL.editBtn);
-    if (btn) btn.title = '淇濆瓨缂栬緫';
+    if (btn) btn.title = '保存编辑';
 
-    // 浠呭鏂囨湰绫绘皵娉″紑鍚紪杈?
+    // 只对文本类气泡开启编辑
     qsAll<Element>(SEL.allEditableCandidateContents).forEach(contentEl => {
       const bubble = contentEl.closest('.message-bubble');
       if (bubble && isContentEditableCandidate(bubble)) {
@@ -401,7 +401,7 @@ export class MessageComposerModule {
     });
 
     win.setIsMessageEditMode?.(true);
-    win.showCustomAlert?.('杩涘叆缂栬緫妯″紡', '鎮ㄧ幇鍦ㄥ彲浠ョ偣鍑绘秷鎭皵娉℃潵缂栬緫鍏跺唴瀹广€傚畬鎴愬悗锛岃鍐嶆鐐瑰嚮"淇濆瓨"鎸夐挳銆?);
+    win.showCustomAlert?.('进入编辑模式', '您现在可以点击编辑按钮来编辑其内容。完成后，请再次点击“保存”按钮。');
   }
 
   async toggleMessageEditMode(): Promise<void> {
@@ -416,16 +416,6 @@ export class MessageComposerModule {
   }
 }
 
-// === 鍗曚緥 ===
+// === 单例 ===
 export const messageComposerModule = new MessageComposerModule();
 export default messageComposerModule;
-
-
-
-
-
-
-
-
-
-
