@@ -1,16 +1,20 @@
-// 数据管理服务 - 数据统计、备份导出、导入还原
-// 从services/index.ts中提取的DataService类
-// Repository化改造：使用统一的数据库访问层
-
-import type { Chat, MusicLibrary, PersonaPreset, UserSticker } from '../state';
+// 数据管理服务 - 数据统计、备份导出、导入还原（修复 MusicLibrary.id 字面量类型）
+import type {
+  Chat,
+  MusicLibrary,
+  PersonaPreset,
+  UserSticker,
+  Track,
+  ApiConfig,
+  GlobalSettings,
+  WorldBook,
+} from '../state';
 import DB from '../database';
 
-// === 类型定义 ===
 interface ModalOptions {
   confirmText?: string;
   confirmButtonClass?: string;
 }
-
 interface DataStats {
   chats: number;
   userStickers: number;
@@ -19,250 +23,263 @@ interface DataStats {
   totalMessages: number;
   dataSize: number;
 }
+type BackupData = {
+  chats: Chat[];
+  apiConfig: ApiConfig;
+  globalSettings: GlobalSettings;
+  userStickers: UserSticker[];
+  worldBooks: WorldBook[];
+  musicLibrary?: MusicLibrary;
+  personaPresets: PersonaPreset[];
+};
 
-interface Track {
-  name: string;
-  artist: string;
-  src: string | Blob;
-  isLocal: boolean;
-  requiresReupload?: boolean;
+const DEFAULT_WALLPAPER = 'linear-gradient(135deg, #89f7fe, #66a6ff)';
+const MUSIC_LIBRARY_ID: MusicLibrary['id'] = 'main'; // 关键：与类型保持一致
+
+const getWin = () => window as any;
+
+function ensureGlobalSettings(input?: Partial<GlobalSettings> | null): GlobalSettings {
+  const def: GlobalSettings = {
+    id: 'main',
+    wallpaper: DEFAULT_WALLPAPER,
+    enableGeolocation: false,
+    remoteThemeUrl: '',
+    activePresetId: '',
+  } as GlobalSettings;
+  return { ...def, ...(input ?? {}) };
+}
+
+function ensureApiConfig(input?: Partial<ApiConfig> | null): ApiConfig {
+  const def: ApiConfig = {
+    proxyUrl: '',
+    apiKey: '',
+    model: '',
+  };
+  return { ...def, ...(input ?? {}) };
+}
+
+function emptyMusicLibrary(): MusicLibrary {
+  // 使用声明好的字面量以匹配类型系统
+  return {
+    id: MUSIC_LIBRARY_ID,
+    playlist: [] as Track[],
+  };
+}
+
+function stripLocalTracksForExport(library?: MusicLibrary): MusicLibrary | undefined {
+  if (!library) return library;
+  const playlist: Track[] = (library.playlist ?? []).map((t) =>
+      t.isLocal
+          ? {
+            ...t,
+            src: '', // 用空字符串表示需重传，避免向 Track 注入新字段
+          }
+          : t
+  );
+  return { ...library, playlist };
+}
+
+function splitMusicLibraryByReupload(library?: MusicLibrary): {
+  toImport?: MusicLibrary;
+  reuploadCount: number;
+} {
+  if (!library) return { toImport: library, reuploadCount: 0 };
+  const list = library.playlist ?? [];
+  const toImportList: Track[] = list.filter((t) => !(typeof t.src === 'string' && t.src === ''));
+  const reuploadCount = list.length - toImportList.length;
+  return {
+    toImport: { ...library, playlist: toImportList },
+    reuploadCount,
+  };
+}
+
+async function downloadBlobAs(blob: Blob, fileName: string): Promise<void> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export class DataService {
-  // 导出数据
   async exportData(): Promise<void> {
+    const win = getWin();
+
     try {
-      const win = window as any;
+      const [
+        chats,
+        apiConfigRaw,
+        globalSettingsRaw,
+        userStickers,
+        worldBooks,
+        musicLibraryRaw,
+        personaPresets,
+      ] = await Promise.all([
+        DB.getAllChats(),
+        DB.getApiConfig(),
+        DB.getGlobalSettings(),
+        DB.getAllUserStickers(),
+        DB.getAllWorldBooks(),
+        DB.getMusicLibrary(),
+        DB.getAllPersonaPresets(),
+      ]);
 
-      let globalSettings = await DB.getGlobalSettings() || {};
-      if (!globalSettings.id) globalSettings.id = "main";
-      if (!globalSettings.wallpaper) globalSettings.wallpaper = "linear-gradient(135deg, #89f7fe, #66a6ff)";
-
-      const backupData = {
-        chats: await DB.getAllChats(),
-        apiConfig: await DB.getApiConfig() || {},
-        globalSettings: globalSettings,
-        userStickers: await DB.getAllUserStickers(),
-        worldBooks: await DB.getAllWorldBooks(),
-        musicLibrary: await DB.getMusicLibrary() || {playlist: []},
-        personaPresets: await DB.getAllPersonaPresets()
+      const backupData: BackupData = {
+        chats,
+        apiConfig: ensureApiConfig(apiConfigRaw as Partial<ApiConfig> | null),
+        globalSettings: ensureGlobalSettings(globalSettingsRaw as Partial<GlobalSettings> | null),
+        userStickers,
+        worldBooks,
+        musicLibrary: stripLocalTracksForExport((musicLibraryRaw as MusicLibrary | undefined) ?? emptyMusicLibrary()),
+        personaPresets,
       };
 
-      // 处理本地音乐文件
-      if (backupData.musicLibrary.playlist) {
-        backupData.musicLibrary.playlist = backupData.musicLibrary.playlist.map((track: Track) => {
-          if (track.isLocal) {
-            return {...track, src: null, isLocal: true, requiresReupload: true};
-          }
-          return track;
-        });
-      }
-
-      const jsonString = JSON.stringify(backupData);
-      const dataBlob = new Blob([jsonString]);
-
-      // 使用Gzip压缩数据
-      const compressionStream = new CompressionStream('gzip');
-      const compressedStream = dataBlob.stream().pipeThrough(compressionStream);
+      const gzip = new CompressionStream('gzip');
+      const readable = new Response(JSON.stringify(backupData)).body!;
+      const compressedStream = readable.pipeThrough(gzip);
       const compressedBlob = await new Response(compressedStream).blob();
 
-      const url = URL.createObjectURL(compressedBlob);
-      const a = document.createElement('a');
       const now = new Date();
       const date = now.toISOString().slice(0, 10);
       const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
-      a.href = url;
-      a.download = `EPhone_backup_${date}_${time}.phone`; // 使用.phone扩展名
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadBlobAs(compressedBlob, `EPhone_backup_${date}_${time}.phone`);
 
-      if (win.showCustomAlert) {
-        win.showCustomAlert("导出成功", "所有数据已成功压缩并导出为.phone文件。");
-      }
-      console.log('数据导出成功');
+      win?.showCustomAlert?.('导出成功', '所有数据已成功压缩并导出为.phone文件。');
     } catch (error: any) {
-      console.error("导出失败:", error);
-      const win = window as any;
-      if (win.showCustomAlert) {
-        win.showCustomAlert("导出失败", `发生错误: ${error.message}`);
-      } else {
-        console.error(`导出失败: ${error.message}`);
-      }
+      console.error('导出失败:', error);
+      getWin()?.showCustomAlert?.('导出失败', `发生错误: ${error.message}`);
     }
   }
 
-  // 导入数据
   async importData(file: File): Promise<void> {
     if (!file) return;
 
     const confirmed = await this.showConfirm(
-      '确认导入',
-      '警告：导入数据将覆盖当前所有聊天记录和设置。此操作不可撤销。确定要继续吗？',
-      {confirmButtonClass: 'btn-danger', confirmText: '我确定，导入'}
+        '确认导入',
+        '警告：导入数据将覆盖当前所有聊天记录和设置。此操作不可撤销。确定要继续吗？',
+        { confirmButtonClass: 'btn-danger', confirmText: '我确定，导入' }
     );
+    if (!confirmed) return;
 
-    if (!confirmed) {
-      return;
-    }
+    const win = getWin();
 
     try {
-      const win = window as any;
-      const db: DatabaseManager = win.DB;
-      if (!db?.db) {
-        throw new Error('数据库实例未初始化');
-      }
+      if (!win?.DB?.db) throw new Error('数据库实例未初始化');
 
-      // 解压文件流
       const decompressionStream = new DecompressionStream('gzip');
       const decompressedStream = file.stream().pipeThrough(decompressionStream);
-      const jsonString = await new Response(decompressedStream).text();
+      const backupData = (await new Response(decompressedStream).json()) as BackupData;
 
-      const backupData = JSON.parse(jsonString);
-
-      if (!backupData.chats || !backupData.apiConfig || !backupData.globalSettings) {
-        throw new Error("备份文件格式无效或已损坏。");
+      if (!backupData?.chats || !backupData?.apiConfig || !backupData?.globalSettings) {
+        throw new Error('备份文件格式无效或已损坏。');
       }
 
-      if (!backupData.globalSettings.id) {
-        backupData.globalSettings.id = "main";
-      }
-      if (!backupData.globalSettings.wallpaper) {
-        backupData.globalSettings.wallpaper = "linear-gradient(135deg, #89f7fe, #66a6ff)";
-      }
+      const normalizedGlobal = ensureGlobalSettings(backupData.globalSettings);
+      const { toImport, reuploadCount } = splitMusicLibraryByReupload(
+          backupData.musicLibrary ?? emptyMusicLibrary()
+      );
 
-      // 使用新的统一导入API
       await DB.importAllData({
         chats: backupData.chats,
         userStickers: backupData.userStickers,
         worldBooks: backupData.worldBooks,
         personaPresets: backupData.personaPresets,
-        apiConfig: backupData.apiConfig,
-        globalSettings: backupData.globalSettings,
-        musicLibrary: backupData.musicLibrary ? {
-          playlist: backupData.musicLibrary.playlist.filter((t: Track) => !t.requiresReupload)
-        } : undefined
+        apiConfig: ensureApiConfig(backupData.apiConfig),
+        globalSettings: normalizedGlobal,
+        musicLibrary: toImport,
       });
 
-      // 检查需要重新上传的本地歌曲
-      if (backupData.musicLibrary) {
-        const reuploadCount = backupData.musicLibrary.playlist.filter((t: Track) => t.requiresReupload).length;
-        if (reuploadCount > 0) {
-          if (win.showCustomAlert) {
-            win.showCustomAlert("部分导入", `${reuploadCount}首本地歌曲需要您重新手动添加。`);
-          }
-        }
+      if (reuploadCount > 0) {
+        win?.showCustomAlert?.('部分导入', `${reuploadCount}首本地歌曲需要您重新手动添加。`);
       }
 
-      if (win.showCustomAlert) {
-        await win.showCustomAlert("导入成功", "数据已成功恢复。应用即将刷新。");
-      }
+      await win?.showCustomAlert?.('导入成功', '数据已成功恢复。应用即将刷新。');
       window.location.reload();
-
     } catch (error: any) {
-      console.error("导入失败:", error);
-      const win = window as any;
-      if (win.showCustomAlert) {
-        await win.showCustomAlert("导入失败", `解压或解析文件时发生错误: ${error.message}`);
-      } else {
-        console.error(`导入失败: ${error.message}`);
-      }
+      console.error('导入失败:', error);
+      await getWin()?.showCustomAlert?.('导入失败', `解压或解析文件时发生错误: ${error.message}`);
     }
   }
 
-  // 处理文件导入事件
   handleImportDataEvent(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (file) {
-      this.importData(file).finally(() => {
-        input.value = '';
-      });
-    }
+    if (!file) return;
+    this.importData(file).finally(() => {
+      input.value = '';
+    });
   }
 
-  // 数据清理工具
   async clearAllData(): Promise<void> {
     const confirmed = await this.showConfirm(
-      '清空所有数据',
-      '警告：此操作将删除所有聊天记录、设置和用户数据。此操作不可撤销！确定要继续吗？',
-      {confirmButtonClass: 'btn-danger', confirmText: '我确定，清空'}
+        '清空所有数据',
+        '警告：此操作将删除所有聊天记录、设置和用户数据。此操作不可撤销！确定要继续吗？',
+        { confirmButtonClass: 'btn-danger', confirmText: '我确定，清空' }
     );
-
     if (!confirmed) return;
 
     try {
-      const win = window as any;
-
-      // 使用统一的清空API
       await DB.clearAllTables();
-
-      if (win.showCustomAlert) {
-        await win.showCustomAlert("清空成功", "所有数据已清空。应用即将刷新。");
-      }
+      const win = getWin();
+      await win?.showCustomAlert?.('清空成功', '所有数据已清空。应用即将刷新。');
       window.location.reload();
     } catch (error: any) {
-      console.error("清空数据失败:", error);
-      const win = window as any;
-      if (win.showCustomAlert) {
-        win.showCustomAlert("清空失败", `发生错误: ${error.message}`);
-      } else {
-        console.error(`清空失败: ${error.message}`);
-      }
+      console.error('清空数据失败:', error);
+      getWin()?.showCustomAlert?.('清空失败', `发生错误: ${error.message}`);
     }
   }
 
-  // 获取数据统计信息
   async getDataStats(): Promise<DataStats> {
     try {
-      const win = window as any;
+      const [
+        chatsCount,
+        stickersCount,
+        worldBooksCount,
+        personaPresetsCount,
+        chats,
+        userStickers,
+        worldBooks,
+        personaPresets,
+      ] = await Promise.all([
+        DB.getChatsCount(),
+        DB.getUserStickersCount(),
+        DB.getWorldBooksCount(),
+        DB.getPersonaPresetsCount(),
+        DB.getAllChats(),
+        DB.getAllUserStickers(),
+        DB.getAllWorldBooks(),
+        DB.getAllPersonaPresets(),
+      ]);
 
-      const stats: DataStats = {
-        chats: await DB.getChatsCount(),
-        userStickers: await DB.getUserStickersCount(),
-        worldBooks: await DB.getWorldBooksCount(),
-        personaPresets: await DB.getPersonaPresetsCount(),
-        totalMessages: 0,
-        dataSize: 0
-      };
+      const totalMessages = chats.reduce((total: number, chat: Chat) => total + (chat.history?.length || 0), 0);
+      const allData = { chats, userStickers, worldBooks, personaPresets };
+      const dataSize = JSON.stringify(allData).length;
 
-      // 计算总消息数
-      const chats = await DB.getAllChats();
-      stats.totalMessages = chats.reduce((total: number, chat: Chat) => total + (chat.history?.length || 0), 0);
-
-      // 估算数据大小（简单计算）
-      const allData = {
-        chats: chats,
-        userStickers: await DB.getAllUserStickers(),
-        worldBooks: await DB.getAllWorldBooks(),
-        personaPresets: await DB.getAllPersonaPresets()
-      };
-      stats.dataSize = JSON.stringify(allData).length;
-
-      return stats;
-    } catch (error) {
-      console.error("获取数据统计失败:", error);
       return {
-        chats: 0,
-        userStickers: 0,
-        worldBooks: 0,
-        personaPresets: 0,
-        totalMessages: 0,
-        dataSize: 0
+        chats: chatsCount,
+        userStickers: stickersCount,
+        worldBooks: worldBooksCount,
+        personaPresets: personaPresetsCount,
+        totalMessages,
+        dataSize,
       };
+    } catch (error) {
+      console.error('获取数据统计失败:', error);
+      return { chats: 0, userStickers: 0, worldBooks: 0, personaPresets: 0, totalMessages: 0, dataSize: 0 };
     }
   }
 
-  // 辅助函数
   private showConfirm(title: string, message: string, options: ModalOptions = {}): Promise<boolean> {
-    const win = window as any;
-    if (win.showCustomConfirm) {
-      return win.showCustomConfirm(title, message, options);
-    }
+    const win = getWin();
+    if (win?.showCustomConfirm) return win.showCustomConfirm(title, message, options);
     return Promise.resolve(confirm(message));
   }
 }
 
-// 导出服务实例
 export const dataService = new DataService();

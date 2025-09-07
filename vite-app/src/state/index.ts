@@ -674,6 +674,8 @@ export default {
   state,
   musicState,
   myAddress: () => myAddress,
+  get isMessageEditMode() { return isMessageEditMode; },
+  get isSelectionMode() { return isSelectionMode; },
   // 导出所有状态管理函数
   setActiveChatId,
   updateGlobalSettings,
