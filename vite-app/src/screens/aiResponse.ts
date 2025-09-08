@@ -1,4 +1,6 @@
-// 修复与优化版：聚焦审查指出的4个问题，保持核心功能不变
+// vite-app/src/screens/aiResponse.ts
+// AI响应处理模块 - TypeScript优化版
+// 变更要点：并发保护、音乐索引越界保护、模板替换正则转义、未知类型安全处理、解析器非贪婪、错误处理健壮化、类型接口细化
 
 import type {
   Message,
@@ -13,7 +15,6 @@ import { showApiConfigError } from '../services/errorHandling';
 import { SystemPromptService } from '../services/systemPrompt';
 
 type Role = 'system' | 'user' | 'assistant';
-type MsgPayload = { role: Role; content: any } | null;
 
 interface Constants {
   DEFAULT_PROMPT_IMAGE: string;
@@ -24,10 +25,34 @@ interface Constants {
   STICKER_REGEX: RegExp;
 }
 
+type MsgPayload = { role: Role; content: any } | null;
+
+// 更具体的扩展消息类型（提升类型安全）
+interface VoiceMessage extends Message {
+  type: 'voice_message';
+  senderName: string;
+}
+interface AiImageMessage extends Message {
+  type: 'ai_image';
+  content: string; // description
+  senderName: string;
+}
+interface TransferMessage extends Message {
+  type: 'transfer';
+  content: '';
+  senderName: string;
+  receiverName: string;
+  amount: number;
+  note: string;
+}
+
 const nowTs = () => Date.now();
 const buildMessageId = () => `msg_${nowTs()}_${Math.random()}`;
 const toStr = (v: any) => String(v ?? '');
 const getWin = () => window as any;
+
+// 并发保护：每个 chatId 仅允许一个 trigger 在跑
+const runningMap = new Map<string, boolean>();
 
 function normalizeProxyUrl(url?: string): string | null {
   if (!url) return null;
@@ -56,9 +81,13 @@ function joinWorldBookContent(chat: Chat, state: StateManager): string {
       : '';
 }
 
+// 修复：索引上下界检查，守卫 track，避免越界 TypeError
 function buildMusicContext(music: MusicState | undefined, chatId: string): string {
-  if (!music?.isActive || music.activeChatId !== chatId || music.currentIndex < 0) return '';
-  const track = music.playlist[music.currentIndex];
+  if (!music?.isActive || music.activeChatId !== chatId) return '';
+  const idx = music.currentIndex ?? -1;
+  const list = music.playlist ?? [];
+  if (idx < 0 || idx >= list.length) return '';
+  const track = list[idx];
   if (!track) return '';
   return `\n\n# 当前情景\n你正在和用户一起听歌。当前播放的歌曲是：${track.name} - ${track.artist}。请在对话中自然地融入这个情境。\n`;
 }
@@ -81,7 +110,7 @@ function safeJsonParse<T = any>(text: string): { ok: true; value: T } | { ok: fa
   }
 }
 
-// 修复3：非贪婪匹配 JSON 片段，避免跨越到最后一个 ] 或 }
+// 非贪婪片段提取，避免跨越到最后一个 ] 或 }
 export function parseAiResponse(content: string): any[] {
   if (!content || typeof content !== 'string') return [content];
 
@@ -104,17 +133,20 @@ export function parseAiResponse(content: string): any[] {
   return [content];
 }
 
-// 统一模板多次替换（修复4：群聊与单聊一致全局替换）
+// 正则键名转义，避免潜在注入/匹配异常
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 function replaceAllPlaceholders(template: string, map: Record<string, string>): string {
   let out = template;
   for (const [k, v] of Object.entries(map)) {
-    // 占位符如 {currentTime}
-    const re = new RegExp(`\\{${k}\\}`, 'g');
+    const re = new RegExp(`\\{${escapeRegExp(k)}\\}`, 'g');
     out = out.replace(re, v);
   }
   return out;
 }
 
+// 统一构造助手消息，按扩展类型归一；使用更具体类型减少 any
 function buildAssistantMessage(
     chat: Chat,
     payload: any,
@@ -130,27 +162,39 @@ function buildAssistantMessage(
 
   if (payload && typeof payload === 'object') {
     if (payload.type === 'voice_message') {
-      const m: any = { ...base, type: 'voice_message', content: payload.content };
-      m.senderName = base.sender;
-      return m;
+      return {
+        ...base,
+        type: 'voice_message',
+        content: payload.content,
+        senderName: base.sender,
+      } as VoiceMessage;
     }
     if (payload.type === 'ai_image') {
-      const m: any = { ...base, type: 'ai_image', content: payload.description };
-      m.senderName = base.sender;
-      return m;
+      return {
+        ...base,
+        type: 'ai_image',
+        content: payload.description,
+        senderName: base.sender,
+      } as AiImageMessage;
     }
     if (payload.type === 'transfer') {
-      const m: any = { ...base, type: 'transfer', content: '' };
-      m.senderName = base.sender;
-      m.receiverName = receiverName || '我';
-      m.amount = payload.amount;
-      m.note = payload.note;
-      return m;
+      return {
+        ...base,
+        type: 'transfer',
+        content: '',
+        senderName: base.sender,
+        receiverName: receiverName || '我',
+        amount: payload.amount,
+        note: payload.note,
+      } as TransferMessage;
     }
     if (chat.isGroup && payload.name && payload.message) {
-      const m: any = { ...base, content: toStr(payload.message), sender: toStr(payload.name) };
-      m.senderName = m.sender;
-      return m as Message;
+      return {
+        ...base,
+        content: toStr(payload.message),
+        sender: toStr(payload.name),
+        senderName: toStr(payload.name),
+      } as Message;
     }
   }
 
@@ -164,23 +208,34 @@ export class AiResponseModule {
     this.systemPromptService = new SystemPromptService();
   }
 
+  // 触发AI响应
   async triggerAiResponse(): Promise<void> {
     const win = getWin();
     const state: StateManager | undefined = win.STATE;
-    const musicState: MusicState | undefined = state?.musicState;
     const typingIndicator = document.getElementById('typing-indicator');
 
     if (!state?.state?.activeChatId) return;
-
     const chatId = state.state.activeChatId;
+
+    // 并发保护（同一 chatId 重入直接忽略）
+    if (runningMap.get(chatId)) {
+      console.warn(`triggerAiResponse 已在处理: ${chatId}`);
+      return;
+    }
+    runningMap.set(chatId, true);
+
+    const musicState: MusicState | undefined = state?.musicState;
     const chat: Chat = state.state.chats[chatId];
 
+    // 修复：通过函数调用获取地址
     const myAddress: string =
         (typeof win.myAddress === 'function' ? win.myAddress() : state?.myAddress) || '位置未知';
 
+    // UI：显示打字指示器
     if (typingIndicator) typingIndicator.style.display = 'block';
 
     try {
+      // 配置校验 + URL 规范化
       const apiConfig: ApiConfig = state.state.apiConfig;
       const { proxyUrl: rawProxyUrl, apiKey, model } = apiConfig || ({} as ApiConfig);
       const proxyUrl = normalizeProxyUrl(rawProxyUrl);
@@ -189,33 +244,42 @@ export class AiResponseModule {
         return;
       }
 
+      // 预构建上下文
       const currentTime = new Date().toLocaleTimeString('zh-CN', {
         hour: 'numeric',
         minute: 'numeric',
         hour12: true,
       });
-      const addressForTemplate = shouldUseAddress(state.state.globalSettings.enableGeolocation, myAddress)
-          ? myAddress
-          : '';
+      const addrEnabled = shouldUseAddress(state.state.globalSettings.enableGeolocation, myAddress);
+      const addressForTemplate = addrEnabled ? myAddress : '';
       const worldBookContent = joinWorldBookContent(chat, state);
       const musicContext = buildMusicContext(musicState, chatId);
 
-      // 系统提示生成（失败回退）
+      // 系统提示
       let systemPrompt = '';
       let compositionHash = '';
       try {
-        const promptResult = await this.systemPromptService.generateSystemPrompt(chat, {}, undefined);
+        const promptResult = await this.systemPromptService.generateSystemPrompt(
+            chat,
+            {},
+            undefined
+        );
         systemPrompt = promptResult.systemPrompt;
         compositionHash = promptResult.compositionHash;
+
+        // 若 hash 变化则保存
         if (chat.compositionHash !== compositionHash) {
           chat.compositionHash = compositionHash;
           await win.saveChat(chat);
         }
       } catch {
+        // 回退旧逻辑：统一全局替换，保证一致性
         const activePreset = win.getActivePreset?.();
         const constants: Constants = win.CONSTANTS;
-        const DEFAULT_PROMPT_SINGLE = constants?.DEFAULT_PROMPT_SINGLE || '默认单聊提示词';
-        const DEFAULT_PROMPT_GROUP = constants?.DEFAULT_PROMPT_GROUP || '默认群聊提示词';
+        const DEFAULT_PROMPT_SINGLE =
+            constants?.DEFAULT_PROMPT_SINGLE || '默认单聊提示词';
+        const DEFAULT_PROMPT_GROUP =
+            constants?.DEFAULT_PROMPT_GROUP || '默认群聊提示词';
 
         if (chat.isGroup) {
           const baseGroup = activePreset?.promptGroup || DEFAULT_PROMPT_GROUP;
@@ -240,15 +304,16 @@ export class AiResponseModule {
         }
       }
 
-      // 消息窗口
+      // 历史消息窗口
       const maxMemory = Number.parseInt(String(chat.settings.maxMemory)) || 10;
       const historySlice = chat.history.slice(-Math.max(1, maxMemory));
 
-      // 构造消息载荷
+      // 构造消息载荷（异步注入 UserRole 块）
       const messagesPayload: Array<{ role: Role; content: any }> = (
           await Promise.all(
               historySlice.map(async (msg): Promise<MsgPayload> => {
                 const isStrOrArr = typeof msg.content === 'string' || Array.isArray(msg.content);
+                const anyMsg: any = msg;
 
                 switch (msg.type) {
                   case 'pat':
@@ -276,7 +341,7 @@ export class AiResponseModule {
                       };
                     }
                   case 'transfer':
-                    // 修复1：明确 if/else，避免“裸代码块”歧义
+                    // 明确 if/else，避免“裸代码块”歧义
                     if (msg.role === 'user') {
                       const m: any = msg;
                       return {
@@ -294,12 +359,17 @@ export class AiResponseModule {
                         }),
                       };
                     }
-                  default:
+                  case undefined:
+                  case null:
+                    // 无类型：按兼容路径继续（可能是旧文本消息）
                     break;
+                  default:
+                    // 未知新类型：安全退化或忽略，避免后续 if 误处理
+                    if (isStrOrArr) return { role: msg.role as Role, content: msg.content };
+                    return null;
                 }
 
-                // 用户表情含义
-                const anyMsg: any = msg;
+                // 用户表情含义（仅在无明确类型时生效）
                 if (msg.role === 'user' && anyMsg?.meaning) {
                   return {
                     role: 'user',
@@ -307,7 +377,7 @@ export class AiResponseModule {
                   };
                 }
 
-                // 用户文本注入 UserRole
+                // 用户文本：注入 UserRole 块
                 if (msg.role === 'user' && isStrOrArr) {
                   try {
                     const processed = await this.systemPromptService.injectUserRoleBlock(msg, chat);
@@ -317,6 +387,7 @@ export class AiResponseModule {
                   }
                 }
 
+                // 普通文本
                 if (isStrOrArr) return { role: msg.role as Role, content: msg.content };
                 return null;
               })
@@ -348,7 +419,10 @@ export class AiResponseModule {
       const aiResponseContent = data?.choices?.[0]?.message?.content ?? '';
       const parsed = parseAiResponse(aiResponseContent);
 
+      // 是否当前视图
       const isViewingThisChat = getIsViewingChat(chatId, state);
+
+      // 通知控制：仅首条触发
       let notified = false;
 
       for (const item of parsed) {
@@ -361,6 +435,7 @@ export class AiResponseModule {
 
         if (isViewingThisChat) {
           win.ChatModule.appendMessage(msg, chat);
+          // 轻量打字间隔，避免长阻塞
           await new Promise(r => setTimeout(r, Math.random() * 300 + 200));
         } else if (!notified) {
           let tip = '';
@@ -391,7 +466,6 @@ export class AiResponseModule {
       if (chat) {
         chat.history.push(errMsg);
         await DB.saveChat(chat);
-        // 修复2：移除非空断言，增加空值保护
         if (getIsViewingChat(chat.id, state)) {
           win.ChatModule.appendMessage(errMsg, chat);
         }
@@ -399,10 +473,12 @@ export class AiResponseModule {
       console.error(error);
     } finally {
       if (typingIndicator) typingIndicator.style.display = 'none';
+      runningMap.delete(chatId); // 并发保护释放
       getWin().ChatModule.renderChatList();
     }
   }
 
+  // 显示通知
   private showNotification(chatId: string, messageContent: string): void {
     const win = getWin();
     if (typeof win.showNotification === 'function') {
@@ -411,11 +487,13 @@ export class AiResponseModule {
   }
 }
 
+// === 全局单例实例 ===
 export const aiResponseModule = new AiResponseModule();
 
+// 默认导出
 export default {
   aiResponseModule,
   AiResponseModule,
 };
 
-console.log('AI响应模块(TypeScript版)已初始化-修复审查问题');
+console.log('AI响应模块(TypeScript版)已初始化-并发/越界/正则转义/未知类型强化');
