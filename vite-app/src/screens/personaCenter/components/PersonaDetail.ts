@@ -26,15 +26,18 @@ export class PersonaDetailComponent {
   private compositionService: CompositionService;
   
   private currentWorldBooks: Record<string, WorldBook> = {};
+  private hideHeaderActions: boolean = false;
 
   constructor(
     container: HTMLElement, 
     events: PersonaDetailEvents,
-    worldBooks: Record<string, WorldBook> = {}
+    worldBooks: Record<string, WorldBook> = {},
+    hideHeaderActions: boolean = false
   ) {
     this.container = container;
     this.events = events;
     this.currentWorldBooks = worldBooks;
+    this.hideHeaderActions = hideHeaderActions;
     
     this.personaService = new PersonaService();
     this.userRoleService = new UserRoleService();
@@ -365,6 +368,8 @@ switchTab(tabId: 'basic' | 'prompt' | 'baseline' | 'worldBook' | 'preview'): voi
     const itemType = isPersona ? '角色' : '用户角色';
     const statusText = this.getStatusText(item, isPersona);
     
+    console.log('PersonaDetail renderHeader: hideHeaderActions =', this.hideHeaderActions);
+    
     return `
       <div class="persona-detail-header">
         <div class="header-left">
@@ -381,6 +386,7 @@ switchTab(tabId: 'basic' | 'prompt' | 'baseline' | 'worldBook' | 'preview'): voi
           </div>
         </div>
         
+        ${this.hideHeaderActions ? '<!-- 编辑器模式：隐藏操作按钮 -->' : `
         <div class="header-actions">
           ${this.state.isEditing ? `
             <button class="btn btn-secondary" onclick="window.personaCenterDetail?.cancelEdit()">取消</button>
@@ -391,6 +397,7 @@ switchTab(tabId: 'basic' | 'prompt' | 'baseline' | 'worldBook' | 'preview'): voi
             ${!isNew ? `<button class="btn btn-danger" onclick="window.personaCenterDetail?.deleteItem()">删除</button>` : ''}
           `}
         </div>
+        `}
       </div>
     `;
   }

@@ -110,8 +110,8 @@ export class PersonaEditorScreen {
       onDirtyChange: (isDirty: boolean) => this.updateSaveButtonState() // 脏状态变更时更新按钮
     };
 
-    // 创建PersonaDetail组件实例
-    this.personaDetail = new PersonaDetailComponent(detailContainer, detailEvents, worldBooks);
+    // 创建PersonaDetail组件实例，并告知它在编辑器模式下隐藏操作按钮
+    this.personaDetail = new PersonaDetailComponent(detailContainer, detailEvents, worldBooks, true);
 
     // 如果有数据，加载到组件中
     if (this.currentData) {

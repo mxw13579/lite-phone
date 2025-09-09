@@ -194,7 +194,7 @@ export class EventHandlerModule {
   private async handleSendMessage(): Promise<void> {
     const win = getWin();
     await safeCall(
-        win.CHAT_MODULES?.composerModule?.handleSendMessage,
+        win.CHAT_MODULES?.composerModule?.handleSendMessage?.bind(win.CHAT_MODULES?.composerModule),
         [],
         '发送消息失败'
     );
@@ -203,7 +203,7 @@ export class EventHandlerModule {
   private async triggerAiResponse(): Promise<void> {
     const win = getWin();
     const ok = await safeCall(
-        win.SCREENS?.aiResponseModule?.triggerAiResponse,
+        win.SCREENS?.aiResponseModule?.triggerAiResponse?.bind(win.SCREENS?.aiResponseModule),
         [],
         'AI响应触发失败',
         () => showError('AI响应功能暂时不可用，请刷新页面重试')
