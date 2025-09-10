@@ -602,6 +602,52 @@
                         <span class="input-unit">条</span>
                     </div>
                 </div>
+                
+                <!-- Memory Manager P2: 记忆预算预估 -->
+                <div class="form-group" id="memory-budget-group">
+                    <label>
+                        <span class="label-icon">💭</span>
+                        <span>记忆注入预估</span>
+                        <span class="label-hint">(本次对话将注入的记忆内容)</span>
+                    </label>
+                    <div class="memory-budget-display">
+                        <div class="memory-stats">
+                            <div class="memory-stat-item">
+                                <span class="memory-stat-label">预计注入：</span>
+                                <span id="memory-inject-count">-- 条</span>
+                            </div>
+                            <div class="memory-stat-item">
+                                <span class="memory-stat-label">字符数：</span>
+                                <span id="memory-inject-chars">-- 字符</span>
+                            </div>
+                            <div class="memory-stat-item">
+                                <span class="memory-stat-label">状态：</span>
+                                <span id="memory-inject-status" class="memory-status-ok">正常</span>
+                            </div>
+                        </div>
+                        <div class="memory-actions">
+                            <button type="button" id="refresh-memory-estimate-btn" class="memory-action-btn">
+                                <span>🔄</span>
+                                <span>刷新预估</span>
+                            </button>
+                            <button type="button" id="view-memory-details-btn" class="memory-action-btn">
+                                <span>📋</span>
+                                <span>查看详情</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 记忆条目详情展示 -->
+                    <div id="memory-details-container" class="memory-details-container" style="display: none;">
+                        <div class="memory-details-header">
+                            <span>本次注入的记忆条目：</span>
+                            <button type="button" id="hide-memory-details-btn" class="memory-detail-toggle">隐藏</button>
+                        </div>
+                        <div id="memory-items-list" class="memory-items-list">
+                            <!-- 记忆条目列表将由JavaScript动态生成 -->
+                        </div>
+                    </div>
+                </div>
                 </div>
             </div>
 

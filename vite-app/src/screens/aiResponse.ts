@@ -13,6 +13,7 @@ import DB from '../database';
 import CONSTANTS from '../constants';
 import { showApiConfigError } from '../services/errorHandling';
 import { SystemPromptService } from '../services/systemPrompt';
+import { MemoryRepo, selectEventsForPrompt, selectEventsForGroup, renderMemoryBlock, renderGroupMemoryBlock, maybeExtractAndRecord, chatMemoryEstimator } from '../services/memory';
 
 type Role = 'system' | 'user' | 'assistant';
 
@@ -255,6 +256,128 @@ export class AiResponseModule {
       const worldBookContent = joinWorldBookContent(chat, state);
       const musicContext = buildMusicContext(musicState, chatId);
 
+      // Memory Manager P2: 使用统一的记忆注入API
+      let memoryPack: string | undefined = undefined;
+      let memoryTokenBudget = 600; // 默认预算
+      
+      try {
+        // 设置当前聊天上下文到记忆预估器
+        let members: any[] = [];
+        if (chat.isGroup && chat.members) {
+          // 创建name→personaId映射表，从全局personas中查找
+          const personaMap = new Map<string, string>();
+          
+          // 修复：正确的personas访问路径
+          const allPersonas = win.STATE?.state?.personas || win.state?.personas || [];
+          
+          for (const persona of allPersonas) {
+            personaMap.set(persona.name, persona.id);
+          }
+          
+          members = chat.members.map(member => {
+            // 尝试从persona字段或name字段匹配personaId
+            let personaId = (member as any).personaId;
+            
+            if (!personaId) {
+              // 尝试从persona字段匹配
+              if (member.persona) {
+                personaId = personaMap.get(member.persona);
+              }
+              
+              // 如果还没找到，尝试从name字段匹配
+              if (!personaId && member.name) {
+                personaId = personaMap.get(member.name);
+              }
+              
+              // 如果仍然没有找到，记录警告并使用回退策略
+              if (!personaId) {
+                console.warn('[MM][persona-mapping-failed]', { 
+                  memberName: member.name, 
+                  memberPersona: member.persona,
+                  availablePersonas: allPersonas.map(p => p.name)
+                });
+                personaId = 'unknown_' + (member.name || member.persona || 'member');
+              }
+            }
+            
+            return {
+              personaId,
+              name: member.name || member.persona || personaId
+            };
+          });
+          
+          // 检查是否所有成员都无法正确映射，如果是则回退到单人注入
+          const validPersonaIds = members.filter(m => !m.personaId.startsWith('unknown_'));
+          if (validPersonaIds.length === 0) {
+            console.warn('[MM][group-fallback-single]', {
+              message: '所有群组成员都无法映射到有效persona，回退到单人注入模式',
+              originalMembersCount: members.length,
+              availablePersonasCount: allPersonas.length,
+              chatPersonaId: chat.personaId
+            });
+            members = []; // 清空members，让后续逻辑使用单人模式
+          } else {
+            console.log('[MM][group-personas] 解析群聊成员:', {
+              members: members.map(m => ({ name: m.name, personaId: m.personaId })),
+              validMapping: `${validPersonaIds.length}/${members.length}`
+            });
+          }
+        }
+        
+        // 从多层级配置读取memoryTokenBudget
+        try {
+          if (chat.personaId) {
+            const persona = await (win.STATE?.state?.personas || win.state?.personas || [])?.find(p => p.id === chat.personaId);
+            if (persona) {
+              // 优先级1：从PersonaMemorySettings读取
+              try {
+                const { MemoryRepo } = await import('../services/memory/repo');
+                const memorySettings = await MemoryRepo.getSettings(chat.personaId);
+                if (memorySettings && memorySettings.memoryTokenBudget) {
+                  memoryTokenBudget = memorySettings.memoryTokenBudget;
+                  console.log('[MM][budget] 从PersonaMemorySettings获取记忆token预算:', memoryTokenBudget);
+                } else {
+                  // 优先级2：从CompositionService获取
+                  const { CompositionService } = await import('./personaCenter/services/CompositionService');
+                  const compositionService = new CompositionService();
+                  const sendConfig = compositionService.createSendConfig();
+                  memoryTokenBudget = sendConfig.memoryTokenBudget;
+                  console.log('[MM][budget] 从CompositionService获取记忆token预算:', memoryTokenBudget);
+                }
+              } catch (configError) {
+                console.warn('[MM][budget-persona-config-failed]', configError);
+                // 优先级3：使用默认配置
+                const { DEFAULT_COMPOSITION_CONFIG } = await import('../personaCenter/types/PersonaTypes');
+                memoryTokenBudget = DEFAULT_COMPOSITION_CONFIG.memoryTokenBudget;
+                console.log('[MM][budget] 使用默认记忆token预算:', memoryTokenBudget);
+              }
+            }
+          } else {
+            // 如果没有personaId，使用全局默认配置
+            const { DEFAULT_COMPOSITION_CONFIG } = await import('../personaCenter/types/PersonaTypes');
+            memoryTokenBudget = DEFAULT_COMPOSITION_CONFIG.memoryTokenBudget;
+            console.log('[MM][budget] 使用全局默认记忆token预算:', memoryTokenBudget);
+          }
+        } catch (e) {
+          console.warn('[MM][budget-config-failed] 获取记忆预算配置失败，使用保险默认值600', e);
+          memoryTokenBudget = 600; // 保险的硬编码回退值
+        }
+        
+        await chatMemoryEstimator.setChatContext(
+          chat.id,
+          chat.personaId,
+          chat.isGroup,
+          members,
+          memoryTokenBudget  // 传递动态配置的预算
+        );
+
+        // 获取记忆注入内容
+        memoryPack = await chatMemoryEstimator.getMemoryInjection();
+        
+      } catch (e) {
+        console.warn('[MM][inject-failed]', e);
+      }
+
       // 系统提示
       let systemPrompt = '';
       let compositionHash = '';
@@ -262,7 +385,7 @@ export class AiResponseModule {
         const promptResult = await this.systemPromptService.generateSystemPrompt(
             chat,
             {},
-            undefined
+            memoryPack
         );
         systemPrompt = promptResult.systemPrompt;
         compositionHash = promptResult.compositionHash;
@@ -451,6 +574,41 @@ export class AiResponseModule {
           notified = true;
         }
       }
+      
+      // MCP 记忆提纯处理
+      try {
+        const win = getWin();
+        const state = win.STATE;
+        if (chat?.personaId && state?.state?.apiConfig) {
+          const { proxyUrl, apiKey, model } = state.state.apiConfig;
+          if (proxyUrl && apiKey && model) {
+            // 获取最近的对话轮次
+            const historySlice = chat.history.slice(-10); // 最近 10 条消息
+            const recentTurns = historySlice
+              .filter(m => m.role === 'user' || m.role === 'assistant')
+              .slice(-4) // 最近 4 条（两轮对话）
+              .map(m => ({ role: m.role as 'user' | 'assistant', text: String(m.content) }));
+              
+            if (recentTurns.length >= 1) {
+              // 异步调用，不阻塞主流程
+              maybeExtractAndRecord(
+                chat.personaId, 
+                recentTurns, 
+                normalizeProxyUrl(proxyUrl) || proxyUrl,
+                apiKey,
+                model,
+                chat.id,
+                memoryPack  // 传递本次注入的记忆内容
+              ).catch(e => {
+                console.warn('[MM][extract-failed]', e);
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[MM][extract-setup-failed]', e);
+      }
+      
     } catch (error: any) {
       const win = getWin();
       const state: StateManager | undefined = win.STATE;

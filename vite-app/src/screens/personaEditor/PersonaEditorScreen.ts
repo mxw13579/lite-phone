@@ -77,9 +77,7 @@ export class PersonaEditorScreen {
             <span class="unsaved-badge" id="unsaved-badge" style="display: none;">未保存更改</span>
           </h1>
           <div class="header-actions">
-            <button class="btn btn-primary" onclick="window.personaEditorScreen?.saveAndReturn()" id="save-persona-btn">
-              <span id="save-btn-text">保存</span>
-            </button>
+            <!-- 保存按钮已移除，使用组件内按钮 -->
           </div>
         </header>
         
@@ -110,8 +108,8 @@ export class PersonaEditorScreen {
       onDirtyChange: (isDirty: boolean) => this.updateSaveButtonState() // 脏状态变更时更新按钮
     };
 
-    // 创建PersonaDetail组件实例，并告知它在编辑器模式下隐藏操作按钮
-    this.personaDetail = new PersonaDetailComponent(detailContainer, detailEvents, worldBooks, true);
+    // 创建PersonaDetail组件实例，让它显示内部操作按钮
+    this.personaDetail = new PersonaDetailComponent(detailContainer, detailEvents, worldBooks, false);
 
     // 如果有数据，加载到组件中
     if (this.currentData) {

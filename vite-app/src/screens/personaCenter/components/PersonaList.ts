@@ -1,51 +1,72 @@
-// PersonaList组件 - 左侧角色列表
-// 负责显示Persona和UserRole的列表，支持搜索、筛选和批量操作
-
-import type { 
+// PersonaList组件 - 左侧角色列表（优化版：本地删除刷新 + 精简事件委托 + 只读tags修复）
+import type {
   PersonaListEvents,
   PersonaListItem,
   FilterOptions,
-  SearchOptions,
-  ComponentState
+  SearchOptions
 } from '../types/ComponentTypes';
-
 import type { Persona, UserRole } from '../types/PersonaTypes';
 import { PersonaService } from '../services/PersonaService';
 import { UserRoleService } from '../services/UserRoleService';
+
+type ItemType = 'ai' | 'user';
+type GroupedItems = { ai: PersonaListItem[]; user: PersonaListItem[] };
+
+const TEXT = {
+  loading: '加载中...',
+  retry: '重试',
+  searchPlaceholder: '搜索角色...',
+  emptyIcon: '🎭',
+  groupAI: 'AI角色',
+  groupUser: '用户角色',
+  empty: (typeText: string) => `暂无${typeText}`,
+  emptySub: (typeText: string) => `创建您的第一个${typeText}开始使用`,
+  createRole: '新建角色',
+  btnEdit: '编辑',
+  btnDelete: '删除',
+  confirmDelete: '确定要删除这个角色吗？此操作无法撤销。',
+  errorLoad: '加载失败',
+  errorRefresh: '刷新失败'
+};
 
 export class PersonaListComponent {
   private container: HTMLElement;
   private personaService: PersonaService;
   private userRoleService: UserRoleService;
   private events: PersonaListEvents;
-  private state: ComponentState;
-  
+
+  // 状态
+  private loading = false;
+  private error?: string;
+  private data: {
+    personas: Persona[];
+    userRoles: UserRole[];
+    items: PersonaListItem[];
+  } | null = null;
+
   private currentFilter: FilterOptions = { type: 'all' };
-  private searchTerm: string = '';
+  private searchTerm = '';
   private selectedItems: Set<string> = new Set();
-  
-  // 事件处理器引用，用于正确清理
+
+  // 事件/资源清理
   private searchInputHandler?: (event: Event) => void;
   private clearButtonHandler?: (event: Event) => void;
+  private listDelegateHandler?: (event: Event) => void;
+  private headerCreateHandler?: (event: Event) => void;
+  private retryHandler?: (event: Event) => void;
+  private searchDebounceTimer: number | null = null;
+  private lastQueryToken = 0;
 
   constructor(container: HTMLElement, events: PersonaListEvents) {
     this.container = container;
     this.events = events;
     this.personaService = new PersonaService();
     this.userRoleService = new UserRoleService();
-    
-    this.state = {
-      loading: false,
-      error: undefined,
-      data: null,
-      selectedItems: this.selectedItems,
-      editMode: false
-    };
   }
 
   async render(): Promise<void> {
     try {
-      this.state.loading = true;
+      this.setLoading(true);
       this.renderLoading();
 
       const [personas, userRoles] = await Promise.all([
@@ -54,228 +75,207 @@ export class PersonaListComponent {
       ]);
 
       const items = this.buildListItems(personas, userRoles);
-      this.state.data = { personas, userRoles, items };
-      this.state.loading = false;
-      this.state.error = undefined;
+      this.data = { personas, userRoles, items };
+      this.setLoading(false);
+      this.error = undefined;
 
-      this.renderContent();
+      this.renderContent(items);
       this.attachEventListeners();
-    } catch (error) {
-      console.error('PersonaList渲染失败:', error);
-      this.state.loading = false;
-      this.state.error = error instanceof Error ? error.message : '加载失败';
+    } catch (err) {
+      console.error('PersonaList渲染失败:', err);
+      this.setLoading(false);
+      this.error = err instanceof Error ? err.message : TEXT.errorLoad;
       this.renderError();
     }
   }
 
-  // 搜索功能
   async search(term: string): Promise<void> {
     this.searchTerm = term.trim();
     await this.refreshList();
   }
 
-  // 筛选功能
   async filter(options: FilterOptions): Promise<void> {
     this.currentFilter = { ...options };
     await this.refreshList();
   }
 
-  // 刷新列表
-  private async refreshList(): Promise<void> {
-    if (!this.state.data) return;
-
-    try {
-      this.state.loading = true;
-      this.updateLoadingState();
-
-      let filteredPersonas: Persona[] = [];
-      let filteredUserRoles: UserRole[] = [];
-
-      if (this.searchTerm) {
-        // 有搜索词时使用搜索
-        const searchOptions: SearchOptions = {
-          term: this.searchTerm,
-          filters: this.currentFilter
-        };
-
-        if (this.currentFilter.type !== 'user') {
-          filteredPersonas = await this.personaService.search(searchOptions);
-        }
-        if (this.currentFilter.type !== 'ai') {
-          filteredUserRoles = await this.userRoleService.search(searchOptions);
-        }
-      } else {
-        // 无搜索词时直接筛选
-        if (this.currentFilter.type !== 'user') {
-          filteredPersonas = this.applyFilters(this.state.data.personas, this.currentFilter);
-        }
-        if (this.currentFilter.type !== 'ai') {
-          filteredUserRoles = this.applyFilters(this.state.data.userRoles, this.currentFilter);
-        }
-      }
-
-      const items = this.buildListItems(filteredPersonas, filteredUserRoles);
-      this.state.loading = false;
-      
-      // 将渲染结果写回DOM，避免一直显示加载中
-      const content = this.container.querySelector('.persona-list-content');
-      if (content) {
-        content.innerHTML = this.renderListItems(items);
-      }
-    } catch (error) {
-      console.error('刷新列表失败:', error);
-      this.state.loading = false;
-      this.state.error = '刷新失败';
-      this.updateErrorState();
-    }
-  }
-
-  // 选择项目
-  selectItem(id: string, type: 'ai' | 'user'): void {
-    // 清除之前的选择
-    this.clearSelection();
-    
-    // 设置新选择
-    this.selectedItems.add(id);
-    this.updateItemSelection(id, true);
-    
-    // 触发事件
-    this.events.onSelect(id, type);
-  }
-
-  // 切换选择状态（用于多选）
-  toggleItemSelection(id: string): void {
-    if (this.selectedItems.has(id)) {
-      this.selectedItems.delete(id);
-      this.updateItemSelection(id, false);
-    } else {
-      this.selectedItems.add(id);
-      this.updateItemSelection(id, true);
-    }
-  }
-
-  // 清除选择
-  clearSelection(): void {
-    this.selectedItems.forEach(id => {
-      this.updateItemSelection(id, false);
-    });
-    this.selectedItems.clear();
-  }
-
-  // 加载数据（用于外部刷新）
   async loadData(): Promise<void> {
     await this.render();
   }
 
-  // 销毁组件
   destroy(): void {
-    // 清理全局事件处理器
-    delete (window as any).handleItemClick;
-    delete (window as any).handleItemAction;
-    
-    // 清理DOM事件监听器 - 保存引用以便正确移除
-    if (this.searchInputHandler) {
-      const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement;
-      if (searchInput) {
-        searchInput.removeEventListener('input', this.searchInputHandler);
-      }
+    // 事件解绑
+    const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement | null;
+    searchInput?.removeEventListener('input', this.searchInputHandler as EventListener);
+
+    const clearBtn = this.container.querySelector('#clear-search');
+    clearBtn?.removeEventListener('click', this.clearButtonHandler as EventListener);
+
+    const list = this.container.querySelector('.persona-list-content');
+    list?.removeEventListener('click', this.listDelegateHandler as EventListener);
+
+    const createBtn = this.container.querySelector('.create-new-btn');
+    createBtn?.removeEventListener('click', this.headerCreateHandler as EventListener);
+
+    const retryBtn = this.container.querySelector('.retry-btn');
+    retryBtn?.removeEventListener('click', this.retryHandler as EventListener);
+
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = null;
     }
-    
-    if (this.clearButtonHandler) {
-      const clearBtn = this.container.querySelector('#clear-search');
-      if (clearBtn) {
-        clearBtn.removeEventListener('click', this.clearButtonHandler);
-      }
-    }
-    
+
     this.container.innerHTML = '';
   }
 
-  // 删除项目
-  private async deleteItem(id: string, type: 'ai' | 'user'): Promise<void> {
+  selectItem(id: string, type: ItemType): void {
+    this.clearSelection(); // 单选逻辑保持
+    this.selectedItems.add(id);
+    this.updateItemSelection(id, true);
+    this.events.onSelect(id, type);
+  }
+
+  toggleItemSelection(id: string): void {
+    const selected = this.selectedItems.has(id);
+    if (selected) {
+      this.selectedItems.delete(id);
+    } else {
+      this.selectedItems.add(id);
+    }
+    this.updateItemSelection(id, !selected);
+  }
+
+  clearSelection(): void {
+    if (this.selectedItems.size === 0) return;
+    const ids = Array.from(this.selectedItems);
+    this.selectedItems.clear();
+    const selector = ids.map(id => `[data-id="${CSS.escape(id)}"]`).join(',');
+    const nodes = this.container.querySelectorAll(selector);
+    nodes.forEach(node => node.classList.remove('selected'));
+  }
+
+  // 内部方法
+  private async refreshList(): Promise<void> {
+    if (!this.data) return;
+    try {
+      this.setLoading(true);
+      this.updateLoadingState();
+      const token = ++this.lastQueryToken;
+
+      let filteredPersonas: Persona[] = [];
+      let filteredUserRoles: UserRole[] = [];
+
+      const type = this.currentFilter.type ?? 'all';
+      const needAI = type !== 'user';
+      const needUser = type !== 'ai';
+
+      if (this.searchTerm) {
+        const searchOptions: SearchOptions = { term: this.searchTerm, filters: this.currentFilter };
+        const tasks: Promise<void>[] = [];
+
+        if (needAI) {
+          tasks.push(
+              this.personaService.search(searchOptions).then(r => {
+                if (token === this.lastQueryToken) filteredPersonas = r;
+              })
+          );
+        }
+        if (needUser) {
+          tasks.push(
+              this.userRoleService.search(searchOptions).then(r => {
+                if (token === this.lastQueryToken) filteredUserRoles = r;
+              })
+          );
+        }
+        await Promise.all(tasks);
+        if (token !== this.lastQueryToken) return; // 过期请求丢弃
+      } else {
+        if (needAI) filteredPersonas = this.applyFilters(this.data.personas, this.currentFilter);
+        if (needUser) filteredUserRoles = this.applyFilters(this.data.userRoles, this.currentFilter);
+      }
+
+      const items = this.buildListItems(filteredPersonas, filteredUserRoles);
+      this.setLoading(false);
+      this.error = undefined;
+
+      const content = this.container.querySelector('.persona-list-content');
+      if (content) {
+        content.innerHTML = this.renderListItems(items);
+      }
+    } catch (err) {
+      console.error('刷新列表失败:', err);
+      this.setLoading(false);
+      this.error = TEXT.errorRefresh;
+      this.updateErrorState();
+    }
+  }
+
+  // 本地更新删除（避免全量重拉）
+  private async deleteItem(id: string, type: ItemType): Promise<void> {
     try {
       if (type === 'ai') {
         await this.personaService.delete(id);
+        if (this.data) {
+          this.data.personas = this.data.personas.filter(p => p.id !== id);
+        }
       } else {
         await this.userRoleService.delete(id);
+        if (this.data) {
+          this.data.userRoles = this.data.userRoles.filter(u => u.id !== id);
+        }
       }
-      
-      // 刷新列表
-      await this.render();
-      
-      // 触发删除事件
+
+      await this.refreshList();
       this.events.onDelete(id, type);
-    } catch (error) {
-      console.error('删除失败:', error);
-      this.showError(error instanceof Error ? error.message : '删除失败');
+    } catch (err) {
+      console.error('删除失败:', err);
+      this.showError(err instanceof Error ? err.message : TEXT.errorRefresh);
     }
   }
 
-  // 构建列表项数据
   private buildListItems(personas: Persona[], userRoles: UserRole[]): PersonaListItem[] {
-    const items: PersonaListItem[] = [];
+    // 修复：将只读 tags 拷贝为可变数组，满足 PersonaListItem.tags: string[]
+    const aiItems: PersonaListItem[] = personas.map(p => ({
+      id: p.id,
+      name: p.name,
+      type: 'ai',
+      tags: Array.from(p.tags as readonly string[]),
+      lastUsedAt: p.lastUsedAt
+    }));
 
-    // 添加AI角色
-    personas.forEach(persona => {
-      items.push({
-        id: persona.id,
-        name: persona.name,
-        type: 'ai',
-        tags: persona.tags,
-        lastUsedAt: persona.lastUsedAt
-      });
-    });
+    const userItems: PersonaListItem[] = userRoles.map(u => ({
+      id: u.id,
+      name: u.name,
+      type: 'user',
+      tags: Array.from(u.tags as readonly string[]),
+      lastUsedAt: u.lastUsedAt
+    }));
 
-    // 添加用户角色
-    userRoles.forEach(userRole => {
-      items.push({
-        id: userRole.id,
-        name: userRole.name,
-        type: 'user',
-        tags: userRole.tags,
-        lastUsedAt: userRole.lastUsedAt
-      });
-    });
-
-    // 排序：按最近使用时间排序
-    return items.sort((a, b) => {
-      return b.lastUsedAt - a.lastUsedAt;
-    });
+    const all = aiItems.concat(userItems);
+    all.sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+    return all;
   }
 
-  // 应用筛选器
   private applyFilters<T extends Persona | UserRole>(items: T[], filters: FilterOptions): T[] {
-    let filtered = items;
-
-    // 按类型筛选
-    if (filters.type && filters.type !== 'all') {
-      // 这里实际上不需要再次按type筛选，因为调用时已经分开处理了
-    }
-
-    // 按标签筛选
-    if (filters.tags && filters.tags.length > 0) {
-      filtered = filtered.filter(item => 
-        filters.tags!.some(tag => item.tags.includes(tag))
-      );
-    }
-
-    return filtered;
+    if (!filters.tags || filters.tags.length === 0) return items;
+    const tagsSet = new Set(filters.tags);
+    return items.filter(item => {
+      const tags = item.tags as readonly string[];
+      return tags.some(tag => tagsSet.has(tag));
+    });
   }
 
-  // 渲染内容
-  private renderContent(): void {
-    if (!this.state.data) return;
-
-    const items = this.state.data.items;
-    
+  private renderContent(items: PersonaListItem[]): void {
+    const search = this.escapeHtml(this.searchTerm);
     this.container.innerHTML = `
       <div class="persona-list-container">
         <div class="persona-list-header">
           <div class="search-container">
-            <input type="text" id="persona-search" placeholder="搜索角色..." value="${this.searchTerm}">
+            <input type="text" id="persona-search" placeholder="${TEXT.searchPlaceholder}" value="${search}">
             <button id="clear-search" class="clear-btn" ${this.searchTerm ? '' : 'style="display:none"'}>✕</button>
           </div>
           <div class="filter-container"></div>
+          <button class="btn btn-primary create-new-btn" style="margin-left:auto">${TEXT.createRole}</button>
         </div>
         <div class="persona-list-content">
           ${this.renderListItems(items)}
@@ -284,152 +284,132 @@ export class PersonaListComponent {
     `;
   }
 
-  // 渲染列表项
   private renderListItems(items: PersonaListItem[]): string {
+    const type = this.currentFilter.type ?? 'all';
     if (items.length === 0) {
-      const currentType = this.currentFilter.type;
-      const typeText = currentType === 'ai' ? 'AI角色' : currentType === 'user' ? '用户角色' : '角色';
-      const createHandler = currentType === 'user' ? 'window.personaCenterScreen?.createNewUserRole()' : 'window.personaCenterScreen?.createNewPersona()';
-      
+      const typeText = type === 'ai' ? TEXT.groupAI : type === 'user' ? TEXT.groupUser : '角色';
+      const createText = typeText === TEXT.groupAI ? '角色' : typeText;
       return `
         <div class="empty-state">
-          <div class="empty-icon">🎭</div>
-          <h4>暂无${typeText}</h4>
-          <p>创建您的第一个${typeText}开始使用</p>
-          <button class="btn btn-primary" onclick="${createHandler}">新建${typeText === 'AI角色' ? '角色' : typeText}</button>
+          <div class="empty-icon">${TEXT.emptyIcon}</div>
+          <h4>${TEXT.empty(typeText)}</h4>
+          <p>${TEXT.emptySub(typeText)}</p>
+          <button class="btn btn-primary create-empty-btn" data-empty-create="${type === 'user' ? 'user' : 'ai'}">新建${createText}</button>
         </div>
       `;
     }
 
-    const groupedItems = this.groupItemsByType(items);
-    const activeType = this.currentFilter.type === 'ai' ? 'ai' : this.currentFilter.type === 'user' ? 'user' : 'all';
-    let html = '';
+    const grouped = this.groupItemsByType(items);
+    const activeType: 'ai' | 'user' | 'all' = type === 'ai' || type === 'user' ? type : 'all';
 
-    const renderGroup = (title: string, list: PersonaListItem[], type: 'ai'|'user') => `
+    const renderGroup = (title: string, list: PersonaListItem[]) => `
       <div class="item-group">
         <div class="group-title">
           <span>${title} (${list.length})</span>
         </div>
-        ${list.map(item => this.renderListItem(item)).join('')}
+        ${list.map(i => this.renderListItem(i)).join('')}
       </div>`;
 
+    let html = '';
     if (activeType === 'all' || activeType === 'ai') {
-      if (groupedItems.ai.length > 0) html += renderGroup('AI角色', groupedItems.ai, 'ai');
+      if (grouped.ai.length) html += renderGroup(TEXT.groupAI, grouped.ai);
     }
     if (activeType === 'all' || activeType === 'user') {
-      if (groupedItems.user.length > 0) html += renderGroup('用户角色', groupedItems.user, 'user');
+      if (grouped.user.length) html += renderGroup(TEXT.groupUser, grouped.user);
     }
-
     return html;
   }
 
-  // 渲染单个列表项
   private renderListItem(item: PersonaListItem): string {
     const isSelected = this.selectedItems.has(item.id);
     const lastUsedText = this.formatLastUsed(item.lastUsedAt);
-    
+    const safeName = this.escapeHtml(item.name);
+    const tags = item.tags.map(tag => `<span class="tag">${this.escapeHtml(tag)}</span>`).join('');
+
     return `
-      <div class="list-item ${isSelected ? 'selected' : ''}" 
-           data-id="${item.id}" data-type="${item.type}">
-        <div class="item-content" onclick="handleItemClick('${item.id}', '${item.type}')">
+      <div class="list-item ${isSelected ? 'selected' : ''}" data-id="${this.escapeAttr(item.id)}" data-type="${item.type}">
+        <div class="item-content" data-action="select">
           <div class="item-main">
-            <span class="item-name">${this.escapeHtml(item.name)}</span>
+            <span class="item-name">${safeName}</span>
             <span class="item-type-badge ${item.type}">${item.type === 'ai' ? 'AI' : '用户'}</span>
           </div>
           <div class="item-meta">
-            <span class="item-tags">${item.tags.map(tag => `<span class="tag">${this.escapeHtml(tag)}</span>`).join('')}</span>
+            <span class="item-tags">${tags}</span>
             <span class="item-last-used">${lastUsedText}</span>
           </div>
         </div>
         <div class="item-actions">
-          <button class="action-btn small" onclick="handleItemAction('${item.id}', '${item.type}', 'edit')">编辑</button>
-          <button class="action-btn small danger" onclick="handleItemAction('${item.id}', '${item.type}', 'delete')">删除</button>
+          <button class="action-btn small" data-action="edit">${TEXT.btnEdit}</button>
+          <button class="action-btn small danger" data-action="delete">${TEXT.btnDelete}</button>
         </div>
       </div>
     `;
   }
 
-  // 按类型分组
-  private groupItemsByType(items: PersonaListItem[]): { ai: PersonaListItem[], user: PersonaListItem[] } {
-    return items.reduce((groups, item) => {
-      groups[item.type].push(item);
-      return groups;
-    }, { ai: [] as PersonaListItem[], user: [] as PersonaListItem[] });
+  private groupItemsByType(items: PersonaListItem[]): GroupedItems {
+    const groups: GroupedItems = { ai: [], user: [] };
+    for (const it of items) groups[it.type].push(it);
+    return groups;
   }
 
-  // 格式化最后使用时间
   private formatLastUsed(timestamp: number): string {
     const now = Date.now();
     const diff = now - timestamp;
-    
-    if (diff < 60000) return '刚刚';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-    if (diff < 2592000000) return `${Math.floor(diff / 86400000)}天前`;
-    
+    if (diff < 60_000) return '刚刚';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时前`;
+    if (diff < 2_592_000_000) return `${Math.floor(diff / 86_400_000)}天前`;
     return new Date(timestamp).toLocaleDateString();
   }
 
-  // 渲染加载状态
   private renderLoading(): void {
     this.container.innerHTML = `
       <div class="loading-state">
         <div class="loading-spinner"></div>
-        <p>加载中...</p>
+        <p>${TEXT.loading}</p>
       </div>
     `;
   }
 
-  // 渲染错误状态
   private renderError(): void {
     this.container.innerHTML = `
       <div class="error-state">
-        <p class="error-message">${this.state.error}</p>
-        <button onclick="this.render()" class="retry-btn">重试</button>
+        <p class="error-message">${this.escapeHtml(this.error || TEXT.errorLoad)}</p>
+        <button class="retry-btn">${TEXT.retry}</button>
       </div>
     `;
+    const retryBtn = this.container.querySelector('.retry-btn')!;
+    this.retryHandler = () => this.render();
+    retryBtn.addEventListener('click', this.retryHandler);
   }
 
-  // 更新加载状态
   private updateLoadingState(): void {
     const content = this.container.querySelector('.persona-list-content');
-    if (content) {
-      content.innerHTML = '<div class="loading-spinner small"></div>';
-    }
+    if (content) content.innerHTML = '<div class="loading-spinner small"></div>';
   }
 
-  // 更新错误状态
   private updateErrorState(): void {
     const content = this.container.querySelector('.persona-list-content');
-    if (content) {
-      content.innerHTML = `<div class="error-message">${this.state.error}</div>`;
-    }
+    if (content) content.innerHTML = `<div class="error-message">${this.escapeHtml(this.error || TEXT.errorRefresh)}</div>`;
   }
 
-  // 更新选择状态
   private updateItemSelection(id: string, selected: boolean): void {
-    const item = this.container.querySelector(`[data-id="${id}"]`);
-    if (item) {
-      item.classList.toggle('selected', selected);
-    }
+    const item = this.container.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    item?.classList.toggle('selected', selected);
   }
 
-  // 显示错误信息
   private showError(message: string): void {
-    // 这里可以集成到全局错误处理系统
     console.error('PersonaList Error:', message);
-    // 可以显示toast通知或其他用户友好的错误提示
+    // 可接入全局toast
   }
 
-  // 事件监听器
   private attachEventListeners(): void {
-    // 搜索输入
-    const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement;
+    // 搜索输入 + 防抖
+    const searchInput = this.container.querySelector('#persona-search') as HTMLInputElement | null;
     if (searchInput) {
-      let searchTimeout: number;
       this.searchInputHandler = () => {
-        clearTimeout(searchTimeout);
-        searchTimeout = window.setTimeout(() => {
+        if (this.searchDebounceTimer) clearTimeout(this.searchDebounceTimer);
+        this.searchDebounceTimer = window.setTimeout(() => {
           this.search(searchInput.value);
         }, 300);
       };
@@ -440,67 +420,77 @@ export class PersonaListComponent {
     const clearBtn = this.container.querySelector('#clear-search');
     if (clearBtn) {
       this.clearButtonHandler = () => {
-        if (searchInput) {
-          searchInput.value = '';
-        }
+        if (searchInput) searchInput.value = '';
         this.search('');
+        clearBtn.setAttribute('style', 'display:none');
       };
       clearBtn.addEventListener('click', this.clearButtonHandler);
     }
 
-    // 类型筛选
-    // 顶部已分AI/用户，不再提供二次筛选
-
-    // 状态筛选
-    // 去除状态筛选（不再需要）
-
-    // 新建按钮移至页面头部，不在列表中重复提供
-
-    // 顶部新增"新建"按钮（与列表同级）- 检查是否已存在以避免重复
-    const header = this.container.querySelector('.persona-list-header');
-    if (header) {
-      // 检查是否已经存在新建按钮，避免重复添加
-      const existingBtn = header.querySelector('.create-new-btn');
-      if (!existingBtn) {
-        const btn = document.createElement('button');
-        // 使用常规按钮样式，避免 icon 按钮的固定宽度导致文字竖排
-        btn.className = 'btn btn-primary create-new-btn';
-        btn.textContent = '新建角色';
-        btn.style.marginLeft = 'auto';
-        btn.addEventListener('click', () => {
-          if (this.currentFilter.type === 'user') {
-            this.events.onCreate('user');
-          } else {
-            this.events.onCreate('ai');
-          }
-        });
-        header.appendChild(btn);
-      }
+    // 创建按钮（头部）
+    const createBtn = this.container.querySelector('.create-new-btn');
+    if (createBtn) {
+      this.headerCreateHandler = () => {
+        const t = this.currentFilter.type === 'user' ? 'user' : 'ai';
+        this.events.onCreate(t);
+      };
+      createBtn.addEventListener('click', this.headerCreateHandler);
     }
 
-    // 全局事件处理函数
-    (window as any).handleItemClick = (id: string, type: 'ai' | 'user') => {
-      this.selectItem(id, type);
-    };
+    // 列表事件委托（精简版）
+    const list = this.container.querySelector('.persona-list-content');
+    if (list) {
+      this.listDelegateHandler = async (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (!target) return;
 
-    (window as any).handleItemAction = async (id: string, type: 'ai' | 'user', action: string) => {
-      switch (action) {
-        case 'edit':
-          this.selectItem(id, type);
-          break;
-        case 'delete':
-          if (confirm('确定要删除这个角色吗？此操作无法撤销。')) {
-            await this.deleteItem(id, type);
-          }
-          break;
-      }
-    };
+        // 空状态新建
+        const emptyBtn = target.closest<HTMLButtonElement>('.create-empty-btn');
+        if (emptyBtn) {
+          const t = (emptyBtn.dataset.emptyCreate as ItemType) || 'ai';
+          this.events.onCreate(t);
+          return;
+        }
+
+        // 统一处理 data-action
+        const actionEl = target.closest<HTMLElement>('[data-action]');
+        if (!actionEl) return;
+
+        const itemEl = actionEl.closest<HTMLElement>('.list-item');
+        if (!itemEl) return;
+
+        const id = itemEl.dataset.id as string | undefined;
+        const type = (itemEl.dataset.type as ItemType | undefined) || 'ai';
+        if (!id) return;
+
+        const action = actionEl.dataset.action;
+        switch (action) {
+          case 'select':
+          case 'edit':
+            this.selectItem(id, type);
+            break;
+          case 'delete':
+            if (confirm(TEXT.confirmDelete)) {
+              await this.deleteItem(id, type);
+            }
+            break;
+        }
+      };
+      list.addEventListener('click', this.listDelegateHandler);
+    }
   }
 
-  // HTML转义
+  private setLoading(v: boolean): void {
+    this.loading = v;
+  }
+
   private escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  private escapeAttr(text: string): string {
+    return this.escapeHtml(text);
   }
 }

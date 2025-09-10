@@ -28,6 +28,9 @@ import { injectCompatibilityAPIs } from './init/compat';
 // === 服务层导入 ===
 import * as SERVICES from './services';
 
+// === Memory Manager P2 导入 ===
+import { chatMemoryEstimator } from './services/memory/chatEstimator';
+
 console.log('🚀 EPhone Vite+TypeScript 版本启动...');
 console.log('✅ 核心模块已加载');
 console.log('  - CONSTANTS loaded:', Object.keys(CONSTANTS).length, 'keys');
@@ -400,6 +403,9 @@ class EPhoneApplication {
 
     // 初始化折叠功能
     this.initializeSettingsCollapse();
+    
+    // Memory Manager P2: 初始化记忆预算预估功能
+    this.initializeChatMemoryEstimator(chat);
 
     const modal = document.getElementById('chat-settings-modal');
     if (modal) {
@@ -1178,6 +1184,44 @@ class EPhoneApplication {
       });
     } catch (error) {
       console.error('加载折叠状态失败:', error);
+    }
+  }
+
+  /**
+   * Memory Manager P2: 初始化聊天记忆预算预估功能
+   */
+  private async initializeChatMemoryEstimator(chat: Chat): Promise<void> {
+    try {
+      // 初始化记忆预估器
+      chatMemoryEstimator.init();
+
+      // 准备群聊成员信息
+      let members: any[] = [];
+      if (chat.isGroup && chat.members) {
+        members = chat.members.map(member => ({
+          personaId: member.personaId,
+          name: member.name || member.personaId
+        }));
+      }
+
+      // 设置聊天上下文
+      await chatMemoryEstimator.setChatContext(
+        chat.id,
+        chat.personaId,
+        chat.isGroup,
+        members
+      );
+
+      console.log('[MM][P2] 记忆预估器初始化完成:', {
+        chatId: chat.id,
+        personaId: chat.personaId,
+        isGroup: chat.isGroup,
+        memberCount: members.length
+      });
+
+    } catch (error) {
+      console.error('[MM][P2] 记忆预估器初始化失败:', error);
+      // 初始化失败不影响聊天设置的正常打开
     }
   }
 

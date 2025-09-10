@@ -12,6 +12,7 @@ import type {
   ApiConfig
 } from '../state';
 import type { Persona, UserRole } from '../screens/personaCenter/types/PersonaTypes';
+import type { EventRec, MemoryType, PersonaMemorySettings } from '../services/memory/types';
 
 // 常量
 const DB_NAME = 'GeminiChatDB';
@@ -47,6 +48,9 @@ class EPhoneDatabase extends Dexie {
   presets!: Dexie.Table<Preset, string>;
   personas!: Dexie.Table<Persona, string>;
   userRoles!: Dexie.Table<UserRole, string>;
+  events!: Dexie.Table<EventRec, string>;
+  memory_types!: Dexie.Table<MemoryType, string>;
+  memory_settings!: Dexie.Table<PersonaMemorySettings, string>;
 
   constructor() {
     super(DB_NAME);
@@ -99,6 +103,23 @@ class EPhoneDatabase extends Dexie {
       presets: '&id, name',
       personas: '&id, name, type, *tags, archived, status, version, updatedAt, lastUsedAt',
       userRoles: '&id, name, type, *tags, archived, updatedAt, lastUsedAt, isGlobalDefault'
+    });
+
+    // v12 - Memory Manager
+    this.version(12).stores({
+      chats: '&id, isGroup, personaId, defaultUserRoleId',
+      apiConfig: '&id',
+      globalSettings: '&id',
+      userStickers: '&id, url, name',
+      worldBooks: '&id, name',
+      musicLibrary: '&id',
+      personaPresets: '&id',
+      presets: '&id, name',
+      personas: '&id, name, type, *tags, archived, status, version, updatedAt, lastUsedAt',
+      userRoles: '&id, name, type, *tags, archived, updatedAt, lastUsedAt, isGlobalDefault',
+      events: '&id, personaId, status, [personaId+status], [personaId+dueAt], updatedAt, createdAt, excludeFromPrompt, *participants',
+      memory_types: '&key',
+      memory_settings: '&personaId'
     });
   }
 }
