@@ -189,12 +189,43 @@ class EPhoneApplication {
     console.log('开始注册DOM事件监听器...');
 
     // 注册基础事件监听器
+    this.registerAppIconListeners();
     this.registerChatInterfaceListeners();
     this.registerFileUploadListeners();
     this.registerDataManagementListeners();
     this.registerMusicPlayerListeners();
 
     console.log('DOM事件监听器注册完成');
+  }
+
+  /**
+   * 应用图标事件监听器
+   */
+  private registerAppIconListeners(): void {
+    // 为所有使用 onclick="showScreen(...)" 的按钮重新绑定事件
+    const appIcons = document.querySelectorAll('.app-icon[onclick]');
+    appIcons.forEach(icon => {
+      const onclickAttr = icon.getAttribute('onclick');
+      if (onclickAttr && onclickAttr.includes('showScreen')) {
+        // 提取 showScreen 的参数
+        const match = onclickAttr.match(/showScreen\(['"]([^'"]+)['"]\)/);
+        if (match && match[1]) {
+          const screenId = match[1];
+          // 移除原有的 onclick 属性并添加新的事件监听器
+          icon.removeAttribute('onclick');
+          icon.addEventListener('click', () => {
+            if (window.showScreen) {
+              window.showScreen(screenId);
+            } else {
+              console.error('showScreen 函数未定义');
+            }
+          });
+          console.log(`为图标重新绑定 showScreen('${screenId}') 事件`);
+        }
+      }
+    });
+
+    console.log('应用图标事件监听器注册完成');
   }
 
   /**

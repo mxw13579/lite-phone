@@ -8,6 +8,7 @@ import type {
   StateManager,
   MusicState,
   ApiConfig,
+  WorldBook,
 } from '../state';
 import DB from '../database';
 import CONSTANTS from '../constants';
@@ -347,14 +348,14 @@ export class AiResponseModule {
               } catch (configError) {
                 console.warn('[MM][budget-persona-config-failed]', configError);
                 // 优先级3：使用默认配置
-                const { DEFAULT_COMPOSITION_CONFIG } = await import('../personaCenter/types/PersonaTypes');
+                const { DEFAULT_COMPOSITION_CONFIG } = await import('./personaCenter/types/PersonaTypes');
                 memoryTokenBudget = DEFAULT_COMPOSITION_CONFIG.memoryTokenBudget;
                 console.log('[MM][budget] 使用默认记忆token预算:', memoryTokenBudget);
               }
             }
           } else {
             // 如果没有personaId，使用全局默认配置
-            const { DEFAULT_COMPOSITION_CONFIG } = await import('../personaCenter/types/PersonaTypes');
+            const { DEFAULT_COMPOSITION_CONFIG } = await import('./personaCenter/types/PersonaTypes');
             memoryTokenBudget = DEFAULT_COMPOSITION_CONFIG.memoryTokenBudget;
             console.log('[MM][budget] 使用全局默认记忆token预算:', memoryTokenBudget);
           }
@@ -382,10 +383,27 @@ export class AiResponseModule {
       let systemPrompt = '';
       let compositionHash = '';
       try {
+        // Persona 模式：构建 WorldBook 映射，传入合成服务
+        let worldBooksMap: Record<string, WorldBook> = {};
+        try {
+          const linkedIds = chat.settings?.linkedWorldBookIds || [];
+          const allWorldBooks: WorldBook[] = (state?.state?.worldBooks as WorldBook[]) || [];
+          if (linkedIds.length && allWorldBooks.length) {
+            worldBooksMap = linkedIds.reduce((acc: Record<string, WorldBook>, id: string) => {
+              const wb = allWorldBooks.find(w => w.id === id);
+              if (wb) acc[wb.id] = wb;
+              return acc;
+            }, {} as Record<string, WorldBook>);
+          }
+        } catch (e) {
+          console.warn('[MM][worldbook-map-failed]', e);
+          worldBooksMap = {} as Record<string, WorldBook>;
+        }
+
         const promptResult = await this.systemPromptService.generateSystemPrompt(
-            chat,
-            {},
-            memoryPack
+          chat,
+          worldBooksMap,
+          memoryPack
         );
         systemPrompt = promptResult.systemPrompt;
         compositionHash = promptResult.compositionHash;

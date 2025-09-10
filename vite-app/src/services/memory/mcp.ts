@@ -528,27 +528,29 @@ async function applyCompressOldestPolicy(
   
   // 调用压缩函数（注意：这需要API配置，如果失败会记录警告但不会阻塞）
   try {
-    // 获取API配置：修正为正确的STATE路径
-    const win = globalThis.window || {} as any;
-    const apiConfig = win.STATE?.state?.apiConfig || win.state?.apiConfig || 
-                     win.STATE?.globalSettings?.activeApiConfig;
-    
-    if (apiConfig?.url && apiConfig?.key && apiConfig?.model) {
+    // 获取API配置，统一兼容 key 名称
+    const win = (globalThis as any).window || ({} as any);
+    const apiConfigRaw = win.STATE?.state?.apiConfig || win.state?.apiConfig || win.STATE?.globalSettings?.activeApiConfig || {};
+    const proxyUrl: string | undefined = apiConfigRaw.proxyUrl || apiConfigRaw.url;
+    const apiKey: string | undefined = apiConfigRaw.apiKey || apiConfigRaw.key;
+    const model: string | undefined = apiConfigRaw.model || apiConfigRaw.modelName || apiConfigRaw.selectedModel;
+
+    if (proxyUrl && apiKey && model) {
       await compressOldEvents(
         personaId,
         candidateIds,
         '压缩旧的已完成事件，保留关键信息',
-        apiConfig.url,
-        apiConfig.key,
-        apiConfig.model
+        proxyUrl,
+        apiKey,
+        model
       );
       console.log('[MM][compress-success]', { compressedCount: candidateIds.length });
     } else {
       console.warn('[MM][compress-no-api]', '缺少API配置，无法执行压缩，退化为删除策略', {
-        apiConfigFound: !!apiConfig,
-        hasUrl: !!apiConfig?.url,
-        hasKey: !!apiConfig?.key,
-        hasModel: !!apiConfig?.model
+        apiConfigFound: !!apiConfigRaw,
+        hasProxyUrl: !!proxyUrl,
+        hasApiKey: !!apiKey,
+        hasModel: !!model
       });
       const excessCount = allEvents.length - (await MemoryRepo.getSettings(personaId)).maxEvents;
       if (excessCount > 0) {
