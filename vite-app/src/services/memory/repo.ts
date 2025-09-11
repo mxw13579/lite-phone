@@ -139,6 +139,11 @@ export const MemoryRepo = {
     return db.events.put(sanitizeEvent(e));
   },
 
+  async getEventById(id: string): Promise<EventRec | undefined> {
+    await ensure();
+    return db.events.get(id);
+  },
+
   async updateEvent(id: string, patch: Partial<EventRec>): Promise<void> {
     await ensure();
     await db.events.update(id, { ...sanitizePatch(patch), updatedAt: Date.now() });

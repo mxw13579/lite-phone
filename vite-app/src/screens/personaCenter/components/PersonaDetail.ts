@@ -986,11 +986,14 @@ export class PersonaDetailComponent {
   async openMemorySettings(personaId: string): Promise<void> {
     console.log('[MM][P2] 打开记忆设置:', personaId);
     
-    // 创建记忆设置弹窗
-    this.showMemorySettingsModal(personaId);
+    // 创建记忆设置弹窗并加载现有设置
+    await this.showMemorySettingsModal(personaId);
   }
 
-  private showMemorySettingsModal(personaId: string): void {
+  private async showMemorySettingsModal(personaId: string): Promise<void> {
+    // 先获取现有设置
+    const currentSettings = await MemoryRepo.getSettings(personaId);
+    
     const modalHtml = `
       <div class="memory-settings-modal" id="memorySettingsModal">
         <div class="memory-settings-modal-content">
@@ -1000,52 +1003,35 @@ export class PersonaDetailComponent {
           </div>
           <div class="memory-settings-body">
             <div class="settings-section">
-              <h4>自动压缩设置</h4>
+              <h4>记忆容量设置</h4>
               <div class="form-group">
-                <label>
-                  <input type="checkbox" id="enableAutoCompress" checked>
-                  启用自动压缩旧记忆
-                </label>
-                <p class="help-text">当记忆事件超过一定时间或数量时，自动将旧事件压缩以节省空间</p>
+                <label for="memoryMaxEvents">最大记忆事件数量</label>
+                <input type="number" id="memoryMaxEvents" value="${currentSettings.maxEvents}" min="10" max="1000">
+                <p class="help-text">每个角色最多保留的记忆事件数量</p>
               </div>
               
               <div class="form-group">
-                <label for="compressAfterDays">压缩阈值（天数）</label>
-                <input type="number" id="compressAfterDays" value="30" min="1" max="365">
-                <p class="help-text">超过指定天数的已完成事件将被自动压缩</p>
+                <label for="memoryTokenBudget">记忆Token预算</label>
+                <input type="number" id="memoryTokenBudget" value="${currentSettings.memoryTokenBudget || 600}" min="100" max="2000">
+                <p class="help-text">每次对话注入的记忆内容token上限</p>
               </div>
             </div>
             
             <div class="settings-section">
-              <h4>记忆预算设置</h4>
+              <h4>溢出策略设置</h4>
               <div class="form-group">
-                <label for="maxMemoryEvents">最大记忆事件数量</label>
-                <input type="number" id="maxMemoryEvents" value="1000" min="10" max="10000">
-                <p class="help-text">超过此数量时，最旧的事件将被标记为可压缩</p>
+                <label for="memoryOverflowPolicy">溢出处理策略</label>
+                <select id="memoryOverflowPolicy">
+                  <option value="compress_oldest" ${currentSettings.overflowPolicy === 'compress_oldest' ? 'selected' : ''}>压缩最旧事件</option>
+                  <option value="drop_oldest" ${currentSettings.overflowPolicy === 'drop_oldest' ? 'selected' : ''}>删除最旧事件</option>
+                </select>
+                <p class="help-text">当记忆事件超出容量限制时的处理方式</p>
               </div>
               
               <div class="form-group">
-                <label for="maxMemoryChars">最大记忆字符数</label>
-                <input type="number" id="maxMemoryChars" value="50000" min="1000" max="1000000">
-                <p class="help-text">记忆内容总字符数超过此值时触发警告</p>
-              </div>
-            </div>
-            
-            <div class="settings-section">
-              <h4>导出设置</h4>
-              <div class="form-group">
-                <button type="button" class="settings-btn secondary" onclick="window.personaCenterDetail?.exportMemories('${personaId}')">
-                  📁 导出所有记忆
-                </button>
-                <p class="help-text">将所有记忆事件导出为JSON文件</p>
-              </div>
-              
-              <div class="form-group">
-                <input type="file" id="importMemoryFile" accept=".json" style="display: none" onchange="window.personaCenterDetail?.importMemories('${personaId}', this.files[0])">
-                <button type="button" class="settings-btn secondary" onclick="document.getElementById('importMemoryFile').click()">
-                  📥 导入记忆
-                </button>
-                <p class="help-text">从JSON文件导入记忆事件</p>
+                <label for="memoryCompressBatchSize">压缩批次大小</label>
+                <input type="number" id="memoryCompressBatchSize" value="${currentSettings.compressBatchSize}" min="5" max="50">
+                <p class="help-text">每次自动压缩时处理的事件数量</p>
               </div>
             </div>
           </div>
@@ -1064,14 +1050,32 @@ export class PersonaDetailComponent {
     console.log('[MM][P2] 保存记忆设置:', personaId);
     
     try {
-      // 这里可以保存设置到数据库或localStorage
-      // 目前只是模拟保存
-      
       const modal = document.getElementById('memorySettingsModal');
-      modal?.remove();
+      if (!modal) return;
+      
+      // 从表单获取设置值
+      const maxEventsInput = modal.querySelector<HTMLInputElement>('#memoryMaxEvents');
+      const overflowPolicySelect = modal.querySelector<HTMLSelectElement>('#memoryOverflowPolicy');
+      const compressBatchSizeInput = modal.querySelector<HTMLInputElement>('#memoryCompressBatchSize');
+      const memoryTokenBudgetInput = modal.querySelector<HTMLInputElement>('#memoryTokenBudget');
+      
+      const settings = {
+        personaId,
+        maxEvents: parseInt(maxEventsInput?.value || '50'),
+        overflowPolicy: (overflowPolicySelect?.value || 'compress_oldest') as 'drop_oldest' | 'compress_oldest',
+        compressBatchSize: parseInt(compressBatchSizeInput?.value || '10'),
+        memoryTokenBudget: parseInt(memoryTokenBudgetInput?.value || '600')
+      };
+      
+      // 保存到数据库
+      await MemoryRepo.saveSettings(settings);
+      
+      modal.remove();
       
       // 显示保存成功提示
-      this.showMemoryMessage('设置保存成功', 'success');
+      this.showMemoryMessage('记忆设置保存成功', 'success');
+      console.log('[MM][P2] 记忆设置保存成功:', settings);
+      
     } catch (error) {
       console.error('[MM][P2] 保存设置失败:', error);
       this.showMemoryError('保存设置失败，请稍后重试');

@@ -49,6 +49,7 @@ export interface MemoryRepo {
   getEventsByPersona(personaId: string): Promise<EventRec[]>;
   getOpenByPersona(personaId: string): Promise<EventRec[]>;
   getOldDoneOrNote(personaId: string, before: number, limit: number): Promise<EventRec[]>;
+  getEventById(id: string): Promise<EventRec | undefined>;
   addEvent(e: EventRec): Promise<string>;
   updateEvent(id: string, patch: Partial<EventRec>): Promise<void>;
   tx<T>(fn: () => Promise<T>): Promise<T>;
