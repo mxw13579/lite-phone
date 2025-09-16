@@ -35,32 +35,35 @@
                 <div id="main-time">12:00</div>
                 <div id="main-date">星期一, 1月1日</div>
             </div>
-            <div id="app-grid">
-                <div class="app-row">
-                    <button class="app-icon" onclick="showScreen('world-book-screen')" aria-label="打开世界书应用">
-                        <div class="icon-bg"><img src="https://i.postimg.cc/htP74QkL/1.jpg" alt="世界书"></div>
-                        <span class="label">世界书</span></button>
-                    <button class="app-icon" onclick="showScreen('preset-list-screen')" aria-label="打开预设设置应用">
-                        <div class="icon-bg"><img src="https://i.postimg.cc/MKfTfsmq/1.png" alt="预设设置"></div>
-                        <span class="label">预设设置</span></button>
-                    <button class="app-icon" onclick="showScreen('persona-center-screen')" aria-label="打开角色中心应用">
-                        <div class="icon-bg">🎭</div>
-                        <span class="label">角色中心</span></button>
-                    <button class="app-icon" onclick="showScreen('memory-management-screen')" aria-label="打开记忆管理应用">
-                        <div class="icon-bg">🧠</div>
-                        <span class="label">记忆管理</span></button>
-                </div>
-                <div class="app-row">
-                    <button class="app-icon" onclick="showScreen('chat-list-screen')" aria-label="打开QQ聊天应用">
-                        <div class="icon-bg"><img src="https://i.postimg.cc/gr2ndvPL/QQ.jpg" alt="QQ"></div>
-                        <span class="label">QQ</span></button>
-                    <button class="app-icon" onclick="showScreen('api-settings-screen')" aria-label="打开API设置应用">
-                        <div class="icon-bg"><img src="https://i.postimg.cc/wy631NyP/settings.jpg" alt="API设置"></div>
-                        <span class="label">API设置</span></button>
-                    <button class="app-icon" onclick="showScreen('wallpaper-screen')" aria-label="打开壁纸设置应用">
-                        <div class="icon-bg"><img src="https://i.postimg.cc/q6qRLdGx/photo.jpg" alt="壁纸"></div>
-                        <span class="label">壁纸</span></button>
-                </div>
+            <div id="app-grid" class="three-col-grid">
+                <button class="app-icon" onclick="showScreen('world-book-screen')" aria-label="打开世界书应用">
+                    <div class="icon-bg"><img src="https://i.postimg.cc/htP74QkL/1.jpg" alt="世界书"></div>
+                    <span class="label">世界书</span>
+                </button>
+                <button class="app-icon" onclick="showScreen('preset-list-screen')" aria-label="打开预设设置应用">
+                    <div class="icon-bg"><img src="https://i.postimg.cc/MKfTfsmq/1.png" alt="预设设置"></div>
+                    <span class="label">预设设置</span>
+                </button>
+                <button class="app-icon" onclick="showScreen('persona-center-screen')" aria-label="打开角色中心应用">
+                    <div class="icon-bg">🎭</div>
+                    <span class="label">角色中心</span>
+                </button>
+                <button class="app-icon" onclick="window.showScreen && window.showScreen('memory-management-screen')" aria-label="打开记忆管理应用">
+                    <div class="icon-bg">🧠</div>
+                    <span class="label">记忆管理</span>
+                </button>
+                <button class="app-icon" onclick="showScreen('chat-list-screen')" aria-label="打开QQ聊天应用">
+                    <div class="icon-bg"><img src="https://i.postimg.cc/gr2ndvPL/QQ.jpg" alt="QQ"></div>
+                    <span class="label">QQ</span>
+                </button>
+                <button class="app-icon" onclick="showScreen('api-settings-screen')" aria-label="打开API设置应用">
+                    <div class="icon-bg"><img src="https://i.postimg.cc/wy631NyP/settings.jpg" alt="API设置"></div>
+                    <span class="label">API设置</span>
+                </button>
+                <button class="app-icon" onclick="showScreen('wallpaper-screen')" aria-label="打开壁纸设置应用">
+                    <div class="icon-bg"><img src="https://i.postimg.cc/q6qRLdGx/photo.jpg" alt="壁纸"></div>
+                    <span class="label">壁纸</span>
+                </button>
             </div>
 
         </div>
@@ -637,6 +640,14 @@
                             <button type="button" id="view-memory-details-btn" class="memory-action-btn">
                                 <span>📋</span>
                                 <span>查看详情</span>
+                            </button>
+                            <button type="button" id="clear-temp-excludes-btn" class="memory-action-btn">
+                                <span>🧹</span>
+                                <span>清除临时排除</span>
+                            </button>
+                            <button type="button" id="reset-memory-selection-btn" class="memory-action-btn">
+                                <span>↩️</span>
+                                <span>恢复默认选择</span>
                             </button>
                         </div>
                     </div>

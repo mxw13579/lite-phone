@@ -59,6 +59,10 @@ export async function maybeExtractAndRecord(
     return;
   }
 
+  // 立即更新冷却时间，无论后续操作成功与否
+  // 这样可以防止高频调用Gatekeeper，确保冷却机制生效
+  lastExtractAtMap.set(cooldownKey, now);
+
   try {
     console.log('[MM][extract-start]', { personaId, turnsCount: recentTurns.length });
 
@@ -173,13 +177,10 @@ export async function maybeExtractAndRecord(
     // 步骤6：入库
     const savedId = await MemoryRepo.addEvent(event);
     console.log('[MM][record-success]', { id: savedId, title: event.title });
-    
+
     // 步骤7：配额策略执行
     await enforceQuotaPolicy(personaId);
-    
-    // 更新该persona的冷却时间
-    lastExtractAtMap.set(cooldownKey, now);
-    
+
   } catch (e) {
     console.warn('[MM][extract-error]', e);
   }
@@ -623,12 +624,9 @@ export async function compressOldEvents(
     throw new Error('没有适合压缩的事件');
   }
   
-  // 获取候选事件
+  // 获取候选事件 - 使用高效的单次查询而不是N次全表扫描
   const candidates = await Promise.all(
-    actualCandidateIds.map(async id => {
-      const events = await MemoryRepo.getEventsByPersona(personaId);
-      return events.find(e => e.id === id);
-    })
+    actualCandidateIds.map(id => MemoryRepo.getEventById(id))
   );
 
   const validCandidates = candidates.filter(Boolean) as EventRec[];
@@ -737,24 +735,104 @@ export async function compressOldEvents(
 }
 
 // 自动选择压缩候选
-async function selectCompressionCandidates(personaId: string, maxCandidates: number = 20): Promise<string[]> {
+export async function selectCompressionCandidates(personaId: string, maxCandidates?: number, options?: { forceIncludeOpen?: boolean; includeDueSoon?: boolean }): Promise<string[]> {
+  // 如果未提供maxCandidates，从PersonaMemorySettings中获取
+  if (maxCandidates === undefined) {
+    const settings = await MemoryRepo.getSettings(personaId);
+    maxCandidates = settings.compressBatchSize || 10; // 默认值10
+  }
+
   const allEvents = await MemoryRepo.getEventsByPersona(personaId);
   const now = Date.now();
   const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
 
   // 筛选候选：已完成/笔记类 且 非临期 且 30天前
   const candidates = allEvents
-    .filter(e => 
-      (e.status === 'done' || e.status === 'note') && // 已完成或笔记
-      !e.compressed && // 未被压缩过
-      !e.excludeFromPrompt && // 未被排除
-      e.createdAt < thirtyDaysAgo && // 30天前的事件
-      (!e.dueAt || e.dueAt < now) // 无到期时间或已过期
-    )
+    .filter(e => {
+      const allowOpen = options?.forceIncludeOpen === true;
+      const allowDueSoon = options?.includeDueSoon === true;
+      const isDoneOrNote = (e.status === 'done' || e.status === 'note');
+      const isOpen = e.status === 'open';
+      const isDueSoon = !!e.dueAt && e.dueAt >= now;
+
+      const statusAllowed = isDoneOrNote || (allowOpen && isOpen);
+      const dueAllowed = (!e.dueAt || e.dueAt < now) || (allowDueSoon && isDueSoon);
+
+      return statusAllowed &&
+             dueAllowed &&
+             !e.compressed &&
+             !e.excludeFromPrompt &&
+             e.createdAt < thirtyDaysAgo;
+    })
     .sort((a, b) => a.createdAt - b.createdAt) // 按时间升序，优先压缩最旧的
     .slice(0, maxCandidates);
 
   return candidates.map(e => e.id);
+}
+
+// 压缩干跑预览（不落库）：优先尝试AI压缩，失败回退本地摘要
+export async function previewCompress(
+  personaId: string,
+  candidateIds: string[],
+  guidelines?: string,
+  proxyUrl?: string,
+  apiKey?: string,
+  model?: string
+): Promise<{
+  title: string;
+  content: string;
+  estimates?: { chars?: number };
+  baselineChars: number;
+  expectedSavingsChars?: number;
+}> {
+  const candidates = await Promise.all(candidateIds.map(id => MemoryRepo.getEventById(id)));
+  const validCandidates = (candidates.filter(Boolean) as EventRec[]);
+  if (validCandidates.length === 0) {
+    throw new Error('没有有效的候选事件进行预览');
+  }
+
+  // 估算原始字符数
+  const baselineChars = validCandidates.reduce((sum, e) => sum + (e.title?.length || 0) + (e.content?.length || 0) + 16, 0);
+
+  let previewTitle = '';
+  let previewContent = '';
+  let estimates: { chars?: number } | undefined;
+
+  if (proxyUrl && apiKey && model) {
+    try {
+      const payload = {
+        personaId,
+        candidates: validCandidates.map(e => ({ id: e.id, title: e.title, content: e.content, createdAt: e.createdAt, status: e.status })),
+        guidelines: guidelines || '仅保留可复用事实；给出时间范围与核心动作列表；避免命令式语气',
+        budget: { maxChars: 300 }
+      };
+      const result = await callJsonTool(proxyUrl, apiKey, model, 'compress', payload);
+      const summary = result?.summary;
+      if (summary) {
+        previewTitle = sanitizeText(summary.title, 80);
+        previewContent = sanitizeText(summary.content, 300);
+        estimates = result?.estimates;
+      }
+    } catch (e) {
+      console.warn('[MM][preview-compress-ai-failed]', e);
+    }
+  }
+
+  if (!previewContent) {
+    const local = generateLocalSummary(validCandidates);
+    previewTitle = local.title;
+    previewContent = local.content;
+  }
+
+  const expectedSavingsChars = estimates?.chars ? Math.max(0, baselineChars - (estimates.chars as number)) : undefined;
+
+  return {
+    title: previewTitle,
+    content: previewContent,
+    estimates,
+    baselineChars,
+    expectedSavingsChars
+  };
 }
 
 // 验证压缩安全性

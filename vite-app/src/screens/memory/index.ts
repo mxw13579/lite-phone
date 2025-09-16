@@ -4,7 +4,7 @@
 import type { EventRec, EventStatus, PersonaMemorySettings } from '../../services/memory/types';
 import { MemoryRepo } from '../../services/memory/repo';
 import { renderEventPreview } from '../../services/memory/render';
-import { compressOldEvents, selectCompressionCandidates } from '../../services/memory/mcp';
+import { compressOldEvents, selectCompressionCandidates, previewCompress } from '../../services/memory/mcp';
 import STATE from '../../state';
 import DB from '../../database';
 
@@ -27,6 +27,21 @@ export class MemoryScreenModule {
     private eventListEl: HTMLElement | null = null;
     private batchToolbarEl: HTMLElement | null = null;
     private compressSectionEl: HTMLElement | null = null;
+
+    // 工具方法 - 安全的HTML转义
+    private escapeHtml(text: string): string {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 工具方法 - 安全创建元素
+    private createSafeElement(tag: string, className?: string, textContent?: string): HTMLElement {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (textContent) element.textContent = textContent;
+        return element;
+    }
 
     // 压缩相关状态
     private compressionCandidates: EventRec[] = [];
@@ -122,24 +137,14 @@ export class MemoryScreenModule {
         }
 
         const screenHTML = `
-            <div id="memory-management-screen" class="screen" role="application" aria-label="记忆管理">
-                <!-- 顶部工具栏 -->
-                <div id="memory-toolbar" class="memory-toolbar">
-                    <div class="toolbar-section">
-                        <button id="memory-back-btn" class="btn-secondary" aria-label="返回">
-                            <span>←</span>
-                        </button>
-                        <h1 class="screen-title">记忆管理</h1>
-                    </div>
-                    <div class="toolbar-section">
-                        <button id="memory-refresh-btn" class="btn-secondary" aria-label="刷新">
-                            <span>🔄</span>
-                        </button>
-                        <button id="memory-settings-btn" class="btn-secondary" aria-label="设置">
-                            <span>⚙️</span>
-                        </button>
-                    </div>
-                </div>
+            <div id=\"memory-management-screen\" class=\"screen\" role=\"application\" aria-label=\"记忆管理\"> 
+                <header class=\"header\" role=\"banner\">
+                    <button class=\"back-btn\" onclick=\"window.showScreen && window.showScreen('home-screen')\" aria-label=\"返回主屏幕\">
+                        <span aria-hidden=\"true\">‹</span>
+                    </button>
+                    <h1 class=\"header-title\"><span class=\"title-icon\">🧠</span>记忆管理</h1>
+                    <div style=\"width: 30px;\"></div>
+                </header>
 
                 <!-- 筛选栏 -->
                 <div id="memory-filter" class="memory-filter">
@@ -183,6 +188,10 @@ export class MemoryScreenModule {
                                 <span>📤</span>
                                 <span>导出备份</span>
                             </button>
+                            <label class="force-compress-toggle" style="margin-left:12px;display:inline-flex;align-items:center;gap:6px;">
+                                <input type="checkbox" id="force-compress-open-due" />
+                                <span>允许强制压缩进行中/临期</span>
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -201,7 +210,18 @@ export class MemoryScreenModule {
             </div>
         `;
 
-        document.body.insertAdjacentHTML('beforeend', screenHTML);
+        // 将记忆管理屏幕挂载到与其他屏幕一致的容器内（#phone-screen）
+        const phoneScreen = document.getElementById('phone-screen');
+        if (phoneScreen) {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = screenHTML;
+            // 仅附加实际 screen 根节点，避免多余文本节点
+            const screenRoot = wrapper.firstElementChild as HTMLElement;
+            if (screenRoot) phoneScreen.appendChild(screenRoot);
+        } else {
+            // 兜底：若未找到容器则挂到 body（不影响功能，但可能样式与切屏不一致）
+            document.body.insertAdjacentHTML('beforeend', screenHTML);
+        }
         this.initializeDOMCache();
     }
 
@@ -216,7 +236,15 @@ export class MemoryScreenModule {
         if (!selector) return;
 
         // 清空现有选项
-        selector.innerHTML = '<option value="">所有角色</option>';
+        while (selector.firstChild) {
+            selector.removeChild(selector.firstChild);
+        }
+
+        // 安全添加默认选项
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '所有角色';
+        selector.appendChild(defaultOption);
 
         try {
             // 从STATE获取角色信息
@@ -225,9 +253,10 @@ export class MemoryScreenModule {
             if (state && state.chats) {
                 const personas = new Map<string, string>();
 
-                // 从聊天记录中提取角色信息
-                state.chats.forEach((chat: any) => {
-                    if (chat.personaId && !personas.has(chat.personaId)) {
+                // 从聊天记录中提取角色信息（兼容对象或数组）
+                const chatsArr = Array.isArray(state.chats) ? state.chats : Object.values(state.chats);
+                chatsArr.forEach((chat: any) => {
+                    if (chat?.personaId && !personas.has(chat.personaId)) {
                         personas.set(chat.personaId, chat.name || chat.personaId);
                     }
                 });
@@ -252,15 +281,20 @@ export class MemoryScreenModule {
         if (!listEl) return;
 
         // 清空现有内容
-        listEl.innerHTML = '';
+        while (listEl.firstChild) {
+            listEl.removeChild(listEl.firstChild);
+        }
 
         if (this.events.length === 0) {
-            listEl.innerHTML = `
-                <div class="memory-empty-state">
-                    <p>暂无记忆条目</p>
-                    <p class="text-muted">记忆条目将在AI对话中自动创建</p>
-                </div>
-            `;
+            // 安全创建空状态
+            const emptyStateEl = this.createSafeElement('div', 'memory-empty-state');
+
+            const mainText = this.createSafeElement('p', '', '暂无记忆条目');
+            const hintText = this.createSafeElement('p', 'text-muted', '记忆条目将在AI对话中自动创建');
+
+            emptyStateEl.appendChild(mainText);
+            emptyStateEl.appendChild(hintText);
+            listEl.appendChild(emptyStateEl);
             return;
         }
 
@@ -293,12 +327,17 @@ export class MemoryScreenModule {
         // 角色组标题
         const headerEl = document.createElement('div');
         headerEl.className = 'memory-persona-header';
-        headerEl.innerHTML = `
-            <h3 class="persona-name" data-persona-id="${personaId}">
-                ${this.getPersonaName(personaId)}
-            </h3>
-            <span class="event-count">${events.length} 条记忆</span>
-        `;
+
+        // 安全创建角色名标题
+        const titleEl = this.createSafeElement('h3', 'persona-name');
+        titleEl.setAttribute('data-persona-id', personaId);
+        titleEl.textContent = this.getPersonaName(personaId);
+
+        // 安全创建事件计数
+        const countEl = this.createSafeElement('span', 'event-count', `${events.length} 条记忆`);
+
+        headerEl.appendChild(titleEl);
+        headerEl.appendChild(countEl);
         groupEl.appendChild(headerEl);
 
         // 事件列表
@@ -331,30 +370,82 @@ export class MemoryScreenModule {
             eventEl.classList.add('compressed');
         }
 
-        const preview = renderEventPreview(event, false);
+        const preview = renderEventPreview(event, 120);
         const timeStr = new Date(event.updatedAt).toLocaleString();
 
-        eventEl.innerHTML = `
-            <div class="event-content">
-                <div class="event-header">
-                    <input type="checkbox" class="event-checkbox" ${isSelected ? 'checked' : ''}
-                           aria-label="选择事件">
-                    <span class="event-status status-${event.status}">${this.getStatusText(event.status)}</span>
-                    <span class="event-type">${event.typeKey}</span>
-                    ${event.compressed ? '<span class="compressed-badge">已压缩</span>' : ''}
-                </div>
-                <div class="event-preview">${preview}</div>
-                <div class="event-meta">
-                    <span class="event-time">${timeStr}</span>
-                    ${event.dueAt ? `<span class="event-due">截止: ${new Date(event.dueAt).toLocaleDateString()}</span>` : ''}
-                    ${event.parentEventId ? '<span class="child-badge">子事件</span>' : ''}
-                </div>
-            </div>
-            <div class="event-actions">
-                <button class="btn-sm btn-secondary event-edit-btn" aria-label="编辑">编辑</button>
-                <button class="btn-sm btn-secondary event-detail-btn" aria-label="详情">详情</button>
-            </div>
-        `;
+        // 安全创建事件内容
+        const contentEl = this.createSafeElement('div', 'event-content');
+
+        // 创建事件头部
+        const headerEl = this.createSafeElement('div', 'event-header');
+
+        // 复选框
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'event-checkbox';
+        checkbox.checked = isSelected;
+        checkbox.setAttribute('aria-label', '选择事件');
+
+        // 状态标签
+        const statusEl = this.createSafeElement('span', `event-status status-${event.status}`, this.getStatusText(event.status));
+
+        // 类型标签
+        const typeEl = this.createSafeElement('span', 'event-type', event.typeKey);
+
+        headerEl.appendChild(checkbox);
+        headerEl.appendChild(statusEl);
+        headerEl.appendChild(typeEl);
+
+        // 压缩标记
+        if (event.compressed) {
+            const compressedBadge = this.createSafeElement('span', 'compressed-badge', '已压缩');
+            headerEl.appendChild(compressedBadge);
+        }
+
+        // 预览内容 - 使用textContent确保安全
+        const previewEl = this.createSafeElement('div', 'event-preview');
+        previewEl.textContent = preview; // 这里使用textContent而不是innerHTML确保安全
+
+        // 元数据
+        const metaEl = this.createSafeElement('div', 'event-meta');
+
+        const timeEl = this.createSafeElement('span', 'event-time', timeStr);
+        metaEl.appendChild(timeEl);
+
+        if (event.dueAt) {
+            const dueEl = this.createSafeElement('span', 'event-due', `截止: ${new Date(event.dueAt).toLocaleDateString()}`);
+            metaEl.appendChild(dueEl);
+        }
+
+        if (event.parentEventId) {
+            const childBadge = this.createSafeElement('span', 'child-badge', '子事件');
+            metaEl.appendChild(childBadge);
+        }
+
+        // 组装内容元素
+        contentEl.appendChild(headerEl);
+        contentEl.appendChild(previewEl);
+        contentEl.appendChild(metaEl);
+
+        // 创建操作按钮
+        const actionsEl = this.createSafeElement('div', 'event-actions');
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-sm btn-secondary event-edit-btn';
+        editBtn.setAttribute('aria-label', '编辑');
+        editBtn.textContent = '编辑';
+
+        const detailBtn = document.createElement('button');
+        detailBtn.className = 'btn-sm btn-secondary event-detail-btn';
+        detailBtn.setAttribute('aria-label', '详情');
+        detailBtn.textContent = '详情';
+
+        actionsEl.appendChild(editBtn);
+        actionsEl.appendChild(detailBtn);
+
+        // 组装最终元素
+        eventEl.appendChild(contentEl);
+        eventEl.appendChild(actionsEl);
 
         return eventEl;
     }
@@ -384,13 +475,7 @@ export class MemoryScreenModule {
     }
 
     private bindEventListeners(): void {
-        // 返回按钮
-        const backBtn = document.getElementById('memory-back-btn');
-        backBtn?.addEventListener('click', () => this.goBack());
-
-        // 刷新按钮
-        const refreshBtn = document.getElementById('memory-refresh-btn');
-        refreshBtn?.addEventListener('click', () => this.refreshMemoryData());
+        // 统一头部后，不绑定自定义返回/刷新按钮
 
         // 角色选择器
         const personaSelect = document.getElementById('memory-persona-select') as HTMLSelectElement;
@@ -419,6 +504,12 @@ export class MemoryScreenModule {
         document.getElementById('compress-preview-btn')?.addEventListener('click', () => this.showCompressionPreview());
         document.getElementById('compress-execute-btn')?.addEventListener('click', () => this.executeCompression());
         document.getElementById('export-events-btn')?.addEventListener('click', () => this.exportEventsToFile());
+
+        const forceToggle = document.getElementById('force-compress-open-due');
+        forceToggle?.addEventListener('change', () => {
+            // 开关变化时，重新加载候选
+            void this.loadCompressionCandidates();
+        });
     }
 
     private handleEventListClick(e: Event): void {
@@ -494,28 +585,84 @@ export class MemoryScreenModule {
     // === 占位方法，后续实现 ===
 
     private async editEvent(eventId: string): Promise<void> {
-        console.log('[Memory] 编辑事件:', eventId);
-        // TODO: 实现事件编辑功能
+        try {
+            const event = await MemoryRepo.getEventById(eventId);
+            if (!event) return;
+            const newTitle = prompt('编辑标题:', event.title);
+            if (newTitle != null && newTitle !== event.title) {
+                await MemoryRepo.updateEvent(eventId, { title: newTitle, updatedAt: Date.now() });
+                await this.refreshMemoryData();
+            }
+            const newContent = prompt('编辑内容:', event.content);
+            if (newContent != null && newContent !== event.content) {
+                await MemoryRepo.updateEvent(eventId, { content: newContent, updatedAt: Date.now() });
+                await this.refreshMemoryData();
+            }
+        } catch (e) {
+            console.error('[Memory] 编辑事件失败:', e);
+            this.showAlert('错误', '编辑失败');
+        }
     }
 
     private async showEventDetail(eventId: string): Promise<void> {
-        console.log('[Memory] 显示事件详情:', eventId);
-        // TODO: 实现事件详情显示
+        try {
+            const event = await MemoryRepo.getEventById(eventId);
+            if (!event) return;
+            const detail = `ID: ${event.id}\n类型: ${event.typeKey}\n状态: ${this.getStatusText(event.status)}\n创建: ${new Date(event.createdAt).toLocaleString()}\n更新: ${new Date(event.updatedAt).toLocaleString()}\n截止: ${event.dueAt ? new Date(event.dueAt).toLocaleString() : '无'}\n参与者: ${(event.participants||[]).join(', ')}\n标题: ${event.title}\n内容: ${event.content}`;
+            alert(detail);
+        } catch (e) {
+            console.error('[Memory] 显示详情失败:', e);
+        }
     }
 
     private async batchCompleteEvents(): Promise<void> {
-        console.log('[Memory] 批量完成事件:', Array.from(this.selectedEventIds));
-        // TODO: 实现批量完成功能
+        const ids = Array.from(this.selectedEventIds);
+        if (ids.length === 0) return;
+        try {
+            const now = Date.now();
+            for (const id of ids) {
+                await MemoryRepo.updateEvent(id, { status: 'done', updatedAt: now, lastUsedAt: now });
+            }
+            await this.refreshMemoryData();
+            this.selectedEventIds.clear();
+            this.updateBatchToolbar();
+        } catch (e) {
+            console.error('[Memory] 批量完成失败:', e);
+            this.showAlert('错误', '批量完成失败');
+        }
     }
 
     private async batchCancelEvents(): Promise<void> {
-        console.log('[Memory] 批量取消事件:', Array.from(this.selectedEventIds));
-        // TODO: 实现批量取消功能
+        const ids = Array.from(this.selectedEventIds);
+        if (ids.length === 0) return;
+        try {
+            const now = Date.now();
+            for (const id of ids) {
+                await MemoryRepo.updateEvent(id, { status: 'cancelled', updatedAt: now, lastUsedAt: now });
+            }
+            await this.refreshMemoryData();
+            this.selectedEventIds.clear();
+            this.updateBatchToolbar();
+        } catch (e) {
+            console.error('[Memory] 批量取消失败:', e);
+            this.showAlert('错误', '批量取消失败');
+        }
     }
 
     private async batchDeleteEvents(): Promise<void> {
-        console.log('[Memory] 批量删除事件:', Array.from(this.selectedEventIds));
-        // TODO: 实现批量删除功能
+        const ids = Array.from(this.selectedEventIds);
+        if (ids.length === 0) return;
+        const ok = await this.showConfirm('删除确认', `将删除 ${ids.length} 条事件，此操作不可恢复，是否继续？`);
+        if (!ok) return;
+        try {
+            await MemoryRepo.removeEvents(ids);
+            await this.refreshMemoryData();
+            this.selectedEventIds.clear();
+            this.updateBatchToolbar();
+        } catch (e) {
+            console.error('[Memory] 批量删除失败:', e);
+            this.showAlert('错误', '批量删除失败');
+        }
     }
 
     // === 压缩和导出功能 ===
@@ -531,8 +678,16 @@ export class MemoryScreenModule {
                 return;
             }
 
-            // 使用现有的selectCompressionCandidates函数
-            const candidateIds = await selectCompressionCandidates(this.currentPersonaId);
+            // 读取强制压缩开关
+            const forceToggle = document.getElementById('force-compress-open-due') as HTMLInputElement | null;
+            const allowForce = Boolean(forceToggle?.checked);
+
+            // 使用现有的selectCompressionCandidates函数（支持强制开关）
+            const candidateIds = await selectCompressionCandidates(
+                this.currentPersonaId,
+                undefined,
+                allowForce ? { forceIncludeOpen: true, includeDueSoon: true } : undefined
+            );
 
             // 获取候选事件的详细信息
             this.compressionCandidates = await Promise.all(
@@ -584,6 +739,39 @@ export class MemoryScreenModule {
             // 创建压缩预览模态框
             await this.createCompressionPreviewModal();
             this.isCompressPreviewOpen = true;
+
+            // 追加：调用干跑预览（AI优先，失败回退本地）并渲染摘要与节省估计
+            const apiConfig = await this.getApiConfig();
+            const candidateIds = this.compressionCandidates.map(e => e.id);
+            const preview = await previewCompress(
+                this.currentPersonaId!,
+                candidateIds,
+                '仅保留可复用事实；给出时间范围与核心动作列表；避免命令式语气',
+                apiConfig?.proxyUrl,
+                apiConfig?.apiKey,
+                apiConfig?.model
+            );
+
+            const body = document.querySelector('#compression-preview-modal .modal-body');
+            if (body) {
+                const summaryBox = document.createElement('div');
+                summaryBox.className = 'compress-summary-preview';
+                const title = document.createElement('h3');
+                title.textContent = 'AI 摘要预览';
+                const pTitle = document.createElement('p');
+                pTitle.textContent = `标题：${preview.title}`;
+                const pContent = document.createElement('p');
+                pContent.textContent = `内容：${preview.content}`;
+                const pStats = document.createElement('p');
+                const est = preview.estimates?.chars ?? 0;
+                const saving = preview.expectedSavingsChars ?? (preview.baselineChars - (est as number) || 0);
+                pStats.textContent = `原始约 ${preview.baselineChars} 字符 → 摘要约 ${est} 字符，预计节省 ${saving} 字符`;
+                summaryBox.appendChild(title);
+                summaryBox.appendChild(pTitle);
+                summaryBox.appendChild(pContent);
+                summaryBox.appendChild(pStats);
+                body.appendChild(summaryBox);
+            }
 
         } catch (error) {
             console.error('[Memory] 压缩预览失败:', error);
@@ -709,74 +897,149 @@ export class MemoryScreenModule {
             existingModal.remove();
         }
 
-        // 生成候选事件的预览
-        const candidateList = this.compressionCandidates.map((event, index) => {
-            const timeStr = new Date(event.updatedAt).toLocaleString();
-            const preview = renderEventPreview(event, false);
-            return `
-                <div class="candidate-item">
-                    <div class="candidate-header">
-                        <span class="candidate-index">#${index + 1}</span>
-                        <span class="candidate-status status-${event.status}">${this.getStatusText(event.status)}</span>
-                        <span class="candidate-time">${timeStr}</span>
-                    </div>
-                    <div class="candidate-preview">${preview}</div>
-                </div>
-            `;
-        }).join('');
+        // 安全创建模态框
+        const modal = document.createElement('div');
+        modal.id = 'compression-preview-modal';
+        modal.className = 'modal compression-modal';
+        modal.style.display = 'block';
 
-        const modalHTML = `
-            <div id="compression-preview-modal" class="modal compression-modal" style="display: block;">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h2>📦 压缩预览</h2>
-                        <button class="modal-close-btn" id="close-preview-modal">&times;</button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="preview-info">
-                            <p><strong>压缩说明：</strong></p>
-                            <ul>
-                                <li>将压缩 ${this.compressionCandidates.length} 个旧事件</li>
-                                <li>使用AI生成简洁摘要保留关键信息</li>
-                                <li>原事件将被删除，仅保留摘要（不可逆）</li>
-                                <li>建议在压缩前导出备份</li>
-                            </ul>
-                        </div>
-                        <div class="candidate-list">
-                            <h3>待压缩事件：</h3>
-                            ${candidateList}
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button id="export-before-compress" class="btn-secondary">
-                            <span>📤</span>
-                            <span>先导出备份</span>
-                        </button>
-                        <button id="cancel-compression" class="btn-secondary">取消</button>
-                        <button id="confirm-compression" class="btn-danger">
-                            <span>🗜️</span>
-                            <span>确认压缩</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
+        const modalContent = this.createSafeElement('div', 'modal-content');
 
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        // 创建模态框头部
+        const header = this.createSafeElement('div', 'modal-header');
+        const title = this.createSafeElement('h2', '', '📦 压缩预览');
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'modal-close-btn';
+        closeBtn.id = 'close-preview-modal';
+        closeBtn.textContent = '×';
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        // 创建模态框主体
+        const body = this.createSafeElement('div', 'modal-body');
+
+        // 添加压缩说明（修正文案）
+        const previewInfo = this.createSafeElement('div', 'preview-info');
+        const infoTitle = this.createSafeElement('p');
+        const strongEl = this.createSafeElement('strong', '', '压缩说明：');
+        infoTitle.appendChild(strongEl);
+
+        const infoList = document.createElement('ul');
+        const infoItems = [
+            `将压缩 ${this.compressionCandidates.length} 个旧事件`,
+            '使用AI生成简洁摘要保留关键信息',
+            '原事件正文将被清空并排除注入（不可还原）', // 修正误导性文案
+            '建议在压缩前导出备份'
+        ];
+
+        infoItems.forEach(text => {
+            const li = document.createElement('li');
+            li.textContent = text;
+            infoList.appendChild(li);
+        });
+
+        previewInfo.appendChild(infoTitle);
+        previewInfo.appendChild(infoList);
+
+        // 创建候选事件列表
+        const candidateSection = this.createSafeElement('div', 'candidate-list');
+        const candidateTitle = this.createSafeElement('h3', '', '待压缩事件：');
+        candidateSection.appendChild(candidateTitle);
+
+        // 安全创建每个候选事件
+        this.compressionCandidates.forEach((event, index) => {
+            const candidateItem = this.createSafeElement('div', 'candidate-item');
+
+            // 候选事件头部
+            const candidateHeader = this.createSafeElement('div', 'candidate-header');
+
+            const indexSpan = this.createSafeElement('span', 'candidate-index', `#${index + 1}`);
+            const statusSpan = this.createSafeElement('span', `candidate-status status-${event.status}`, this.getStatusText(event.status));
+            const timeSpan = this.createSafeElement('span', 'candidate-time', new Date(event.updatedAt).toLocaleString());
+
+            candidateHeader.appendChild(indexSpan);
+            candidateHeader.appendChild(statusSpan);
+            candidateHeader.appendChild(timeSpan);
+
+            // 候选事件预览 - 支持展开/收起长文，使用textContent确保安全
+            const previewDiv = this.createSafeElement('div', 'candidate-preview');
+            const collapsed = this.createSafeElement('div', 'text-collapsed');
+            collapsed.textContent = renderEventPreview(event, 180);
+            const expanded = this.createSafeElement('div', 'text-expanded');
+            expanded.textContent = `${event.title || ''}${event.content ? ' - ' + event.content : ''}`;
+            expanded.style.display = 'none';
+
+            const toggleBtn = this.createSafeElement('button', 'toggle-btn', '展开');
+            toggleBtn.addEventListener('click', () => {
+                const isCollapsed = expanded.style.display === 'none';
+                expanded.style.display = isCollapsed ? 'block' : 'none';
+                collapsed.style.display = isCollapsed ? 'none' : 'block';
+                toggleBtn.textContent = isCollapsed ? '收起' : '展开';
+            });
+
+            previewDiv.appendChild(collapsed);
+            previewDiv.appendChild(expanded);
+            previewDiv.appendChild(toggleBtn);
+
+            candidateItem.appendChild(candidateHeader);
+            candidateItem.appendChild(previewDiv);
+            candidateSection.appendChild(candidateItem);
+        });
+
+        body.appendChild(previewInfo);
+        body.appendChild(candidateSection);
+
+        // 创建模态框底部
+        const footer = this.createSafeElement('div', 'modal-footer');
+
+        const exportBtn = document.createElement('button');
+        exportBtn.id = 'export-before-compress';
+        exportBtn.className = 'btn-secondary';
+        const exportIcon = this.createSafeElement('span', '', '📤');
+        const exportText = this.createSafeElement('span', '', '先导出备份');
+        exportBtn.appendChild(exportIcon);
+        exportBtn.appendChild(exportText);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.id = 'cancel-compression';
+        cancelBtn.className = 'btn-secondary';
+        cancelBtn.textContent = '取消';
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.id = 'confirm-compression';
+        confirmBtn.className = 'btn-danger';
+        const confirmIcon = this.createSafeElement('span', '', '🗜️');
+        const confirmText = this.createSafeElement('span', '', '确认压缩');
+        confirmBtn.appendChild(confirmIcon);
+        confirmBtn.appendChild(confirmText);
+
+        footer.appendChild(exportBtn);
+        footer.appendChild(cancelBtn);
+        footer.appendChild(confirmBtn);
+
+        // 组装模态框
+        modalContent.appendChild(header);
+        modalContent.appendChild(body);
+        modalContent.appendChild(footer);
+        modal.appendChild(modalContent);
+
+        // 添加到页面
+        document.body.appendChild(modal);
 
         // 绑定事件
         document.getElementById('close-preview-modal')?.addEventListener('click', () => this.closeCompressionPreview());
         document.getElementById('cancel-compression')?.addEventListener('click', () => this.closeCompressionPreview());
-        document.getElementById('export-before-compress')?.addEventListener('click', () => this.exportEventsToFile());
+        document.getElementById('export-before-compress')?.addEventListener('click', () => this.exportCompressionCandidates());
         document.getElementById('confirm-compression')?.addEventListener('click', async () => {
             this.closeCompressionPreview();
             await this.executeCompression();
         });
 
         // 点击背景关闭
-        const modal = document.getElementById('compression-preview-modal');
-        modal?.addEventListener('click', (e) => {
-            if (e.target === modal) {
+        const modalElement = document.getElementById('compression-preview-modal');
+        modalElement?.addEventListener('click', (e) => {
+            if (e.target === modalElement) {
                 this.closeCompressionPreview();
             }
         });
@@ -834,6 +1097,36 @@ export class MemoryScreenModule {
      */
     private showAlert(title: string, message: string): void {
         alert(`${title}\n\n${message}`);
+    }
+
+    // 新增：导出当前压缩候选集
+    private async exportCompressionCandidates(): Promise<void> {
+        try {
+            if (this.compressionCandidates.length === 0) {
+                this.showAlert('提示', '当前没有可导出的候选');
+                return;
+            }
+            const exportData = {
+                version: '1.0.0',
+                exportTime: new Date().toISOString(),
+                personaId: this.currentPersonaId || 'unknown',
+                candidateCount: this.compressionCandidates.length,
+                candidates: this.compressionCandidates
+            };
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `memory-compress-candidates-${this.currentPersonaId || 'all'}-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.showAlert('成功', `已导出 ${this.compressionCandidates.length} 个候选`);
+        } catch (error) {
+            console.error('[Memory] 导出候选失败:', error);
+            this.showAlert('错误', '导出候选失败: ' + (error as Error).message);
+        }
     }
 }
 

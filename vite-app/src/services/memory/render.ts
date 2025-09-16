@@ -1,184 +1,188 @@
+// Memory Rendering Module
+// 记忆模块渲染功能 - 格式化事件为文本、估算字符数等
+
 import type { EventRec } from './types';
 
-const toDate = (ts?: number) => ts ? new Date(ts).toLocaleDateString('zh-CN') : '';
+/**
+ * 渲染事件为预览文本
+ * @param event 事件对象
+ * @param maxLength 最大长度（可选，默认100）
+ * @returns 预览文本
+ */
+export function renderEventPreview(event: EventRec, maxLength: number = 100): string {
+  if (!event) return '';
 
-const toDueStatus = (event: EventRec, now = Date.now()) => {
-  if (!event.dueAt) return '';
-  
-  const dueDate = new Date(event.dueAt);
-  const today = new Date(now);
-  const diffDays = Math.ceil((event.dueAt - now) / (1000 * 60 * 60 * 24));
-  
-  if (diffDays < 0) return '(已逾期)';
-  if (diffDays === 0) return '(今日到期)';
-  if (diffDays === 1) return '(明日到期)';
-  if (diffDays <= 3) return `(${diffDays}天后到期)`;
-  return '';
-};
-
-export function renderMemoryBlock(events: EventRec[], includeIds = true): string {
-  if (!events || events.length === 0) return '';
-  
-  const open = events.filter(e => e.status === 'open');
-  const done = events.filter(e => e.status === 'done');
-  const note = events.filter(e => e.status === 'note');
-  const cancelled = events.filter(e => e.status === 'cancelled');
-  
-  const toLines = (arr: EventRec[]) => 
-    arr.map(e => {
-      const date = toDate(e.createdAt);
-      const dueStatus = e.status === 'open' ? toDueStatus(e) : '';
-      const title = e.title || '';
-      const content = e.content ? `：${e.content}` : '';
-      const eventId = includeIds && e.id ? ` #evt:${e.id}` : '';
-      
-      return `- ${date} ${title}${content}${dueStatus}${eventId}`;
-    }).join('\n');
-  
-  let out = '';
-  
-  if (open.length) {
-    out += `\n[事件记忆·进行中]\n${toLines(open)}\n`;
-  }
-  
-  if (done.length) {
-    out += `\n[事件记忆·已完成]\n${toLines(done)}\n`;
-  }
-  
-  if (note.length) {
-    out += `\n[事件记忆·笔记]\n${toLines(note)}\n`;
-  }
-  
-  if (cancelled.length) {
-    out += `\n[事件记忆·已取消]\n${toLines(cancelled)}\n`;
-  }
-  
-  return out.trim();
-}
-
-export function renderGroupMemoryBlock(
-  globalEvents: EventRec[], 
-  perPersona: Record<string, EventRec[]>, 
-  personaNameMap: Record<string, string>,
-  includeIds = true
-): string {
-  let out = '';
-  
-  // 全局事件段
-  if (globalEvents.length) {
-    out += renderMemoryBlock(globalEvents, includeIds);
-  }
-  
-  // 每个persona的事件段
-  for (const [personaId, events] of Object.entries(perPersona)) {
-    if (!events?.length) continue;
-    
-    const personaName = personaNameMap[personaId] || personaId;
-    const personaBlock = renderPersonaEventsOnly(events, includeIds);
-    
-    if (personaBlock.trim()) {
-      out += `\n\n[事件记忆·${personaName}]\n${personaBlock}`;
-    }
-  }
-  
-  return out.trim();
-}
-
-// 仅渲染事件列表，不包含分段标题（用于组聊中的个人段落）
-function renderPersonaEventsOnly(events: EventRec[], includeIds = true): string {
-  if (!events || events.length === 0) return '';
-  
-  // 按状态和时间排序，但不分段
-  const sortedEvents = events.sort((a, b) => {
-    // 优先级：open > done > note > cancelled
-    const statusPriority: Record<string, number> = { 'open': 0, 'done': 1, 'note': 2, 'cancelled': 3 };
-    const aPriority = statusPriority[a.status] ?? 4;
-    const bPriority = statusPriority[b.status] ?? 4;
-    
-    if (aPriority !== bPriority) return aPriority - bPriority;
-    
-    // 同状态按创建时间排序
-    if (a.status === 'open' && a.dueAt && b.status === 'open' && b.dueAt) {
-      return a.dueAt - b.dueAt; // 临期的优先
-    }
-    
-    return b.createdAt - a.createdAt; // 最新的优先
-  });
-  
-  return sortedEvents.map(e => {
-    const date = toDate(e.createdAt);
-    const dueStatus = e.status === 'open' ? toDueStatus(e) : '';
-    const title = e.title || '';
-    const content = e.content ? `：${e.content}` : '';
-    const eventId = includeIds && e.id ? ` #evt:${e.id}` : '';
-    const statusPrefix = getStatusPrefix(e.status);
-    
-    return `- ${date} ${statusPrefix}${title}${content}${dueStatus}${eventId}`;
-  }).join('\n');
-}
-
-function getStatusPrefix(status: string): string {
-  switch (status) {
-    case 'open': return '进行：';
-    case 'done': return '完成：';
-    case 'note': return '笔记：';
-    case 'cancelled': return '取消：';
-    default: return '';
-  }
-}
-
-// 预览渲染（用于UI显示，不包含eventId）
-export function renderEventPreview(event: EventRec, maxLength = 100): string {
-  const date = toDate(event.createdAt);
-  const dueStatus = event.status === 'open' ? toDueStatus(event) : '';
-  const statusPrefix = getStatusPrefix(event.status);
   const title = event.title || '';
   const content = event.content || '';
-  
-  let preview = `${date} ${statusPrefix}${title}`;
-  if (content && preview.length < maxLength - 10) {
-    const remainingLength = maxLength - preview.length - 3; // 留3个字符给省略号
-    if (content.length > remainingLength) {
-      preview += `：${content.slice(0, remainingLength)}...`;
-    } else {
-      preview += `：${content}`;
-    }
+
+  // 组合标题和内容
+  let preview = title;
+  if (content && preview) {
+    preview += ' - ' + content;
+  } else if (content) {
+    preview = content;
   }
-  
-  if (dueStatus) {
-    preview += dueStatus;
+
+  // 截断到指定长度
+  if (preview.length > maxLength) {
+    preview = preview.substring(0, maxLength - 3) + '...';
   }
-  
+
   return preview;
 }
 
-// 计算渲染后的字符数（用于预算估算）
-export function estimateRenderedChars(events: EventRec[], includeIds = true): number {
-  return renderMemoryBlock(events, includeIds).length;
+/**
+ * 渲染内存块为文本
+ * @param events 事件列表
+ * @param includeIds 是否包含事件ID
+ * @returns 格式化的内存文本
+ */
+export function renderMemoryBlock(events: EventRec[], includeIds: boolean = true): string {
+  if (!events || events.length === 0) {
+    return '';
+  }
+
+  const sections: string[] = [];
+
+  // 按状态分组
+  const groups = groupEventsByStatus(events);
+
+  // 渲染进行中的事件
+  if (groups.open && groups.open.length > 0) {
+    sections.push(renderEventGroup('📋 进行中', groups.open, includeIds));
+  }
+
+  // 渲染已完成的事件
+  if (groups.done && groups.done.length > 0) {
+    sections.push(renderEventGroup('✅ 已完成', groups.done, includeIds));
+  }
+
+  // 渲染笔记事件
+  if (groups.note && groups.note.length > 0) {
+    sections.push(renderEventGroup('📝 笔记', groups.note, includeIds));
+  }
+
+  // 渲染已取消的事件
+  if (groups.cancelled && groups.cancelled.length > 0) {
+    sections.push(renderEventGroup('❌ 已取消', groups.cancelled, includeIds));
+  }
+
+  return sections.join('\n\n');
 }
 
-// 验证事件是否适合渲染
-export function validateEventForRender(event: EventRec): { valid: boolean; issues?: string[] } {
-  const issues: string[] = [];
-  
-  if (!event.title && !event.content) {
-    issues.push('事件标题和内容都为空');
+/**
+ * 渲染群组内存块
+ * @param globalEvents 全局事件
+ * @param perPersonaEvents 每个角色的事件
+ * @param includeIds 是否包含ID
+ * @returns 格式化的群组内存文本
+ */
+export function renderGroupMemoryBlock(
+  globalEvents: EventRec[],
+  perPersonaEvents: Record<string, EventRec[]>,
+  includeIds: boolean = true,
+  personaNameMap?: Record<string, string>
+): string {
+  const sections: string[] = [];
+
+  // 渲染全局重要事件
+  if (globalEvents && globalEvents.length > 0) {
+    sections.push('🌟 群聊重点事件:');
+    sections.push(renderMemoryBlock(globalEvents, includeIds));
   }
-  
-  if (event.title && event.title.length > 80) {
-    issues.push('标题过长');
-  }
-  
-  if (event.content && event.content.length > 300) {
-    issues.push('内容过长');
-  }
-  
-  if (event.status === 'open' && event.dueAt && event.dueAt < Date.now() - 30 * 24 * 60 * 60 * 1000) {
-    issues.push('进行中事件已逾期超过30天');
-  }
-  
-  return {
-    valid: issues.length === 0,
-    issues: issues.length > 0 ? issues : undefined
+
+  // 渲染每个角色的事件
+  Object.entries(perPersonaEvents).forEach(([personaId, events]) => {
+    if (events && events.length > 0) {
+      const displayName = personaNameMap?.[personaId] || personaId;
+      sections.push(`👤 ${displayName} 的记忆:`);
+      sections.push(renderMemoryBlock(events, includeIds));
+    }
+  });
+
+  return sections.join('\n\n');
+}
+
+/**
+ * 估算渲染后的字符数
+ * @param events 事件列表
+ * @param includeIds 是否包含ID
+ * @returns 字符数估算
+ */
+export function estimateRenderedChars(events: EventRec[], includeIds: boolean = true): number {
+  if (!events || events.length === 0) return 0;
+
+  const rendered = renderMemoryBlock(events, includeIds);
+  return rendered.length;
+}
+
+/**
+ * 验证事件是否可以被渲染
+ * @param event 事件对象
+ * @returns 是否可以渲染
+ */
+export function validateEventForRender(event: EventRec): boolean {
+  if (!event) return false;
+  if (!event.id || !event.personaId) return false;
+  if (!event.title && !event.content) return false;
+  return true;
+}
+
+// === 私有辅助函数 ===
+
+/**
+ * 按状态分组事件
+ */
+function groupEventsByStatus(events: EventRec[]): Record<string, EventRec[]> {
+  const groups: Record<string, EventRec[]> = {
+    open: [],
+    done: [],
+    note: [],
+    cancelled: []
   };
+
+  events.forEach(event => {
+    if (groups[event.status]) {
+      groups[event.status].push(event);
+    }
+  });
+
+  return groups;
+}
+
+/**
+ * 渲染单个事件组
+ */
+function renderEventGroup(title: string, events: EventRec[], includeIds: boolean): string {
+  const lines: string[] = [title];
+
+  events.forEach((event, index) => {
+    let line = `${index + 1}. `;
+
+    if (includeIds) {
+      line += `[${event.id.substring(0, 8)}] `;
+    }
+
+    if (event.title) {
+      line += event.title;
+    }
+
+    if (event.content && event.content !== event.title) {
+      line += ` - ${event.content}`;
+    }
+
+    if (event.dueAt) {
+      const dueDate = new Date(event.dueAt).toLocaleDateString();
+      line += ` (截止: ${dueDate})`;
+    }
+
+    // 行尾追加事件标识，便于 MCP 在完成闭环时精确关联父事件
+    if (includeIds && event.id) {
+      line += ` #evt:${event.id}`;
+    }
+
+    lines.push(line);
+  });
+
+  return lines.join('\n');
 }

@@ -30,6 +30,7 @@ export class ChatMemoryEstimator {
     private currentIsGroup = false;
     private currentMembers: Member[] = [];
     private memoryBudgetChars = 600 * TOKEN_TO_CHAR_RATIO;
+    private tempExcludedIds: Set<string> = new Set();
 
     private refreshTimer: number | null = null;
     private readonly refreshDelay = 80; // 防抖，避免频繁刷新
@@ -47,6 +48,12 @@ export class ChatMemoryEstimator {
         this.getEl(DOM_IDS.refreshBtn)?.addEventListener('click', () => this.refreshEstimateDebounced());
         this.getEl(DOM_IDS.viewDetailsBtn)?.addEventListener('click', () => this.toggleMemoryDetails(true));
         this.getEl(DOM_IDS.hideDetailsBtn)?.addEventListener('click', () => this.toggleMemoryDetails(false));
+        // 清除“仅本次排除”
+        const clearBtn = this.getEl('clear-temp-excludes-btn');
+        clearBtn?.addEventListener('click', () => { this.tempExcludedIds.clear(); this.refreshEstimateDebounced(); });
+        // 恢复默认选择：清空临时排除并刷新
+        const resetBtn = this.getEl('reset-memory-selection-btn');
+        resetBtn?.addEventListener('click', () => { this.tempExcludedIds.clear(); this.refreshEstimateDebounced(); });
 
         // 事件委托：减少为每个条目绑定事件的开销
         this.getEl(DOM_IDS.list)?.addEventListener('click', (e) => {
@@ -79,11 +86,14 @@ export class ChatMemoryEstimator {
         members: Member[] = [],
         memoryTokenBudget = 600
     ): Promise<void> {
+        const isSameChat = this.currentChatId === chatId;
         this.currentChatId = chatId;
         this.currentPersonaId = personaId;
         this.currentIsGroup = isGroup;
         this.currentMembers = members;
         this.memoryBudgetChars = memoryTokenBudget * TOKEN_TO_CHAR_RATIO;
+        // 仅在切换聊天时清空临时排除；同一聊天保留
+        if (!isSameChat) this.tempExcludedIds.clear();
 
         console.log('[MM][P2] 设置聊天上下文:', {
             chatId,
@@ -131,6 +141,11 @@ export class ChatMemoryEstimator {
                 events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
             }
 
+            // 应用“仅本次排除”临时过滤
+            if (this.tempExcludedIds.size > 0) {
+                events = events.filter(e => !this.tempExcludedIds.has(e.id));
+            }
+
             // 单次遍历计算总字符并缓存到临时字段，避免后续重复估算
             let totalChars = 0;
             const charCache = new Map<string, number>();
@@ -140,13 +155,13 @@ export class ChatMemoryEstimator {
             }
 
             // 状态评估（先判超，再判接近）
-            let status = STATUS.OK;
+            let status: keyof typeof STATUS = 'OK';
             let statusText = '正常';
             if (totalChars > this.memoryBudgetChars) {
-                status = STATUS.ERROR;
+                status = 'ERROR';
                 statusText = '超出预算';
             } else if (totalChars > this.memoryBudgetChars * 0.9) {
-                status = STATUS.WARN;
+                status = 'WARN';
                 statusText = '接近上限';
             }
 
@@ -161,7 +176,7 @@ export class ChatMemoryEstimator {
                 compressedCount
             };
 
-            this.updateMemoryStats(events.length, totalChars, status, statusText, filterStats);
+            this.updateMemoryStats(events.length, totalChars, STATUS[status], statusText, filterStats);
             this.updateMemoryDetails(events, charCache);
         } catch (error) {
             console.error('[MM][P2] 刷新预估失败:', error);
@@ -351,6 +366,14 @@ export class ChatMemoryEstimator {
             badge.textContent = '🚫 已排除';
             metaContainer.appendChild(badge);
         }
+        // 临时排除徽标（仅本次注入有效）
+        if (this.tempExcludedIds.has(event.id)) {
+            const badge = document.createElement('span');
+            badge.className = 'memory-item-badge temp-exclude-badge';
+            badge.title = '临时排除：仅本次注入不包含';
+            badge.textContent = '🧹 临时排除';
+            metaContainer.appendChild(badge);
+        }
         if (event.compressed) {
             const badge = document.createElement('span');
             badge.className = 'memory-item-badge compress-badge';
@@ -374,11 +397,17 @@ export class ChatMemoryEstimator {
         editBtn.setAttribute('data-event-id', event.id);
         editBtn.textContent = '编辑';
 
-        const excludeBtn = document.createElement('button');
-        excludeBtn.className = 'memory-item-action exclude';
-        excludeBtn.setAttribute('data-action', 'exclude');
-        excludeBtn.setAttribute('data-event-id', event.id);
-        excludeBtn.textContent = '排除';
+        const excludeTempBtn = document.createElement('button');
+        excludeTempBtn.className = 'memory-item-action exclude';
+        excludeTempBtn.setAttribute('data-action', 'exclude_temp');
+        excludeTempBtn.setAttribute('data-event-id', event.id);
+        excludeTempBtn.textContent = '临时排除';
+
+        const excludePermBtn = document.createElement('button');
+        excludePermBtn.className = 'memory-item-action exclude';
+        excludePermBtn.setAttribute('data-action', 'exclude_perm');
+        excludePermBtn.setAttribute('data-event-id', event.id);
+        excludePermBtn.textContent = '永久排除';
 
         // 组装元素
         contentContainer.appendChild(titleEl);
@@ -386,7 +415,8 @@ export class ChatMemoryEstimator {
         contentContainer.appendChild(contentText);
 
         actionsContainer.appendChild(editBtn);
-        actionsContainer.appendChild(excludeBtn);
+        actionsContainer.appendChild(excludeTempBtn);
+        actionsContainer.appendChild(excludePermBtn);
 
         item.appendChild(contentContainer);
         item.appendChild(actionsContainer);
@@ -403,7 +433,10 @@ export class ChatMemoryEstimator {
                     await MemoryRepo.updateEvent(eventId, { title: newTitle, updatedAt: Date.now() });
                     await this.refreshEstimate();
                 }
-            } else if (action === 'exclude') {
+            } else if (action === 'exclude_temp') {
+                this.tempExcludedIds.add(eventId);
+                await this.refreshEstimate();
+            } else if (action === 'exclude_perm') {
                 await MemoryRepo.updateEvent(eventId, { excludeFromPrompt: true, updatedAt: Date.now() });
                 await this.refreshEstimate();
             }
@@ -476,6 +509,11 @@ export class ChatMemoryEstimator {
     async getMemoryInjection(): Promise<string> {
         if (!this.currentPersonaId) return '';
         try {
+            // 发送前提示：临时排除数量与预算接近度
+            const tempExcludedCount = this.tempExcludedIds.size;
+            if (tempExcludedCount > 0) {
+                console.log('[MM][P2][inject-info] 本次注入已临时排除条目:', tempExcludedCount);
+            }
             if (this.currentIsGroup && this.currentMembers.length > 1) {
                 const personaIds = this.currentMembers.map(m => m.personaId).filter((id): id is string => !!id);
                 const validPersonaIds = personaIds.filter(id => !id.startsWith('unknown_'));
@@ -487,7 +525,13 @@ export class ChatMemoryEstimator {
                             personaNameMap[m.personaId] = m.name || m.personaId;
                         }
                     }
-                    const result = renderGroupMemoryBlock(selection.global, selection.perPersona, personaNameMap);
+                    // 应用临时排除：过滤 global 和 perPersona
+                    const filteredGlobal = selection.global.filter(e => !this.tempExcludedIds.has(e.id));
+                    const filteredPerPersona: Record<string, EventRec[]> = {};
+                    Object.entries(selection.perPersona).forEach(([pid, list]) => {
+                        filteredPerPersona[pid] = list.filter(e => !this.tempExcludedIds.has(e.id));
+                    });
+                    const result = renderGroupMemoryBlock(filteredGlobal, filteredPerPersona, true, personaNameMap);
                     console.log('[MM][P2] 群聊注入成功:', { validPersonaIds: validPersonaIds.length, resultLength: result.length });
                     return result;
                 } else {
@@ -497,13 +541,23 @@ export class ChatMemoryEstimator {
                         fallbackToPersonaId: this.currentPersonaId,
                     });
                     const budget: SelectBudget = { maxChars: this.memoryBudgetChars };
-                    const events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
-                    return renderMemoryBlock(events);
+                    let events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
+                    events = events.filter(e => !this.tempExcludedIds.has(e.id));
+                    const text = renderMemoryBlock(events);
+                    console.log('[MM][P2] 单人回退注入长度:', text.length);
+                    return text;
                 }
             } else {
                 const budget: SelectBudget = { maxChars: this.memoryBudgetChars };
-                const events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
-                return renderMemoryBlock(events);
+                let events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
+                events = events.filter(e => !this.tempExcludedIds.has(e.id));
+                const text = renderMemoryBlock(events);
+                // 简单提示：接近预算的阈值
+                const nearThreshold = Math.floor(this.memoryBudgetChars * 0.9);
+                if (text.length >= nearThreshold) {
+                    console.log('[MM][P2][inject-info] 注入内容接近预算上限:', { length: text.length, budget: this.memoryBudgetChars });
+                }
+                return text;
             }
         } catch (error) {
             console.error('[MM][P2] 获取记忆注入失败:', error);

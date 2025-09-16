@@ -1,3 +1,17 @@
+/* 三列自适应网格（每行3个） */
+#app-grid.three-col-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px 12px;
+    padding: 10px 12px;
+}
+
+#app-grid.three-col-grid .app-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
 /* =================================================================
    EPhone - 统一样式系统
    重构日期：基于前端规格文档

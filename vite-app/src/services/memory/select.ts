@@ -27,18 +27,23 @@ export async function selectEventsForPrompt(
   
   // 按优先级分组
   const open = all.filter(e => e.status === 'open');
+
+  // 将open事件按到期时间进一步分类
+  const overdue = open.filter(e => e.dueAt && e.dueAt <= now)
+    .sort((a, b) => (a.dueAt! - b.dueAt!)); // 逾期时间越长优先级越高
   const dueSoon = open.filter(e => e.dueAt && e.dueAt > now)
     .sort((a, b) => (a.dueAt! - b.dueAt!)); // 最近到期的优先
   const openNoDue = open.filter(e => !e.dueAt);
+
   const done = all.filter(e => e.status === 'done')
     .sort((a, b) => b.createdAt - a.createdAt); // 最新完成的优先
   const note = all.filter(e => e.status === 'note')
     .sort((a, b) => b.createdAt - a.createdAt); // 最新笔记优先
   const cancelled = all.filter(e => e.status === 'cancelled')
     .sort((a, b) => b.createdAt - a.createdAt);
-  
-  // 排序：进行中(临期→无到期) → 已完成 → 笔记 → 已取消
-  const ordered = [...dueSoon, ...openNoDue, ...done, ...note, ...cancelled];
+
+  // 排序：已逾期 → 即将到期 → 进行中无期限 → 已完成 → 笔记 → 已取消
+  const ordered = [...overdue, ...dueSoon, ...openNoDue, ...done, ...note, ...cancelled];
   
   const picked: EventRec[] = [];
   let totalChars = 0;
