@@ -12,7 +12,8 @@ export const SCREEN_IDS = {
   PRESET_LIST: 'preset-list-screen',
   PRESET_EDITOR: 'preset-editor-screen',
   PERSONA_CENTER: 'persona-center-screen',
-  PERSONA_EDITOR: 'persona-editor-screen'
+  PERSONA_EDITOR: 'persona-editor-screen',
+  MEMORY_MANAGEMENT: 'memory-management-screen'
 } as const;
 export type ScreenId = typeof SCREEN_IDS[keyof typeof SCREEN_IDS];
 

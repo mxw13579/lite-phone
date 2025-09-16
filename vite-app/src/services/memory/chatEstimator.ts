@@ -30,7 +30,6 @@ export class ChatMemoryEstimator {
     private currentIsGroup = false;
     private currentMembers: Member[] = [];
     private memoryBudgetChars = 600 * TOKEN_TO_CHAR_RATIO;
-    private escapeDiv: HTMLDivElement | null = null;
 
     private refreshTimer: number | null = null;
     private readonly refreshDelay = 80; // 防抖，避免频繁刷新
@@ -110,10 +109,22 @@ export class ChatMemoryEstimator {
 
             if (this.currentIsGroup && this.currentMembers.length > 1) {
                 const personaIds = this.currentMembers.map(m => m.personaId).filter((id): id is string => !!id);
-                if (personaIds.length > 0) {
-                    const result = await selectEventsForGroup(MemoryRepo, personaIds, this.memoryBudgetChars);
+                const validPersonaIds = personaIds.filter(id => !id.startsWith('unknown_'));
+                if (validPersonaIds.length > 0) {
+                    const result = await selectEventsForGroup(MemoryRepo, validPersonaIds, this.memoryBudgetChars);
                     // 扁平化一次性完成，避免多次push
                     events = result.global.concat(...Object.values(result.perPersona));
+                } else {
+                    console.warn('[MM][P2] 群聊persona映射失败，回退到单人模式', {
+                        totalPersonaIds: personaIds.length,
+                        validPersonaIds: validPersonaIds.length,
+                        fallbackToPersonaId: this.currentPersonaId,
+                    });
+                    // 回退到单人模式
+                    if (this.currentPersonaId) {
+                        const budget: SelectBudget = { maxChars: this.memoryBudgetChars };
+                        events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
+                    }
                 }
             } else {
                 const budget: SelectBudget = { maxChars: this.memoryBudgetChars };
@@ -139,7 +150,18 @@ export class ChatMemoryEstimator {
                 statusText = '接近上限';
             }
 
-            this.updateMemoryStats(events.length, totalChars, status, statusText);
+            // 统计PII和过滤信息
+            const piiCount = events.filter(e => e.pii === true).length;
+            const excludedCount = events.filter(e => e.excludeFromPrompt === true).length;
+            const compressedCount = events.filter(e => e.compressed === true).length;
+            
+            const filterStats = {
+                piiCount,
+                excludedCount,
+                compressedCount
+            };
+
+            this.updateMemoryStats(events.length, totalChars, status, statusText, filterStats);
             this.updateMemoryDetails(events, charCache);
         } catch (error) {
             console.error('[MM][P2] 刷新预估失败:', error);
@@ -147,7 +169,7 @@ export class ChatMemoryEstimator {
         }
     }
 
-    private updateMemoryStats(count: number, chars: number, status: string, statusText: string): void {
+    private updateMemoryStats(count: number, chars: number, status: string, statusText: string, filterStats?: { piiCount: number; excludedCount: number; compressedCount: number }): void {
         const countEl = this.getEl(DOM_IDS.statsCount);
         const charsEl = this.getEl(DOM_IDS.statsChars);
         const statusEl = this.getEl(DOM_IDS.statsStatus);
@@ -159,20 +181,65 @@ export class ChatMemoryEstimator {
             statusEl.classList.remove('memory-status-ok', 'memory-status-warning', 'memory-status-error');
             statusEl.classList.add(`memory-status-${status}`);
         }
+        
+        // 显示过滤统计信息
+        if (filterStats) {
+            this.updateFilterStats(filterStats);
+        }
+    }
+    
+    private updateFilterStats(stats: { piiCount: number; excludedCount: number; compressedCount: number }): void {
+        const filterInfoEl = this.getEl('memory-filter-info');
+        if (!filterInfoEl) return;
+
+        // 清空现有内容 - 使用安全方式
+        while (filterInfoEl.firstChild) {
+            filterInfoEl.removeChild(filterInfoEl.firstChild);
+        }
+
+        const badges: HTMLElement[] = [];
+
+        if (stats.piiCount > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'filter-badge pii-badge';
+            badge.textContent = `🔒 敏感信息: ${stats.piiCount}`;
+            badges.push(badge);
+        }
+        if (stats.excludedCount > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'filter-badge exclude-badge';
+            badge.textContent = `🚫 已排除: ${stats.excludedCount}`;
+            badges.push(badge);
+        }
+        if (stats.compressedCount > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'filter-badge compress-badge';
+            badge.textContent = `📦 已压缩: ${stats.compressedCount}`;
+            badges.push(badge);
+        }
+
+        if (badges.length > 0) {
+            badges.forEach(badge => filterInfoEl.appendChild(badge));
+        } else {
+            const normalBadge = document.createElement('span');
+            normalBadge.className = 'filter-badge normal';
+            normalBadge.textContent = '✅ 无过滤项目';
+            filterInfoEl.appendChild(normalBadge);
+        }
     }
 
     private updateMemoryDetails(events: EventRec[], charCache: Map<string, number>): void {
         const listEl = this.getEl<HTMLDivElement>(DOM_IDS.list);
         if (!listEl) return;
 
-        listEl.innerHTML = '';
+        // 清空现有内容 - 使用安全方式
+        while (listEl.firstChild) {
+            listEl.removeChild(listEl.firstChild);
+        }
+
         if (events.length === 0) {
-            listEl.innerHTML = `
-        <div class="memory-empty-state">
-          <div class="empty-icon">📝</div>
-          <p>当前没有需要注入的记忆内容</p>
-        </div>
-      `;
+            const emptyState = this.createEmptyStateElement();
+            listEl.appendChild(emptyState);
             return;
         }
 
@@ -190,8 +257,7 @@ export class ChatMemoryEstimator {
         const frag = document.createDocumentFragment();
         const renderGroupSection = (title: string, emoji: string, items: EventRec[]) => {
             if (items.length === 0) return;
-            const header = document.createElement('div');
-            header.innerHTML = `<h4 style="margin: 16px 0 8px 0; color: var(--color-text-primary); font-size: 14px;">${emoji} ${title}</h4>`;
+            const header = this.createGroupHeader(emoji, title);
             frag.appendChild(header);
             for (const event of items) {
                 frag.appendChild(this.createMemoryItem(event, charCache));
@@ -205,30 +271,126 @@ export class ChatMemoryEstimator {
         listEl.appendChild(frag);
     }
 
+    private createEmptyStateElement(): HTMLElement {
+        const container = document.createElement('div');
+        container.className = 'memory-empty-state';
+
+        const icon = document.createElement('div');
+        icon.className = 'empty-icon';
+        icon.textContent = '📝';
+
+        const text = document.createElement('p');
+        text.textContent = '当前没有需要注入的记忆内容';
+
+        container.appendChild(icon);
+        container.appendChild(text);
+        return container;
+    }
+
+    private createGroupHeader(emoji: string, title: string): HTMLElement {
+        const header = document.createElement('div');
+        const h4 = document.createElement('h4');
+        h4.style.margin = '16px 0 8px 0';
+        h4.style.color = 'var(--color-text-primary)';
+        h4.style.fontSize = '14px';
+        h4.textContent = `${emoji} ${title}`;
+        header.appendChild(h4);
+        return header;
+    }
+
     private createMemoryItem(event: EventRec, charCache: Map<string, number>): HTMLElement {
         const item = document.createElement('div');
         item.className = 'memory-item';
         item.setAttribute('data-event-json', JSON.stringify(event)); // 用于事件委托取数据
-        const title = this.escapeHtml(event.title);
-        const content = this.escapeHtml(event.content || '无详细内容');
+
         const chars = this.estimateEventCharsCached(event, charCache);
         const dateStr = this.formatDate(event.createdAt);
 
-        item.innerHTML = `
-      <div class="memory-item-content">
-        <div class="memory-item-title">${title}</div>
-        <div class="memory-item-meta">
-          <span>📅 ${dateStr}</span>
-          <span>📊 ${event.status}</span>
-          <span>🔤 ${chars} 字符</span>
-        </div>
-        <div class="memory-item-content-text">${content}</div>
-      </div>
-      <div class="memory-item-actions">
-        <button class="memory-item-action" data-action="edit" data-event-id="${event.id}">编辑</button>
-        <button class="memory-item-action exclude" data-action="exclude" data-event-id="${event.id}">排除</button>
-      </div>
-    `;
+        // PII过滤状态检查
+        const hasPII = event.pii === true;
+        const isFiltered = hasPII || event.excludeFromPrompt === true;
+
+        // 创建主内容容器
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'memory-item-content';
+
+        // 创建标题
+        const titleEl = document.createElement('div');
+        titleEl.className = 'memory-item-title';
+        titleEl.textContent = event.title;
+
+        // 创建元数据容器
+        const metaContainer = document.createElement('div');
+        metaContainer.className = 'memory-item-meta';
+
+        // 添加元数据项
+        const metaItems = [
+            { icon: '📅', text: dateStr },
+            { icon: '📊', text: event.status },
+            { icon: '🔤', text: `${chars} 字符` }
+        ];
+
+        metaItems.forEach(({ icon, text }) => {
+            const span = document.createElement('span');
+            span.textContent = `${icon} ${text}`;
+            metaContainer.appendChild(span);
+        });
+
+        // 添加状态标签
+        if (hasPII) {
+            const badge = document.createElement('span');
+            badge.className = 'memory-item-badge pii-badge';
+            badge.title = '检测到敏感信息，已过滤处理';
+            badge.textContent = '🔒 敏感信息';
+            metaContainer.appendChild(badge);
+        }
+        if (isFiltered) {
+            const badge = document.createElement('span');
+            badge.className = 'memory-item-badge exclude-badge';
+            badge.title = '已排除，不会注入到对话中';
+            badge.textContent = '🚫 已排除';
+            metaContainer.appendChild(badge);
+        }
+        if (event.compressed) {
+            const badge = document.createElement('span');
+            badge.className = 'memory-item-badge compress-badge';
+            badge.title = '已压缩，原始内容不可还原';
+            badge.textContent = '📦 已压缩';
+            metaContainer.appendChild(badge);
+        }
+
+        // 创建内容文本
+        const contentText = document.createElement('div');
+        contentText.className = 'memory-item-content-text';
+        contentText.textContent = event.content || '无详细内容';
+
+        // 创建操作按钮容器
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'memory-item-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'memory-item-action';
+        editBtn.setAttribute('data-action', 'edit');
+        editBtn.setAttribute('data-event-id', event.id);
+        editBtn.textContent = '编辑';
+
+        const excludeBtn = document.createElement('button');
+        excludeBtn.className = 'memory-item-action exclude';
+        excludeBtn.setAttribute('data-action', 'exclude');
+        excludeBtn.setAttribute('data-event-id', event.id);
+        excludeBtn.textContent = '排除';
+
+        // 组装元素
+        contentContainer.appendChild(titleEl);
+        contentContainer.appendChild(metaContainer);
+        contentContainer.appendChild(contentText);
+
+        actionsContainer.appendChild(editBtn);
+        actionsContainer.appendChild(excludeBtn);
+
+        item.appendChild(contentContainer);
+        item.appendChild(actionsContainer);
+
         return item;
     }
 
@@ -260,13 +422,29 @@ export class ChatMemoryEstimator {
         this.updateMemoryStats(0, 0, STATUS.OK, '无数据');
         const listEl = this.getEl(DOM_IDS.list);
         if (listEl) {
-            listEl.innerHTML = `
-        <div class="memory-empty-state">
-          <div class="empty-icon">💭</div>
-          <p>请先选择AI角色以预估记忆注入</p>
-        </div>
-      `;
+            // 清空现有内容 - 使用安全方式
+            while (listEl.firstChild) {
+                listEl.removeChild(listEl.firstChild);
+            }
+            const emptyState = this.createEmptyStateElementForNoPersona();
+            listEl.appendChild(emptyState);
         }
+    }
+
+    private createEmptyStateElementForNoPersona(): HTMLElement {
+        const container = document.createElement('div');
+        container.className = 'memory-empty-state';
+
+        const icon = document.createElement('div');
+        icon.className = 'empty-icon';
+        icon.textContent = '💭';
+
+        const text = document.createElement('p');
+        text.textContent = '请先选择AI角色以预估记忆注入';
+
+        container.appendChild(icon);
+        container.appendChild(text);
+        return container;
     }
 
     private displayError(message: string): void {
@@ -282,12 +460,6 @@ export class ChatMemoryEstimator {
         const value = text.length;
         cache.set(key, value);
         return value;
-    }
-
-    private escapeHtml(text: string): string {
-        if (!this.escapeDiv) this.escapeDiv = document.createElement('div');
-        this.escapeDiv.textContent = text ?? '';
-        return this.escapeDiv.innerHTML;
     }
 
     private formatDate(ts: number | string | Date): string {

@@ -8,6 +8,7 @@ export * from './data';
 export * from './music';
 export * from './persona';
 export * from './systemPrompt';
+export * from './memory';
 
 // === 导入服务实例 ===
 import { uiUtilsService } from './uiUtils';

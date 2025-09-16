@@ -241,10 +241,43 @@ async function callJsonTool(
   const data = await response.json();
   const content = data?.choices?.[0]?.message?.content || '';
   
-  return parseStrictJson(content);
+  return await parseStrictJsonWithRetry(content);
 }
 
-// 严格JSON解析，支持重试
+// 严格JSON解析，支持重试（增强版，带指数退避）
+async function parseStrictJsonWithRetry(text: string, maxRetries = 2): Promise<any> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // 如果不是第一次尝试，添加延迟（指数退避）
+      if (attempt > 0) {
+        const delayMs = Math.pow(2, attempt - 1) * 400; // 400ms, 800ms
+        console.log(`[MM][json-retry] 第${attempt}次重试，延迟${delayMs}ms`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+      
+      return parseStrictJson(text, attempt);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn(`[MM][json-parse-attempt-${attempt}]`, { 
+        text: text.slice(0, 100), 
+        error: lastError.message,
+        remaining: maxRetries - attempt 
+      });
+    }
+  }
+  
+  console.error('[MM][json-parse-exhausted]', { 
+    text: text.slice(0, 200), 
+    attempts: maxRetries + 1,
+    finalError: lastError?.message 
+  });
+  
+  return null;
+}
+
+// 严格JSON解析，支持重试（原版，保持兼容性）
 function parseStrictJson(text: string, retryCount = 0): any {
   try {
     // 尝试直接解析

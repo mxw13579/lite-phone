@@ -1,5 +1,6 @@
 /.bmad-core/
 /.claude/
+/.spec-workflow/
 /.idea/
 /docs/
 *claude*

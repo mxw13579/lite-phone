@@ -28,9 +28,6 @@ import { injectCompatibilityAPIs } from './init/compat';
 // === 服务层导入 ===
 import * as SERVICES from './services';
 
-// === Memory Manager P2 导入 ===
-import { chatMemoryEstimator } from './services/memory/chatEstimator';
-
 console.log('🚀 EPhone Vite+TypeScript 版本启动...');
 console.log('✅ 核心模块已加载');
 console.log('  - CONSTANTS loaded:', Object.keys(CONSTANTS).length, 'keys');
@@ -176,6 +173,12 @@ class EPhoneApplication {
     if (SCREENS.chatScreenModule && typeof SCREENS.chatScreenModule.initListeners === 'function') {
       SCREENS.chatScreenModule.initListeners();
     }
+
+    console.log('初始化记忆管理屏幕模块...');
+    // 注册记忆管理屏幕的渲染函数
+    ROUTER.registerScreenRenderer(ROUTER.SCREEN_IDS.MEMORY_MANAGEMENT, () => {
+      SCREENS.memoryScreenModule.showMemoryScreen();
+    });
 
     console.log('初始化AI响应模块...');
     // AI响应模块无需特殊初始化，已在导入时完成
@@ -1224,7 +1227,7 @@ class EPhoneApplication {
   private async initializeChatMemoryEstimator(chat: Chat): Promise<void> {
     try {
       // 初始化记忆预估器
-      chatMemoryEstimator.init();
+      SERVICES.chatMemoryEstimator.init();
 
       // 准备群聊成员信息
       let members: any[] = [];
@@ -1236,7 +1239,7 @@ class EPhoneApplication {
       }
 
       // 设置聊天上下文
-      await chatMemoryEstimator.setChatContext(
+      await SERVICES.chatMemoryEstimator.setChatContext(
         chat.id,
         chat.personaId,
         chat.isGroup,

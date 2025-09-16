@@ -5,6 +5,7 @@ import type { WorldBook, Preset, ApiConfig } from '../state';
 import { showError, showSuccess, showValidationError, showOperationError, showNetworkError } from '../services/errorHandling';
 import { chatScreenModule, ChatScreenModule } from './chat/';
 import { aiResponseModule } from './aiResponse';
+import { memoryScreenModule, MemoryScreenModule } from './memory/';
 
 // ============ 通用工具 ============
 
@@ -820,7 +821,7 @@ export class ScreenModuleManager {
 
 // ============ 导出 ============
 
-export { chatScreenModule, ChatScreenModule, aiResponseModule };
+export { chatScreenModule, ChatScreenModule, aiResponseModule, memoryScreenModule, MemoryScreenModule };
 export const worldBookScreenModule = new WorldBookScreen();
 export const presetScreenModule = new PresetScreen();
 export const apiSettingsScreenModule = new ApiSettingsScreen();

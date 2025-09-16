@@ -99,6 +99,11 @@ function calculateTitleSimilarity(t1: string, t2: string): number {
 
 // ---------- 仓储 ----------
 export const MemoryRepo = {
+  async getAllEvents(): Promise<EventRec[]> {
+    await ensure();
+    return db.events.toArray();
+  },
+
   async getEventsByPersona(personaId: string): Promise<EventRec[]> {
     await ensure();
     return db.events.where('personaId').equals(personaId).sortBy('createdAt');

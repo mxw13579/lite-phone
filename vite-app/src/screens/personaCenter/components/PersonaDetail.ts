@@ -1312,9 +1312,6 @@ export class PersonaDetailComponent {
     console.log('[MM][P2] 执行压缩:', personaId);
     
     try {
-      // 这里应该调用P1的压缩功能
-      // 目前先模拟压缩过程
-      
       const modal = document.getElementById('memoryCompressModal');
       const footer = modal?.querySelector('.memory-compress-footer');
       
@@ -1329,34 +1326,85 @@ export class PersonaDetailComponent {
         `;
       }
       
-      // 模拟压缩进度
-      for (let i = 0; i <= 100; i += 10) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        const fill = modal?.querySelector('.progress-fill') as HTMLElement;
-        const text = modal?.querySelector('.progress-text');
-        
-        if (fill) fill.style.width = i + '%';
-        if (text) {
-          if (i < 50) text.textContent = '正在分析记忆事件...';
-          else if (i < 80) text.textContent = '正在生成压缩摘要...';
-          else if (i < 100) text.textContent = '正在更新数据库...';
-          else text.textContent = '压缩完成！';
-        }
+      const fill = modal?.querySelector('.progress-fill') as HTMLElement;
+      const text = modal?.querySelector('.progress-text');
+      
+      // 步骤1: 分析阶段
+      if (fill) fill.style.width = '10%';
+      if (text) text.textContent = '正在分析记忆事件...';
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // 步骤2: 获取API配置
+      if (fill) fill.style.width = '20%';
+      if (text) text.textContent = '正在获取API配置...';
+      
+      const state = await import('../../../state');
+      const apiConfig = state.STATE.apiConfig;
+      if (!apiConfig.proxyUrl || !apiConfig.apiKey) {
+        throw new Error('API配置不完整，请先在设置中配置API信息');
       }
+      
+      // 步骤3: 调用真实压缩函数
+      if (fill) fill.style.width = '40%';
+      if (text) text.textContent = '正在生成压缩摘要...';
+      
+      const { compressOldEvents } = await import('../../../services/memory/mcp');
+      const normalizeProxyUrl = (await import('../../../screens/aiResponse')).normalizeProxyUrl;
+      
+      const proxyUrl = normalizeProxyUrl(apiConfig.proxyUrl);
+      if (!proxyUrl) {
+        throw new Error('API代理URL格式不正确');
+      }
+      
+      if (fill) fill.style.width = '60%';
+      if (text) text.textContent = '正在执行压缩...';
+      
+      // 调用真实压缩函数
+      const result = await compressOldEvents(
+        personaId,
+        undefined, // 自动选择候选
+        undefined, // 使用默认guidelines  
+        proxyUrl,
+        apiConfig.apiKey,
+        apiConfig.model || 'gpt-3.5-turbo'
+      );
+      
+      // 步骤4: 更新进度
+      if (fill) fill.style.width = '80%';
+      if (text) text.textContent = '正在更新数据库...';
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      if (fill) fill.style.width = '100%';
+      if (text) text.textContent = '压缩完成！';
+      
+      console.log('[MM][P2] 压缩完成:', result);
       
       setTimeout(() => {
         modal?.remove();
         this.refreshMemoryStats(personaId);
-        this.showMemoryMessage('记忆压缩完成！释放了存储空间并优化了查询性能。', 'success');
+        this.showMemoryMessage(`记忆压缩完成！压缩了 ${result?.compressedCount || 0} 条事件，释放了存储空间并优化了查询性能。`, 'success');
       }, 1000);
       
     } catch (error) {
       console.error('[MM][P2] 压缩执行失败:', error);
-      this.showMemoryError('压缩失败，请稍后重试');
+      
+      // 提供更详细的错误信息
+      const errorMessage = error instanceof Error ? error.message : '压缩失败，请稍后重试';
+      this.showMemoryError(`压缩执行失败: ${errorMessage}`);
       
       const modal = document.getElementById('memoryCompressModal');
-      modal?.remove();
+      const footer = modal?.querySelector('.memory-compress-footer');
+      
+      // 显示错误状态
+      if (footer) {
+        footer.innerHTML = `
+          <div class="compress-error">
+            <div class="error-icon">❌</div>
+            <div class="error-text">压缩失败: ${errorMessage}</div>
+            <button class="btn btn-secondary" onclick="document.getElementById('memoryCompressModal')?.remove()">关闭</button>
+          </div>
+        `;
+      }
     }
   }
 
