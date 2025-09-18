@@ -6,7 +6,7 @@ import DB, { injectDatabaseToWindow } from '../database/index';
 import ROUTER from '../router/index';
 import * as SCREENS from '../screens/index';
 import * as SERVICES from '../services/index';
-import { aiResponseModule } from '../screens/aiResponse';
+import { aiResponseModule, parseAiResponse } from '../screens/aiResponse';
 import { PersonaCenterScreen } from '../screens/personaCenter/PersonaCenterScreen';
 import type { PersonaEditorScreen } from '../screens/personaEditor/PersonaEditorScreen';
 import type { MessageRenderModule } from '../screens/chat/render';
@@ -205,7 +205,7 @@ export function injectCompatibilityAPIs(): void {
         musicService?.updateListenTogetherIcon?.(chatId),
 
     triggerAiResponse: safeNoop(() => chatScreenModule?.triggerAiResponse?.()),
-    parseAiResponse: safeNoop((content: string) => aiResponseModule.parseAiResponse(content)),
+    parseAiResponse: safeNoop((content: string) => parseAiResponse(content)),
     ChatModule: chatScreenModule,
     openChat: safeNoop((chatId: string) => chatScreenModule?.openChat?.(chatId)),
 

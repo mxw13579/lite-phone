@@ -156,7 +156,7 @@ export class ImportExportService {
       success: true,
       imported: { personas: 0, userRoles: 0 },
       skipped: { personas: 0, userRoles: 0 },
-      errors: []
+      errors: [] as any[] // 临时类型断言，允许push操作
     };
 
     try {
@@ -176,18 +176,18 @@ export class ImportExportService {
 
       // 导入Personas
       if (importData.personas && importData.personas.length > 0) {
-        const personaResult = await this.importPersonas(importData.personas, strategy);
+        const personaResult = await this.importPersonas([...importData.personas], strategy);
         result.imported.personas = personaResult.imported;
         result.skipped.personas = personaResult.skipped;
-        result.errors.push(...personaResult.errors);
+        (result.errors as any[]).push(...personaResult.errors);
       }
 
       // 导入UserRoles
       if (importData.userRoles && importData.userRoles.length > 0) {
-        const userRoleResult = await this.importUserRoles(importData.userRoles, strategy);
+        const userRoleResult = await this.importUserRoles([...importData.userRoles], strategy);
         result.imported.userRoles = userRoleResult.imported;
         result.skipped.userRoles = userRoleResult.skipped;
-        result.errors.push(...userRoleResult.errors);
+        (result.errors as any[]).push(...userRoleResult.errors);
       }
 
       result.success = result.errors.length === 0;
@@ -195,7 +195,7 @@ export class ImportExportService {
     } catch (error) {
       console.error('导入失败:', error);
       result.success = false;
-      result.errors.push(error instanceof Error ? error.message : '导入过程中发生未知错误');
+      (result.errors as any[]).push(error instanceof Error ? error.message : '导入过程中发生未知错误');
       return result;
     }
   }

@@ -56,7 +56,7 @@ const getWin = () => window as any;
 // 并发保护：每个 chatId 仅允许一个 trigger 在跑
 const runningMap = new Map<string, boolean>();
 
-function normalizeProxyUrl(url?: string): string | null {
+export function normalizeProxyUrl(url?: string): string | null {
   if (!url) return null;
   let u = url.trim();
   if (!u) return null;
@@ -374,6 +374,23 @@ export class AiResponseModule {
 
         // 获取记忆注入内容
         memoryPack = await chatMemoryEstimator.getMemoryInjection();
+
+        // 兜底：若注入结果为空且是单聊，直接用仓库选择器快速生成一次
+        if ((!memoryPack || !memoryPack.trim()) && chat.personaId) {
+          try {
+            const { MemoryRepo } = await import('../services/memory/repo');
+            const { selectEventsForPrompt } = await import('../services/memory/select');
+            const { renderMemoryBlock } = await import('../services/memory/render');
+            const events = await selectEventsForPrompt(MemoryRepo as any, chat.personaId, { maxChars: memoryTokenBudget * 4 });
+            const fallbackPack = renderMemoryBlock(events);
+            if (fallbackPack && fallbackPack.trim()) {
+              memoryPack = fallbackPack;
+              console.log('[MM][inject-fallback] 使用快速选择生成记忆注入');
+            }
+          } catch (e) {
+            console.warn('[MM][inject-fallback-failed]', e);
+          }
+        }
         
       } catch (e) {
         console.warn('[MM][inject-failed]', e);

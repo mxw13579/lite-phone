@@ -1233,8 +1233,8 @@ class EPhoneApplication {
       let members: any[] = [];
       if (chat.isGroup && chat.members) {
         members = chat.members.map(member => ({
-          personaId: member.personaId,
-          name: member.name || member.personaId
+          personaId: (member as any).personaId || member.persona,
+          name: member.name || (member as any).personaId || member.persona
         }));
       }
 

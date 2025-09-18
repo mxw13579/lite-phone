@@ -131,7 +131,7 @@ export interface ValidationResult {
 
 // 详情组件状态
 export interface PersonaDetailState {
-  activeTab: 'basic' | 'prompt' | 'baseline' | 'worldBook' | 'preview';
+  activeTab: 'basic' | 'prompt' | 'baseline' | 'worldBook' | 'memory' | 'preview';
   isDirty: boolean;
   isEditing: boolean;
   validationErrors: Record<string, string>;

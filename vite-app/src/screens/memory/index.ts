@@ -455,7 +455,8 @@ export class MemoryScreenModule {
             const win = window as any;
             const state = win.STATE?.state || win.state;
             if (state && state.chats) {
-                const chat = state.chats.find((c: any) => c.personaId === personaId);
+                const chatsArr = Array.isArray(state.chats) ? state.chats : Object.values(state.chats);
+                const chat = (chatsArr as any[]).find((c: any) => c?.personaId === personaId);
                 return chat?.name || personaId;
             }
         } catch (error) {

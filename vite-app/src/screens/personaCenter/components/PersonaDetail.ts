@@ -115,7 +115,12 @@ export class PersonaDetailComponent {
       prompt: { definition: '' },
       worldBookLinks: [],
       status: 'draft',
-      archived: false
+      archived: false,
+      type: 'ai' as const,
+      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastUsedAt: Date.now()
     };
     delete (newPersona as any).id;
     await this.showItem('persona', newPersona, { editing: true });
@@ -129,7 +134,11 @@ export class PersonaDetailComponent {
       tags: [],
       prompt: { definition: '' },
       archived: false,
-      isGlobalDefault: false
+      isGlobalDefault: false,
+      type: 'user' as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastUsedAt: Date.now()
     };
     delete (newUserRole as any).id;
     await this.showItem('userRole', newUserRole, { editing: true });
@@ -574,7 +583,9 @@ export class PersonaDetailComponent {
     if (!isPersona(this.state.currentData) || !this.state.isEditing) return;
     const persona = this.state.currentData.data;
     if (persona.worldBookLinks) {
-      persona.worldBookLinks.splice(linkIndex, 1);
+      const links = [...persona.worldBookLinks];
+      links.splice(linkIndex, 1);
+      (persona as any).worldBookLinks = links;
       this.setDirty(true);
       void this.render();
     }
@@ -585,12 +596,13 @@ export class PersonaDetailComponent {
     const selectElement = document.getElementById('worldbook-select') as HTMLSelectElement | null;
     if (!selectElement?.value) return;
     const persona = this.state.currentData.data;
-    persona.worldBookLinks = persona.worldBookLinks ?? [];
-    persona.worldBookLinks.push({
+    const currentLinks = [...(persona.worldBookLinks || [])];
+    currentLinks.push({
       worldBookId: selectElement.value,
       enabled: true,
-      order: persona.worldBookLinks.length
+      order: currentLinks.length
     });
+    (persona as any).worldBookLinks = currentLinks;
     this.setDirty(true);
     void this.render();
   }
@@ -1339,7 +1351,7 @@ export class PersonaDetailComponent {
       if (text) text.textContent = '正在获取API配置...';
       
       const state = await import('../../../state');
-      const apiConfig = state.STATE.apiConfig;
+      const apiConfig = state.state.apiConfig;
       if (!apiConfig.proxyUrl || !apiConfig.apiKey) {
         throw new Error('API配置不完整，请先在设置中配置API信息');
       }
@@ -1382,7 +1394,7 @@ export class PersonaDetailComponent {
       setTimeout(() => {
         modal?.remove();
         this.refreshMemoryStats(personaId);
-        this.showMemoryMessage(`记忆压缩完成！压缩了 ${result?.compressedCount || 0} 条事件，释放了存储空间并优化了查询性能。`, 'success');
+        this.showMemoryMessage(`记忆压缩完成！压缩了 ${result?.compressedIds?.length || 0} 条事件，释放了存储空间并优化了查询性能。`, 'success');
       }, 1000);
       
     } catch (error) {
