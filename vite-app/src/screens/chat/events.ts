@@ -1,25 +1,28 @@
-// 事件处理模块 - 负责DOM事件绑定、键盘事件和用户交互处理
-// Phase 4: 使用统一错误处理 + 可选链委托 + 事件优化
-
 import type { Message, Chat } from '../../state';
 import DB from '../../database';
 import { showError, showOperationError } from '../../services/errorHandling';
 
-// —— 工具与辅助 ——
+// —— 常量与工具 ——
+const WIN: Window & typeof globalThis = window;
+const raf =
+    WIN.requestAnimationFrame?.bind(WIN) ??
+    ((cb: FrameRequestCallback) => setTimeout(cb, 16) as unknown as number);
+const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 
-// 统一获取 window 并封装外部依赖访问
-function getWin(): any {
-  return window as any;
-}
+const LONG_PRESS_MS_DEFAULT = 500;
+const MOVE_THRESHOLD_PX = 6;
+const MOVE_THRESHOLD_SQ = MOVE_THRESHOLD_PX * MOVE_THRESHOLD_PX;
+const SCROLL_DEFER_DELAY = 40;
 
-// 简化事件绑定
+// 事件绑定：返回解绑函数
 function on<K extends keyof HTMLElementEventMap>(
     el: HTMLElement,
     type: K,
     handler: (ev: HTMLElementEventMap[K]) => void,
     options?: boolean | AddEventListenerOptions
-): void {
+): () => void {
   el.addEventListener(type, handler as EventListener, options);
+  return () => el.removeEventListener(type, handler as EventListener, options);
 }
 
 // 简化选择器
@@ -27,56 +30,67 @@ function qs<T extends HTMLElement = HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
 }
 
-// 安全委托外部模块函数调用
-async function safeCall<F extends (...args: any[]) => any>(
-    fn: F | undefined,
-    args: Parameters<F>,
+// 宽松 safeCall：避免 @ts-expect-error，使用 unknown 函数类型检查
+async function safeCall(
+    host: unknown,
+    key: string,
     errMsg: string,
+    args: unknown[] = [],
     onMissing?: () => void
-): Promise<ReturnType<F> | void> {
-  if (!fn) {
+): Promise<unknown> {
+  if (!host || typeof (host as any)[key] !== 'function') {
     console.error(errMsg);
     onMissing?.();
     return;
   }
+  const fn: Function = (host as any)[key];
   try {
-    return await fn(...args);
+    return await fn.apply(host, args);
   } catch (e) {
     console.error(errMsg, e);
     showOperationError(errMsg, e as Error);
   }
 }
 
-// 使用 rAF 优化滚动到底部
-function deferScroll(containerId: string, delay = 50): void {
+// rAF 优化滚动
+function deferScroll(containerId: string, delay = SCROLL_DEFER_DELAY): void {
   const exec = () => {
     const el = qs(containerId);
     if (el) el.scrollTop = el.scrollHeight;
   };
-  if ('requestAnimationFrame' in window) {
-    requestAnimationFrame(() => setTimeout(exec, delay));
-  } else {
-    setTimeout(exec, delay);
-  }
+  raf(() => {
+    if (delay > 0) setTimeout(exec, delay);
+    else exec();
+  });
 }
 
-// —— 主模块 ——
+// 统一坐标
+function getPoint(e: Event): { x: number; y: number } | null {
+  const anyE = e as any;
+  if (typeof anyE.clientX === 'number' && typeof anyE.clientY === 'number') {
+    return { x: anyE.clientX, y: anyE.clientY };
+  }
+  const te = e as TouchEvent;
+  const t = te.touches?.[0] ?? te.changedTouches?.[0];
+  if (t) return { x: t.clientX, y: t.clientY };
+  return null;
+}
 
+const isPointerSupported = 'onpointerdown' in WIN;
+
+// —— 主模块 ——
 export class EventHandlerModule {
-  // 使用 Pointer Events 优先，回退 mouse/touch。避免多事件重复与泄漏
   addLongPressListener(
       element: HTMLElement,
       callback: (e: Event) => void,
-      holdMs = 500
-  ): void {
+      holdMs = LONG_PRESS_MS_DEFAULT
+  ): () => void {
     let timer: number | null = null;
     let startX = 0;
     let startY = 0;
-    const moveThreshold = 6; // 像素阈值：避免移动触发
+    let startTs = 0;
 
-    const win = getWin();
-
-    const clear = () => {
+    const clearTimer = () => {
       if (timer !== null) {
         clearTimeout(timer);
         timer = null;
@@ -84,57 +98,55 @@ export class EventHandlerModule {
     };
 
     const start = (e: Event) => {
-      if (win.getIsSelectionMode?.()) return;
-      clear();
-
-      // 记录起点
-      const point =
-          (e as PointerEvent).clientX !== undefined
-              ? (e as PointerEvent)
-              : (e as TouchEvent).touches?.[0];
-
-      startX = point?.clientX ?? 0;
-      startY = point?.clientY ?? 0;
-
-      timer = window.setTimeout(() => {
+      if ((WIN as any).getIsSelectionMode?.()) return;
+      clearTimer();
+      const p = getPoint(e);
+      startX = p?.x ?? 0;
+      startY = p?.y ?? 0;
+      startTs = now();
+      timer = WIN.setTimeout(() => {
         callback(e);
-        clear();
+        clearTimer();
       }, holdMs);
     };
 
-    const cancel = () => clear();
+    const cancel = () => clearTimer();
 
     const maybeCancelByMove = (e: Event) => {
-      const pe = e as PointerEvent;
-      const te = e as TouchEvent;
-      const point =
-          pe.clientX !== undefined ? pe : te.touches?.[0] ?? te.changedTouches?.[0];
-      if (!point) return;
-      const dx = (point.clientX ?? 0) - startX;
-      const dy = (point.clientY ?? 0) - startY;
-      if (dx * dx + dy * dy > moveThreshold * moveThreshold) clear();
+      const p = getPoint(e);
+      if (!p) return;
+      const dx = p.x - startX;
+      const dy = p.y - startY;
+      if (dx * dx + dy * dy > MOVE_THRESHOLD_SQ) clearTimer();
+      if (now() - startTs < 40) clearTimer();
     };
 
-    // Pointer 事件优先
-    if ('onpointerdown' in window) {
-      on(element, 'pointerdown', start as any, { passive: true });
-      on(element, 'pointerup', cancel as any);
-      on(element, 'pointerleave', cancel as any);
-      on(element, 'pointercancel', cancel as any);
-      on(element, 'pointermove', maybeCancelByMove as any, { passive: true });
-      return;
+    const unbinders: Array<() => void> = [];
+    if (isPointerSupported) {
+      unbinders.push(
+          on(element, 'pointerdown', start as any, { passive: true }),
+          on(element, 'pointerup', cancel as any),
+          on(element, 'pointerleave', cancel as any),
+          on(element, 'pointercancel', cancel as any),
+          on(element, 'pointermove', maybeCancelByMove as any, { passive: true })
+      );
+    } else {
+      unbinders.push(
+          on(element, 'mousedown', start as any),
+          on(element, 'mouseup', cancel as any),
+          on(element, 'mouseleave', cancel as any),
+          on(element, 'mousemove', maybeCancelByMove as any),
+          on(element, 'touchstart', start as any, { passive: true }),
+          on(element, 'touchend', cancel as any),
+          on(element, 'touchcancel', cancel as any),
+          on(element, 'touchmove', maybeCancelByMove as any, { passive: true })
+      );
     }
 
-    // 回退 mouse/touch
-    on(element, 'mousedown', start as any);
-    on(element, 'mouseup', cancel as any);
-    on(element, 'mouseleave', cancel as any);
-    on(element, 'mousemove', maybeCancelByMove as any);
-
-    on(element, 'touchstart', start as any, { passive: true });
-    on(element, 'touchend', cancel as any);
-    on(element, 'touchcancel', cancel as any);
-    on(element, 'touchmove', maybeCancelByMove as any, { passive: true });
+    return () => {
+      clearTimer();
+      unbinders.forEach((u) => u());
+    };
   }
 
   initListeners(): void {
@@ -155,7 +167,7 @@ export class EventHandlerModule {
     if (waitReplyBtn) {
       on(waitReplyBtn, 'click', () => {
         this.triggerAiResponse();
-        deferScroll('chat-messages', 40);
+        deferScroll('chat-messages', SCROLL_DEFER_DELAY);
       });
     }
   }
@@ -164,7 +176,6 @@ export class EventHandlerModule {
     const chatInput = qs<HTMLTextAreaElement>('chat-input');
     if (!chatInput) return;
 
-    // 使用 keydown 代替已被弃用的 keypress
     on(chatInput, 'keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -172,40 +183,44 @@ export class EventHandlerModule {
       }
     });
 
-    // 自适应高度：仅在高度变化时设置，rAF 降低布局抖动
+    // 自适应高度（限制最大高度）
+    const style = WIN.getComputedStyle(chatInput);
+    const lineHeight = parseFloat(style.lineHeight || '20') || 20;
+    const maxRows = 8;
+    const maxHeight = lineHeight * maxRows;
+
+    let scheduled = false;
     let prevHeight = chatInput.offsetHeight;
-    on(chatInput, 'input', () => {
-      const apply = () => {
-        chatInput.style.height = 'auto';
-        const next = chatInput.scrollHeight;
-        if (next !== prevHeight) {
-          chatInput.style.height = next + 'px';
-          prevHeight = next;
-        }
-      };
-      if ('requestAnimationFrame' in window) {
-        requestAnimationFrame(apply);
-      } else {
-        apply();
+
+    const resize = () => {
+      scheduled = false;
+      chatInput.style.height = 'auto';
+      const next = Math.min(chatInput.scrollHeight, maxHeight);
+      if (next !== prevHeight) {
+        chatInput.style.height = next + 'px';
+        prevHeight = next;
       }
+    };
+
+    on(chatInput, 'input', () => {
+      if (scheduled) return;
+      scheduled = true;
+      raf(resize as any);
     });
   }
 
   private async handleSendMessage(): Promise<void> {
-    const win = getWin();
-    await safeCall(
-        win.CHAT_MODULES?.composerModule?.handleSendMessage?.bind(win.CHAT_MODULES?.composerModule),
-        [],
-        '发送消息失败'
-    );
+    const cm = (WIN as any).CHAT_MODULES?.composerModule;
+    await safeCall(cm, 'handleSendMessage', '发送消息失败');
   }
 
   private async triggerAiResponse(): Promise<void> {
-    const win = getWin();
+    const arm = (WIN as any).SCREENS?.aiResponseModule;
     const ok = await safeCall(
-        win.SCREENS?.aiResponseModule?.triggerAiResponse?.bind(win.SCREENS?.aiResponseModule),
-        [],
+        arm,
+        'triggerAiResponse',
         'AI响应触发失败',
+        [],
         () => showError('AI响应功能暂时不可用，请刷新页面重试')
     );
     return ok as any;
@@ -213,43 +228,35 @@ export class EventHandlerModule {
 
   bindPatEvent(bubble: HTMLElement, msg: Message): void {
     on(bubble, 'dblclick', () => {
-      const win = getWin();
-      if (win.getIsMessageEditMode?.()) return;
-      const handler =
-          win.CHAT_MODULES?.eventsModule?.handlePat ?? win.handlePat?.bind(win);
+      if ((WIN as any).getIsMessageEditMode?.()) return;
+      // 修正 TS2339：不要把 handlePat 当作本类属性访问，改为从 window 动态获取
+      const handler: ((m: Message) => void) | undefined =
+          (WIN as any).CHAT_MODULES?.eventsModule?.handlePat ??
+          (typeof (WIN as any).handlePat === 'function' ? (WIN as any).handlePat.bind(WIN) : undefined);
       if (handler) handler(msg);
     });
   }
 
   bindSelectionEvent(bubble: HTMLElement, timestamp: number): void {
     on(bubble, 'click', () => {
-      const win = getWin();
-      if (!win.getIsSelectionMode?.()) return;
-      win.toggleMessageSelection?.(timestamp);
+      if (!(WIN as any).getIsSelectionMode?.()) return;
+      (WIN as any).toggleMessageSelection?.(timestamp);
     });
   }
 
   bindMessageEvents(wrapper: HTMLElement, bubble: HTMLElement, msg: Message): void {
-    // 长按进入选择模式
     this.addLongPressListener(bubble, () => {
-      const win = getWin();
-      win.enterSelectionMode?.(msg.timestamp);
+      (WIN as any).enterSelectionMode?.(msg.timestamp);
     });
-
-    // 双击拍一拍
     this.bindPatEvent(bubble, msg);
-
-    // 点击选择消息
     this.bindSelectionEvent(bubble, msg.timestamp);
   }
 
   bindChatListItemEvents(item: HTMLElement, chat: Chat): void {
     on(item, 'click', () => {
-      const win = getWin();
-      win.openChat?.(chat.id);
+      (WIN as any).openChat?.(chat.id);
     });
 
-    // 长按删除聊天
     this.addLongPressListener(item, async () => {
       const confirmed = await this.showCustomConfirm(
           '删除对话',
@@ -258,33 +265,28 @@ export class EventHandlerModule {
       );
       if (!confirmed) return;
 
-      const win = getWin();
       try {
-        const state = win.STATE;
-        // 停止音乐会话（若关联此聊天）
+        const state = (WIN as any).STATE;
         const musicState = state?.musicState;
         if (musicState?.isActive && musicState.activeChatId === chat.id) {
-          await win.endListenTogetherSession?.(false);
+          await (WIN as any).endListenTogetherSession?.(false);
         }
 
-        // 本地状态更新
         const prevChat = state.state.chats[chat.id];
         const prevActive = state.state.activeChatId;
+
         delete state.state.chats[chat.id];
         if (prevActive === chat.id) state.state.activeChatId = null;
 
-        // DB 删除
         try {
           await DB.deleteChat(chat.id);
         } catch (dbErr) {
-          // 简单回滚，保证一致性
           state.state.chats[chat.id] = prevChat;
           state.state.activeChatId = prevActive;
           throw dbErr;
         }
 
-        // 重新渲染
-        win.CHAT_MODULES?.renderModule?.renderChatList?.();
+        (WIN as any).CHAT_MODULES?.renderModule?.renderChatList?.();
       } catch (error) {
         console.error('删除聊天失败:', error);
         showOperationError('删除聊天', error as Error);
@@ -297,15 +299,12 @@ export class EventHandlerModule {
       sticker: { id: string; url: string; name: string }
   ): void {
     on(item, 'click', () => {
-      const win = getWin();
-      win.CHAT_MODULES?.composerModule?.sendSticker?.(sticker);
+      (WIN as any).CHAT_MODULES?.composerModule?.sendSticker?.(sticker);
     });
 
     this.addLongPressListener(item, () => {
-      const win = getWin();
-      if (win.getIsSelectionMode?.()) return;
-
-      if ((item as any)._hasDeleteBtn) return;
+      if ((WIN as any).getIsSelectionMode?.()) return;
+      if (item.dataset.hasDeleteBtn === '1') return;
 
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'delete-btn';
@@ -322,30 +321,29 @@ export class EventHandlerModule {
         if (!confirmed) return;
 
         try {
-          const win2 = getWin();
-          const state = win2.STATE;
+          const state = (WIN as any).STATE;
           await DB.deleteUserSticker(sticker.id);
           state.state.userStickers = state.state.userStickers.filter(
               (s: any) => s.id !== sticker.id
           );
-          win2.CHAT_MODULES?.composerModule?.renderStickerPanel?.();
+          (WIN as any).CHAT_MODULES?.composerModule?.renderStickerPanel?.();
         } catch (err) {
           showOperationError('删除表情', err as Error);
         }
       };
 
-      (item as any)._hasDeleteBtn = true;
+      item.dataset.hasDeleteBtn = '1';
       item.appendChild(deleteBtn);
       deleteBtn.style.display = 'block';
 
-      // 3秒后若鼠标离开则移除按钮，一次性监听
       setTimeout(() => {
-        on(
+        const offLeave = on(
             item,
             'mouseleave',
             () => {
               deleteBtn.remove();
-              (item as any)._hasDeleteBtn = false;
+              item.dataset.hasDeleteBtn = '';
+              offLeave();
             },
             { once: true }
         );
@@ -355,8 +353,7 @@ export class EventHandlerModule {
 
   bindLoadMoreButtonEvents(button: HTMLElement): void {
     on(button, 'click', () => {
-      const win = getWin();
-      win.CHAT_MODULES?.renderModule?.loadMoreMessages?.();
+      (WIN as any).CHAT_MODULES?.renderModule?.loadMoreMessages?.();
     });
   }
 
@@ -365,14 +362,12 @@ export class EventHandlerModule {
       message: string,
       options: any = {}
   ): Promise<boolean> {
-    const win = getWin();
-    if (win.showCustomConfirm) {
-      return win.showCustomConfirm(title, message, options);
+    if ((WIN as any).showCustomConfirm) {
+      return (WIN as any).showCustomConfirm(title, message, options);
     }
     return Promise.resolve(confirm(message));
   }
 }
 
-// 全局单例
 export const eventHandlerModule = new EventHandlerModule();
 export default eventHandlerModule;

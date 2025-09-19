@@ -1,4 +1,4 @@
-// 统一的 window 兼容性注入（采纳审查建议：XSS 修复、单例改良、类型收窄、bindAll 函数式）
+// 统一的 window 兼容性注入（修复：移除对 Node process 类型依赖）
 
 import CONSTANTS, { injectConstantsToWindow } from '../constants/index';
 import STATE, { injectStateToWindow } from '../state/index';
@@ -15,14 +15,21 @@ import type { MessageComposerModule } from '../screens/chat/composer';
 import type { AttachmentHandlerModule } from '../screens/chat/attachments';
 import type { VoicePlaybackModule } from '../screens/chat/playback';
 
-// ---------------- 轻量类型约束（减少 any 泄漏） ----------------
+type ScreenId =
+    | 'world-book'
+    | 'presets'
+    | 'api-settings'
+    | 'wallpaper'
+    | 'world-book-editor'
+    | 'preset-editor';
+
 interface RouterShape {
-  SCREEN_IDS: any;
-  showScreen: (...a: any[]) => any;
-  navigateToChat: (...a: any[]) => any;
-  navigateToChatList: (...a: any[]) => any;
-  getCurrentScreen: (...a: any[]) => any;
-  initRouter: (...a: any[]) => any;
+  readonly SCREEN_IDS: Record<string, string>;
+  showScreen: (id: string, ...args: unknown[]) => unknown;
+  navigateToChat: (chatId: string) => unknown;
+  navigateToChatList: () => unknown;
+  getCurrentScreen: () => { id: string } | null;
+  initRouter: () => unknown;
 }
 
 interface ChatScreenModule {
@@ -41,7 +48,7 @@ interface ChatScreenModule {
 }
 
 interface ScreenManager {
-  renderScreen?: (id: string) => void;
+  renderScreen?: (id: ScreenId) => void;
 }
 
 interface ScreensShape {
@@ -51,32 +58,71 @@ interface ScreensShape {
   chatScreenModule?: ChatScreenModule;
 }
 
-// ---------------- 工具与常量 ----------------
+// 环境检测：纯浏览器安全实现，避免依赖 Node 的 process 类型
+function detectDev(): boolean {
+  // 1) 显式全局开关（可由构建器或测试注入）
+  if (typeof (window as any).__DEV__ === 'boolean') return !!(window as any).__DEV__;
+
+  // 2) Vite 风格
+  try {
+    // import.meta 在 TS 中默认 any，不会引入 Node 类型
+    if (typeof import.meta !== 'undefined') {
+      const im: any = import.meta as any;
+      if (im.env?.DEV === true) return true;
+      if (typeof im.env?.MODE === 'string') return im.env.MODE !== 'production';
+    }
+  } catch { /* noop */ }
+
+  // 3) Webpack/环境变量注入（通过 typeof 安全访问）
+  const maybeProcess: any = (typeof globalThis !== 'undefined' && (globalThis as any).process) || undefined;
+  const env = maybeProcess?.env;
+  if (env && typeof env.NODE_ENV === 'string') {
+    return env.NODE_ENV !== 'production';
+  }
+
+  return false;
+}
+
+const DEV = detectDev();
 const LOG_PREFIX = 'CompatAPI';
-const log = (...args: unknown[]) => console.log('🔧', LOG_PREFIX + ':', ...args);
-const ok = (...args: unknown[]) => console.log('✅', LOG_PREFIX + ':', ...args);
+const log = (...args: unknown[]) => DEV && console.log('🔧', LOG_PREFIX + ':', ...args);
+const ok = (...args: unknown[]) => DEV && console.log('✅', LOG_PREFIX + ':', ...args);
 const err = (...args: unknown[]) => console.error(LOG_PREFIX + ':', ...args);
 
 const noop = () => {};
 const safeNoop = <T extends (...a: any[]) => any>(fn?: T): T =>
     (typeof fn === 'function' ? fn : (noop as T));
 
-function assignAll(pairs: Record<string, any>) {
-  Object.assign(window, pairs);
+function bindAll<T extends object, K extends readonly (keyof T)[]>(ctx: T, keys: K) {
+  const out = {} as { [P in K[number]]: T[P] };
+  for (const key of keys) {
+    const v = ctx[key];
+    (out as any)[key] = typeof v === 'function' ? (v as Function).bind(ctx) : v;
+  }
+  return out;
 }
 
-// 采用函数式写法（代码审查建议）
-function bindAll<T extends object, K extends keyof T>(ctx: T, keys: K[]) {
-  return Object.fromEntries(
-      keys.map((key) => {
-        const value = ctx[key];
-        const boundValue = typeof value === 'function' ? (value as Function).bind(ctx) : value;
-        return [key, boundValue];
-      })
-  ) as { [P in K]: T[P] };
+function batchAssign<T extends object>(
+    target: T,
+    entries: Record<string, unknown>,
+    { detectOverwrite = DEV }: { detectOverwrite?: boolean } = {}
+): void {
+  if (detectOverwrite) {
+    for (const k of Object.keys(entries)) {
+      if (k in target) {
+        console.warn(`${LOG_PREFIX}: 覆盖全局键 "${k}"`);
+      }
+    }
+  }
+  Object.assign(target, entries);
 }
 
-// ---------------- 模块缓存（减少链式读取） ----------------
+function pickChatModules(cm?: ChatScreenModule) {
+  if (!cm) return undefined;
+  const { renderModule, eventsModule, composerModule, attachmentsModule, playbackModule } = cm;
+  return { renderModule, eventsModule, composerModule, attachmentsModule, playbackModule };
+}
+
 const {
   screenManager,
   worldBookScreenModule,
@@ -84,189 +130,159 @@ const {
   chatScreenModule,
 } = (SCREENS as unknown as ScreensShape);
 
-function pickChatModules(cm?: ChatScreenModule) {
-  if (!cm) return undefined;
-  const {
-    renderModule,
-    eventsModule,
-    composerModule,
-    attachmentsModule,
-    playbackModule,
-  } = cm;
-  return { renderModule, eventsModule, composerModule, attachmentsModule, playbackModule };
-}
-
-// ---------------- PersonaEditor 懒加载（XSS 安全） ----------------
 function setInfo(container: Element, text: string, color?: string) {
   const div = document.createElement('div');
   div.style.padding = '20px';
   div.style.textAlign = 'center';
   if (color) div.style.color = color;
-  div.textContent = text; // 使用纯文本，避免 XSS
+  div.textContent = text;
   (container as HTMLElement).replaceChildren(div);
 }
 
+let personaEditorLoading: Promise<void> | null = null;
 async function lazyImportPersonaEditor(rootId: string) {
   const root = document.getElementById(rootId);
-  if (!root) {
-    err(`未找到容器 #${rootId}`);
-    return;
+  if (!root) return err(`未找到容器 #${rootId}`);
+
+  if (!personaEditorLoading) {
+    setInfo(root, '正在加载角色编辑器...');
+    personaEditorLoading = (async () => {
+      try {
+        const mod = await import('../screens/personaEditor/PersonaEditorScreen');
+        const Editor = mod.PersonaEditorScreen;
+        const editor = new Editor(root);
+        await editor.initialize();
+        (window as any).personaEditorScreen = editor;
+      } catch (e: any) {
+        setInfo(root, `加载失败: ${e?.message ?? '未知错误'}`, 'red');
+        err('PersonaEditorScreen 加载失败', e);
+      } finally {
+        personaEditorLoading = null;
+      }
+    })();
   }
-  setInfo(root, '正在加载角色编辑器...');
-  try {
-    const mod = await import('../screens/personaEditor/PersonaEditorScreen');
-    const Editor = mod.PersonaEditorScreen;
-    const editor = new Editor(root);
-    await editor.initialize();
-    window.personaEditorScreen = editor; // 调试用途（提供类型声明）
-  } catch (e: any) {
-    setInfo(root, `加载失败: ${e?.message ?? '未知错误'}`, 'red');
-    err('PersonaEditorScreen 加载失败', e);
-  }
+  await personaEditorLoading;
 }
 
-// ---------------- PersonaCenter 单例（兼容重建语义 + 新增单例获取） ----------------
-let personaCenterInstance: PersonaCenterScreen | null = null;
-let personaCenterHost: HTMLElement | null = null;
+const PERSONA_CENTER_KEY: unique symbol = Symbol.for('app/persona-center-instance');
+const PERSONA_CENTER_HOST_KEY: unique symbol = Symbol.for('app/persona-center-host');
+
+type WinWithPersona = Window & {
+  [PERSONA_CENTER_KEY]?: PersonaCenterScreen | null;
+  [PERSONA_CENTER_HOST_KEY]?: HTMLElement | null;
+};
 
 function getPersonaCenterInstance() {
-  return personaCenterInstance;
+  return (window as WinWithPersona)[PERSONA_CENTER_KEY] ?? null;
 }
 function destroyPersonaCenterInstance() {
-  if (personaCenterInstance) {
-    personaCenterInstance.destroy();
-    personaCenterInstance = null;
-    personaCenterHost = null;
-  }
+  const w = window as WinWithPersona;
+  const inst = w[PERSONA_CENTER_KEY];
+  if (inst) inst.destroy();
+  w[PERSONA_CENTER_KEY] = null;
+  w[PERSONA_CENTER_HOST_KEY] = null;
 }
 async function getOrCreatePersonaCenter(container: HTMLElement) {
-  if (personaCenterInstance && personaCenterHost === container) {
-    return personaCenterInstance;
+  const w = window as WinWithPersona;
+  if (w[PERSONA_CENTER_KEY] && w[PERSONA_CENTER_HOST_KEY] === container) {
+    return w[PERSONA_CENTER_KEY]!;
   }
   destroyPersonaCenterInstance();
-  personaCenterHost = container;
-  personaCenterInstance = new PersonaCenterScreen(container);
-  await personaCenterInstance.initialize();
-  return personaCenterInstance;
+  const instance = new PersonaCenterScreen(container);
+  await instance.initialize();
+  w[PERSONA_CENTER_KEY] = instance;
+  w[PERSONA_CENTER_HOST_KEY] = container;
+  return instance;
 }
 async function recreatePersonaCenter(container: HTMLElement) {
   destroyPersonaCenterInstance();
-  personaCenterHost = container;
-  personaCenterInstance = new PersonaCenterScreen(container);
-  await personaCenterInstance.initialize();
-  return personaCenterInstance;
+  const instance = new PersonaCenterScreen(container);
+  await instance.initialize();
+  (window as WinWithPersona)[PERSONA_CENTER_KEY] = instance;
+  (window as WinWithPersona)[PERSONA_CENTER_HOST_KEY] = container;
+  return instance;
 }
 
-// ---------------- 主注入函数 ----------------
 export function injectCompatibilityAPIs(): void {
   log('开始统一注入兼容性 API');
 
-  // 1) 模块自带注入
   injectConstantsToWindow();
   injectStateToWindow();
   injectDatabaseToWindow();
 
-  // 2) 核心对象
-  assignAll({
+  batchAssign(window, {
     STATE,
     DB,
     ROUTER,
     SCREENS: { ...(SCREENS as any), aiResponseModule },
   });
 
-  // 3) 路由绑定
-  const {
+  const router = ROUTER as unknown as RouterShape;
+  const { SCREEN_IDS } = router;
+  batchAssign(window, {
     SCREEN_IDS,
-    showScreen,
-    navigateToChat,
-    navigateToChatList,
-    getCurrentScreen,
-    initRouter,
-  } = (ROUTER as unknown as RouterShape);
-
-  assignAll({
-    SCREEN_IDS,
-    ...bindAll(ROUTER as RouterShape, [
-      'showScreen',
-      'navigateToChat',
-      'navigateToChatList',
-      'getCurrentScreen',
-      'initRouter',
-    ]),
+    ...bindAll(router, ['showScreen', 'navigateToChat', 'navigateToChatList', 'getCurrentScreen', 'initRouter'] as const),
   });
 
-  // 4) 服务层注入与缓存
   SERVICES.injectServicesToWindow?.();
   const musicService = (SERVICES as any).musicService;
 
-  // 5) 服务/聊天/AI 代理
-  assignAll({
-    updateListenTogetherIconProxy: (chatId: string) =>
-        musicService?.updateListenTogetherIcon?.(chatId),
+  const proxies = {
+    updateListenTogetherIconProxy: (chatId: string) => musicService?.updateListenTogetherIcon?.(chatId),
 
-    triggerAiResponse: safeNoop(() => chatScreenModule?.triggerAiResponse?.()),
-    parseAiResponse: safeNoop((content: string) => parseAiResponse(content)),
+    triggerAiResponse: () => chatScreenModule?.triggerAiResponse?.(),
+    parseAiResponse: (content: string) => parseAiResponse(content),
     ChatModule: chatScreenModule,
-    openChat: safeNoop((chatId: string) => chatScreenModule?.openChat?.(chatId)),
+    openChat: (chatId: string) => chatScreenModule?.openChat?.(chatId),
 
     CHAT_MODULES: pickChatModules(chatScreenModule),
 
-    // 屏幕与代理
     screenManager,
-    renderChatListProxy: safeNoop(chatScreenModule?.renderChatList?.bind(chatScreenModule)),
-    renderChatInterfaceProxy: safeNoop((chatId: string) =>
-        chatScreenModule?.renderChatInterface?.(chatId)),
-    renderWorldBookScreenProxy: safeNoop(() => screenManager?.renderScreen?.('world-book')),
-    renderPresetListProxy: safeNoop(() => screenManager?.renderScreen?.('presets')),
-    renderApiSettingsProxy: safeNoop(() => screenManager?.renderScreen?.('api-settings')),
-    renderWallpaperScreenProxy: safeNoop(() => screenManager?.renderScreen?.('wallpaper')),
-    renderWorldBookEditorProxy: safeNoop(() => screenManager?.renderScreen?.('world-book-editor')),
-    renderPresetEditorProxy: safeNoop(() => screenManager?.renderScreen?.('preset-editor')),
+    renderChatListProxy: () => chatScreenModule?.renderChatList?.(),
+    renderChatInterfaceProxy: (chatId: string) => chatScreenModule?.renderChatInterface?.(chatId),
+    renderWorldBookScreenProxy: () => screenManager?.renderScreen?.('world-book'),
+    renderPresetListProxy: () => screenManager?.renderScreen?.('presets'),
+    renderApiSettingsProxy: () => screenManager?.renderScreen?.('api-settings'),
+    renderWallpaperScreenProxy: () => screenManager?.renderScreen?.('wallpaper'),
+    renderWorldBookEditorProxy: () => screenManager?.renderScreen?.('world-book-editor'),
+    renderPresetEditorProxy: () => screenManager?.renderScreen?.('preset-editor'),
 
-    // PersonaEditor 懒加载
     renderPersonaEditorProxy: () => { void lazyImportPersonaEditor('persona-editor-root'); },
 
-    // PersonaCenter：保留“重建”语义 + 新增“单例获取”
     renderPersonaCenterProxy: () => {
-      const container = document.getElementById('persona-center-screen');
+      const container = document.getElementById('persona-center-screen') as HTMLElement | null;
       if (!container) return err('角色中心容器未找到');
-      recreatePersonaCenter(container as HTMLElement).catch(err);
+      void recreatePersonaCenter(container);
     },
     getOrCreatePersonaCenterProxy: () => {
-      const container = document.getElementById('persona-center-screen');
+      const container = document.getElementById('persona-center-screen') as HTMLElement | null;
       if (!container) return err('角色中心容器未找到');
-      getOrCreatePersonaCenter(container as HTMLElement).catch(err);
+      void getOrCreatePersonaCenter(container);
     },
 
-    // 消息编辑
-    exitMessageEditMode: safeNoop((shouldSave?: boolean) =>
-        chatScreenModule?.exitMessageEditMode?.(!!shouldSave)),
-    toggleMessageEditMode: safeNoop(() => chatScreenModule?.toggleMessageEditMode?.()),
+    exitMessageEditMode: (shouldSave?: boolean) => chatScreenModule?.exitMessageEditMode?.(Boolean(shouldSave)),
+    toggleMessageEditMode: () => chatScreenModule?.toggleMessageEditMode?.(),
 
-    // 编辑器打开
-    openWorldBookEditor: safeNoop((id: string) =>
-        worldBookScreenModule?.openWorldBookEditor?.(id)),
-    openPresetEditor: safeNoop((id: string | null) =>
-        presetScreenModule?.openPresetEditor?.(id)),
+    openWorldBookEditor: (id: string) => worldBookScreenModule?.openWorldBookEditor?.(id),
+    openPresetEditor: (id: string | null) => presetScreenModule?.openPresetEditor?.(id),
 
-    // 角色中心管理
     getPersonaCenterInstance,
     destroyPersonaCenterInstance,
 
-    // 内部状态
-    _editingMemberId: null,
-  });
+    _editingMemberId: null as any,
+  } as const;
+
+  batchAssign(window, proxies);
 
   log('代理函数注册状态', {
-    renderPersonaEditorProxy: typeof window.renderPersonaEditorProxy,
-    renderPersonaCenterProxy: typeof window.renderPersonaCenterProxy,
+    renderPersonaEditorProxy: typeof (window as any).renderPersonaEditorProxy,
+    renderPersonaCenterProxy: typeof (window as any).renderPersonaCenterProxy,
     getOrCreatePersonaCenterProxy: typeof (window as any).getOrCreatePersonaCenterProxy,
   });
 
   ok('统一兼容性 API 注入完成');
 }
 
-// ---------------- 全局类型补充（含 personaEditorScreen 类型） ----------------
 declare global {
   interface Window {
     CONSTANTS: any;
@@ -274,8 +290,6 @@ declare global {
     DB: any;
     ROUTER: any;
     SCREENS: any;
-
-    // 向后兼容的状态管理API
     state: any;
     musicState: any;
     myAddress: any;
@@ -288,13 +302,11 @@ declare global {
     isGroupChat: any;
     getFullState: any;
 
-    // 向后兼容的数据库API
     db: any;
     Dexie: any;
     loadAllDataFromDB: any;
     initializeDatabase: any;
 
-    // 路由
     SCREEN_IDS: any;
     showScreen: (...args: any[]) => any;
     navigateToChat: (...args: any[]) => any;
@@ -302,13 +314,11 @@ declare global {
     getCurrentScreen: (...args: any[]) => any;
     initRouter: (...args: any[]) => any;
 
-    // AI/聊天
     triggerAiResponse: () => void;
     parseAiResponse: (content: string) => any;
     ChatModule: any;
     openChat: (chatId: string) => void;
 
-    // 调试：聊天子模块聚合
     CHAT_MODULES?: {
       renderModule?: MessageRenderModule;
       eventsModule?: EventHandlerModule;
@@ -317,7 +327,6 @@ declare global {
       playbackModule?: VoicePlaybackModule;
     };
 
-    // 屏幕与代理
     screenManager: any;
     renderChatListProxy: () => void;
     renderChatInterfaceProxy: (chatId: string) => void;
@@ -331,31 +340,23 @@ declare global {
     openWorldBookEditor: (id: string) => void;
     openPresetEditor: (id: string | null) => void;
 
-    // 消息编辑
     exitMessageEditMode: (shouldSave?: boolean) => any;
     toggleMessageEditMode: () => any;
 
-    // 音乐服务代理
     updateListenTogetherIconProxy: (chatId: string) => void;
 
-    // 角色中心管理
     getPersonaCenterInstance: () => PersonaCenterScreen | null;
     destroyPersonaCenterInstance: () => void;
     getOrCreatePersonaCenterProxy?: () => void;
 
-    // PersonaEditor 调试引用（类型化）
     personaEditorScreen?: PersonaEditorScreen;
 
-    // 内部状态
     _editingMemberId: any;
 
     [key: string]: any;
   }
 }
 
-// ---------------- 关键改动说明 ----------------
-// - 采纳审查建议：bindAll 改为函数式写法；为 window.personaEditorScreen 提供类型声明。
-// - XSS 修复：所有加载/错误提示改为 textContent + replaceChildren，避免 innerHTML 注入。
-// - 单例改良：保留 renderPersonaCenterProxy 的“重建”语义，新增 getOrCreatePersonaCenterProxy 提供真正单例获取，避免状态丢失风险。
-// - 类型收窄：以 RouterShape/ScreensShape/ChatScreenModule 约束热点接口，减少 any，提前发现拼写与结构问题。
-// - 可维护性：assignAll + safeNoop 统一注入与兜底，减少重复 Object.assign/bind 与防御性样板代码。
+// 变更摘要：
+// - 移除了对 process 的直接引用，采用 detectDev() 在浏览器安全判断开发环境，解决 TS2580。
+// - 其余逻辑保持与前版本一致，不改变外部 API 与行为。

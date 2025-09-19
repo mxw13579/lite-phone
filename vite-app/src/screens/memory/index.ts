@@ -589,19 +589,204 @@ export class MemoryScreenModule {
         try {
             const event = await MemoryRepo.getEventById(eventId);
             if (!event) return;
-            const newTitle = prompt('编辑标题:', event.title);
-            if (newTitle != null && newTitle !== event.title) {
-                await MemoryRepo.updateEvent(eventId, { title: newTitle, updatedAt: Date.now() });
-                await this.refreshMemoryData();
+
+            const win = window as any;
+            if (!win.showCustomModal) {
+                // 向后兼容：使用原始prompt方式
+                const newTitle = prompt('编辑标题:', event.title);
+                if (newTitle != null && newTitle !== event.title) {
+                    await MemoryRepo.updateEvent(eventId, { title: newTitle, updatedAt: Date.now() });
+                    await this.refreshMemoryData();
+                }
+                const newContent = prompt('编辑内容:', event.content);
+                if (newContent != null && newContent !== event.content) {
+                    await MemoryRepo.updateEvent(eventId, { content: newContent, updatedAt: Date.now() });
+                    await this.refreshMemoryData();
+                }
+                return;
             }
-            const newContent = prompt('编辑内容:', event.content);
-            if (newContent != null && newContent !== event.content) {
-                await MemoryRepo.updateEvent(eventId, { content: newContent, updatedAt: Date.now() });
-                await this.refreshMemoryData();
+
+            // 使用统一Modal显示编辑表单
+            const titleEl = document.getElementById('custom-modal-title');
+            const bodyEl = document.getElementById('custom-modal-body');
+            const cancelBtn = document.getElementById('custom-modal-cancel') as HTMLButtonElement;
+            const confirmBtn = document.getElementById('custom-modal-confirm') as HTMLButtonElement;
+
+            if (!titleEl || !bodyEl || !cancelBtn || !confirmBtn) {
+                console.error('[Memory] Modal elements not found');
+                return;
             }
+
+            // 设置Modal标题
+            titleEl.textContent = '编辑记忆';
+
+            // 清空body并构建编辑表单
+            bodyEl.textContent = '';
+
+            const form = document.createElement('form');
+            form.className = 'event-edit-form';
+
+            // 标题输入
+            const titleGroup = document.createElement('div');
+            titleGroup.className = 'form-group';
+            const titleLabel = document.createElement('label');
+            titleLabel.htmlFor = 'edit-event-title';
+            titleLabel.textContent = '标题';
+            const titleInput = document.createElement('input');
+            titleInput.type = 'text';
+            titleInput.id = 'edit-event-title';
+            titleInput.className = 'form-input';
+            titleInput.value = event.title;
+            titleInput.maxLength = 80;
+            titleGroup.appendChild(titleLabel);
+            titleGroup.appendChild(titleInput);
+
+            // 内容输入
+            const contentGroup = document.createElement('div');
+            contentGroup.className = 'form-group';
+            const contentLabel = document.createElement('label');
+            contentLabel.htmlFor = 'edit-event-content';
+            contentLabel.textContent = '内容';
+            const contentTextarea = document.createElement('textarea');
+            contentTextarea.id = 'edit-event-content';
+            contentTextarea.className = 'form-textarea';
+            contentTextarea.value = event.content;
+            contentTextarea.rows = 4;
+            contentTextarea.maxLength = 300;
+            contentGroup.appendChild(contentLabel);
+            contentGroup.appendChild(contentTextarea);
+
+            // 状态选择
+            const statusGroup = document.createElement('div');
+            statusGroup.className = 'form-group';
+            const statusLabel = document.createElement('label');
+            statusLabel.htmlFor = 'edit-event-status';
+            statusLabel.textContent = '状态';
+            const statusSelect = document.createElement('select');
+            statusSelect.id = 'edit-event-status';
+            statusSelect.className = 'form-select';
+
+            const statusOptions = [
+                { value: 'open', text: '开放' },
+                { value: 'done', text: '完成' },
+                { value: 'cancelled', text: '取消' },
+                { value: 'note', text: '笔记' }
+            ];
+
+            statusOptions.forEach(option => {
+                const optionEl = document.createElement('option');
+                optionEl.value = option.value;
+                optionEl.textContent = option.text;
+                optionEl.selected = event.status === option.value;
+                statusSelect.appendChild(optionEl);
+            });
+
+            statusGroup.appendChild(statusLabel);
+            statusGroup.appendChild(statusSelect);
+
+            // 截止时间输入
+            const dueGroup = document.createElement('div');
+            dueGroup.className = 'form-group';
+            const dueLabel = document.createElement('label');
+            dueLabel.htmlFor = 'edit-event-due';
+            dueLabel.textContent = '截止时间（可选）';
+            const dueInput = document.createElement('input');
+            dueInput.type = 'datetime-local';
+            dueInput.id = 'edit-event-due';
+            dueInput.className = 'form-input';
+            if (event.dueAt) {
+                dueInput.value = new Date(event.dueAt).toISOString().slice(0, 16);
+            }
+            dueGroup.appendChild(dueLabel);
+            dueGroup.appendChild(dueInput);
+
+            // 排除注入选项
+            const excludeGroup = document.createElement('div');
+            excludeGroup.className = 'form-group';
+            const excludeLabel = document.createElement('label');
+            excludeLabel.htmlFor = 'edit-event-exclude';
+            excludeLabel.textContent = '排除注入';
+            const excludeCheckbox = document.createElement('input');
+            excludeCheckbox.type = 'checkbox';
+            excludeCheckbox.id = 'edit-event-exclude';
+            excludeCheckbox.className = 'form-checkbox';
+            excludeCheckbox.checked = !!event.excludeFromPrompt;
+            excludeGroup.appendChild(excludeCheckbox);
+            excludeGroup.appendChild(excludeLabel);
+
+            // 组装表单
+            form.appendChild(titleGroup);
+            form.appendChild(contentGroup);
+            form.appendChild(statusGroup);
+            form.appendChild(dueGroup);
+            form.appendChild(excludeGroup);
+
+            bodyEl.appendChild(form);
+
+            // 设置按钮
+            cancelBtn.style.display = 'block';
+            cancelBtn.textContent = '取消';
+            cancelBtn.className = 'btn btn-secondary';
+            confirmBtn.textContent = '保存';
+            confirmBtn.className = 'btn btn-primary';
+
+            // 绑定保存事件
+            const handleSave = async () => {
+                const title = titleInput.value.trim();
+                if (!title) {
+                    await this.showAlert('验证错误', '标题不能为空');
+                    titleInput.focus();
+                    return;
+                }
+
+                const updateData: Partial<typeof event> = {
+                    title,
+                    content: contentTextarea.value.trim(),
+                    status: statusSelect.value as any,
+                    excludeFromPrompt: excludeCheckbox.checked,
+                    updatedAt: Date.now()
+                };
+
+                if (dueInput.value) {
+                    updateData.dueAt = new Date(dueInput.value).getTime();
+                } else {
+                    updateData.dueAt = null;
+                }
+
+                try {
+                    await MemoryRepo.updateEvent(eventId, updateData);
+                    await this.refreshMemoryData();
+                    win.hideCustomModal();
+                } catch (error) {
+                    console.error('[Memory] 保存编辑失败:', error);
+                    await this.showAlert('错误', '保存失败，请重试');
+                }
+            };
+
+            // 绑定取消事件
+            const handleCancel = () => {
+                win.hideCustomModal();
+            };
+
+            confirmBtn.onclick = handleSave;
+            cancelBtn.onclick = handleCancel;
+
+            // 支持回车提交（在非textarea时）
+            form.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && e.target !== contentTextarea) {
+                    e.preventDefault();
+                    handleSave();
+                }
+            });
+
+            // 显示Modal并聚焦
+            win.showCustomModal();
+            titleInput.focus();
+            titleInput.select();
+
         } catch (e) {
             console.error('[Memory] 编辑事件失败:', e);
-            this.showAlert('错误', '编辑失败');
+            await this.showAlert('错误', '编辑失败');
         }
     }
 
@@ -609,10 +794,86 @@ export class MemoryScreenModule {
         try {
             const event = await MemoryRepo.getEventById(eventId);
             if (!event) return;
-            const detail = `ID: ${event.id}\n类型: ${event.typeKey}\n状态: ${this.getStatusText(event.status)}\n创建: ${new Date(event.createdAt).toLocaleString()}\n更新: ${new Date(event.updatedAt).toLocaleString()}\n截止: ${event.dueAt ? new Date(event.dueAt).toLocaleString() : '无'}\n参与者: ${(event.participants||[]).join(', ')}\n标题: ${event.title}\n内容: ${event.content}`;
-            alert(detail);
+
+            const win = window as any;
+            if (!win.showCustomModal) {
+                // 向后兼容
+                const detail = `ID: ${event.id}\n类型: ${event.typeKey}\n状态: ${this.getStatusText(event.status)}\n创建: ${new Date(event.createdAt).toLocaleString()}\n更新: ${new Date(event.updatedAt).toLocaleString()}\n截止: ${event.dueAt ? new Date(event.dueAt).toLocaleString() : '无'}\n参与者: ${(event.participants||[]).join(', ')}\n标题: ${event.title}\n内容: ${event.content}`;
+                alert(detail);
+                return;
+            }
+
+            // 使用统一Modal显示结构化详情
+            const titleEl = document.getElementById('custom-modal-title');
+            const bodyEl = document.getElementById('custom-modal-body');
+            const cancelBtn = document.getElementById('custom-modal-cancel') as HTMLButtonElement;
+            const confirmBtn = document.getElementById('custom-modal-confirm') as HTMLButtonElement;
+
+            if (!titleEl || !bodyEl || !cancelBtn || !confirmBtn) {
+                console.error('[Memory] Modal elements not found');
+                return;
+            }
+
+            // 设置Modal标题
+            titleEl.textContent = '记忆详情';
+
+            // 清空body并构建详情内容
+            bodyEl.textContent = '';
+
+            // 创建详情列表
+            const detailList = document.createElement('dl');
+            detailList.className = 'event-detail-list';
+
+            const addDetailItem = (label: string, value: string) => {
+                const dt = document.createElement('dt');
+                dt.textContent = label;
+                const dd = document.createElement('dd');
+                dd.textContent = value;
+                detailList.appendChild(dt);
+                detailList.appendChild(dd);
+            };
+
+            // 添加各项详情
+            addDetailItem('ID', event.id);
+            addDetailItem('类型', event.typeKey || '未知');
+            addDetailItem('状态', this.getStatusText(event.status));
+            addDetailItem('创建时间', new Date(event.createdAt).toLocaleString());
+            addDetailItem('更新时间', new Date(event.updatedAt).toLocaleString());
+            addDetailItem('截止时间', event.dueAt ? new Date(event.dueAt).toLocaleString() : '无');
+            addDetailItem('参与者', (event.participants || []).join(', ') || '无');
+            addDetailItem('是否压缩', event.compressed ? '是' : '否');
+            addDetailItem('排除注入', event.excludeFromPrompt ? '是' : '否');
+
+            // 标题和内容单独处理，支持换行
+            const titleSection = document.createElement('div');
+            titleSection.innerHTML = `<dt>标题</dt><dd style="white-space: pre-wrap;">${this.escapeHtml(event.title)}</dd>`;
+
+            const contentSection = document.createElement('div');
+            contentSection.innerHTML = `<dt>内容</dt><dd style="white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${this.escapeHtml(event.content)}</dd>`;
+
+            bodyEl.appendChild(detailList);
+            bodyEl.appendChild(titleSection);
+            bodyEl.appendChild(contentSection);
+
+            // 隐藏取消按钮，设置确定按钮
+            cancelBtn.style.display = 'none';
+            confirmBtn.textContent = '好的';
+            confirmBtn.className = 'btn btn-primary';
+
+            // 绑定关闭事件
+            confirmBtn.onclick = () => {
+                cancelBtn.style.display = 'block'; // 恢复默认状态
+                confirmBtn.textContent = '确定';
+                win.hideCustomModal();
+            };
+
+            // 显示Modal并聚焦
+            win.showCustomModal();
+            confirmBtn.focus();
+
         } catch (e) {
             console.error('[Memory] 显示详情失败:', e);
+            await this.showAlert('错误', '无法显示记忆详情');
         }
     }
 
@@ -653,7 +914,7 @@ export class MemoryScreenModule {
     private async batchDeleteEvents(): Promise<void> {
         const ids = Array.from(this.selectedEventIds);
         if (ids.length === 0) return;
-        const ok = await this.showConfirm('删除确认', `将删除 ${ids.length} 条事件，此操作不可恢复，是否继续？`);
+        const ok = await this.showConfirm('删除确认', `将删除 ${ids.length} 条事件，此操作不可恢复，是否继续？`, true);
         if (!ok) return;
         try {
             await MemoryRepo.removeEvents(ids);
@@ -791,7 +1052,8 @@ export class MemoryScreenModule {
 
         const confirmed = await this.showConfirm(
             '确认压缩',
-            `即将压缩 ${this.compressionCandidates.length} 个事件。压缩后原事件将被替换为摘要，此操作不可逆。是否继续？`
+            `即将压缩 ${this.compressionCandidates.length} 个事件。压缩后原事件将被替换为摘要，此操作不可逆。是否继续？`,
+            true
         );
 
         if (!confirmed) return;
@@ -1086,18 +1348,28 @@ export class MemoryScreenModule {
     /**
      * 显示确认对话框
      */
-    private async showConfirm(title: string, message: string): Promise<boolean> {
-        return new Promise((resolve) => {
-            const confirmed = confirm(`${title}\n\n${message}`);
-            resolve(confirmed);
-        });
+    private async showConfirm(title: string, message: string, isDanger = false): Promise<boolean> {
+        const win = window as any;
+        if (win.showCustomConfirm) {
+            return await win.showCustomConfirm(title, message, {
+                confirmButtonClass: isDanger ? 'btn-danger' : undefined
+            });
+        }
+        // 向后兼容
+        return confirm(`${title}\n\n${message}`);
     }
 
     /**
      * 显示提示框
      */
-    private showAlert(title: string, message: string): void {
-        alert(`${title}\n\n${message}`);
+    private async showAlert(title: string, message: string): Promise<void> {
+        const win = window as any;
+        if (win.showCustomAlert) {
+            await win.showCustomAlert(title, message);
+        } else {
+            // 向后兼容
+            alert(`${title}\n\n${message}`);
+        }
     }
 
     // 新增：导出当前压缩候选集
