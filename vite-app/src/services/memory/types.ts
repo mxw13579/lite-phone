@@ -9,6 +9,8 @@ export interface EventRec {
   typeKey: string;
   title: string;              // ≤80 chars
   content: string;            // ≤300 chars；压缩后摘要仍≤300
+  titleTpl?: string;          // 可选模板，支持{USER}/{PERSONA}变量
+  contentTpl?: string;        // 可选模板，支持{USER}/{PERSONA}变量
   status: EventStatus;
   lifecycle: Lifecycle;
   dueAt?: number;             // 仅承诺类可选

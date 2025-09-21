@@ -26,11 +26,12 @@ const DISTILL_PROMPT = `你是 Memory Distiller。输入为一轮对话（user +
 - 参与者以 persona:X / user:U 命名；
 - 如果这是对已有事件的完成/更新，请返回 parentEventId（从contextMemory中的 #evt:xxx 标记提取）
 - 注意：敏感信息（如电话号码、邮箱、身份证号等）和危险命令（如删除文件、执行脚本等）会被自动过滤
+- 可选择性提供title/content模板，使用{USER}/{PERSONA}变量，用于在不同上下文中展示
 
 contextMemory（本次注入的记忆内容，可能包含 #evt:xxx 标记）:
 {CONTEXT_MEMORY}
 
-输出严格 JSON：{"event":{"title":"...","content":"...","status":"open|done|cancelled|note","dueAt"?:number,"participants"?:[],"parentEventId"?:"evt_xxx"}}
+输出严格 JSON：{"event":{"title":"...","content":"...","titleTpl"?:"{USER}做了某事","contentTpl"?:"{PERSONA}记录了{USER}的话","status":"open|done|cancelled|note","dueAt"?:number,"participants"?:[],"parentEventId"?:"evt_xxx"}}
 
 状态选择：
 - open：进行中的承诺/约定
@@ -93,32 +94,44 @@ export async function maybeExtractAndRecord(
       return;
     }
 
-    // 步骤3：构建EventRec
+    // 步骤3：构建EventRec并应用模板派生/参与者归一化
     const originalTitle = eventData.title || '';
     const originalContent = eventData.content || '';
-    
+
     // 应用过滤并检测是否包含PII或命令式内容
     const filteredTitle = sanitizeText(originalTitle, 80);
     const filteredContent = sanitizeText(originalContent, 300);
-    
+
     // 检测是否有内容被过滤
-    const containsPII = (originalTitle !== filteredTitle && 
+    const containsPII = (originalTitle !== filteredTitle &&
                         (filteredTitle.includes('[已过滤') || filteredTitle.includes('[已过滤敏感信息]'))) ||
-                       (originalContent !== filteredContent && 
+                       (originalContent !== filteredContent &&
                         (filteredContent.includes('[已过滤') || filteredContent.includes('[已过滤敏感信息]')));
-    
+
+    // 应用模板派生和参与者归一化
+    const processedEvent = applyTemplateDerivationAndNormalization({
+        title: filteredTitle,
+        content: filteredContent,
+        titleTpl: eventData.titleTpl,
+        contentTpl: eventData.contentTpl,
+        participants: eventData.participants,
+        personaId
+    });
+
     const event: EventRec = {
       id: 'evt_' + now + '_' + Math.random().toString(36).slice(2, 8),
       personaId,
       chatId,
       typeKey: shouldResult.typeKey || 'note',
-      title: filteredTitle,
-      content: filteredContent,
+      title: processedEvent.title,
+      content: processedEvent.content,
+      titleTpl: processedEvent.titleTpl,
+      contentTpl: processedEvent.contentTpl,
       status: validateStatus(eventData.status) || 'note',
       lifecycle: eventData.status === 'open' ? 'requiresCompletion' : 'none',
       dueAt: validateTimestamp(eventData.dueAt),
       parentEventId: eventData.parentEventId ? String(eventData.parentEventId) : undefined,
-      participants: Array.isArray(eventData.participants) ? eventData.participants.slice(0, 8) : undefined,
+      participants: processedEvent.participants,
       pii: containsPII, // 标记是否包含已过滤的PII或敏感内容
       excludeFromPrompt: containsPII, // 包含敏感内容时默认排除注入
       createdAt: now,
@@ -1006,4 +1019,120 @@ async function considerUpdatingParent(event: EventRec): Promise<boolean> {
     console.warn('[MM][parent-check-failed]', e);
     return false;
   }
+}
+
+// 模板派生和参与者归一化处理
+function applyTemplateDerivationAndNormalization({
+  title,
+  content,
+  titleTpl,
+  contentTpl,
+  participants,
+  personaId
+}: {
+  title: string;
+  content: string;
+  titleTpl?: string;
+  contentTpl?: string;
+  participants?: any[];
+  personaId: string;
+}): {
+  title: string;
+  content: string;
+  titleTpl?: string;
+  contentTpl?: string;
+  participants: string[];
+} {
+  // 1. 参与者归一化为标准格式 ['user', 'persona:<personaId>']
+  const normalizedParticipants = ['user', `persona:${personaId}`];
+
+  // 2. 模板派生：如果没有提供模板，尝试从内容中派生
+  let derivedTitleTpl = titleTpl;
+  let derivedContentTpl = contentTpl;
+  let finalTitle = title;
+  let finalContent = content;
+
+  // 如果LLM已经提供了模板，直接使用
+  if (titleTpl || contentTpl) {
+    return {
+      title: finalTitle,
+      content: finalContent,
+      titleTpl: derivedTitleTpl,
+      contentTpl: derivedContentTpl,
+      participants: normalizedParticipants
+    };
+  }
+
+  // 尝试从内容中识别并派生模板
+  // 简单的模式匹配：寻找可能的用户/角色占位语
+  const userPatterns = [
+    /用户/g,
+    /User/g,
+    /user/g,
+    /我/g
+  ];
+
+  const personaPatterns = [
+    /AI助手/g,
+    /Assistant/g,
+    /assistant/g,
+    /角色/g,
+    /persona/g,
+    /Persona/g
+  ];
+
+  // 检查标题是否包含可模板化的内容
+  let titleHasUserRef = false;
+  let titleHasPersonaRef = false;
+  let tempTitle = title;
+
+  for (const pattern of userPatterns) {
+    if (pattern.test(title)) {
+      titleHasUserRef = true;
+      tempTitle = tempTitle.replace(pattern, '{USER}');
+    }
+  }
+
+  for (const pattern of personaPatterns) {
+    if (pattern.test(title)) {
+      titleHasPersonaRef = true;
+      tempTitle = tempTitle.replace(pattern, '{PERSONA}');
+    }
+  }
+
+  // 检查内容是否包含可模板化的内容
+  let contentHasUserRef = false;
+  let contentHasPersonaRef = false;
+  let tempContent = content;
+
+  for (const pattern of userPatterns) {
+    if (pattern.test(content)) {
+      contentHasUserRef = true;
+      tempContent = tempContent.replace(pattern, '{USER}');
+    }
+  }
+
+  for (const pattern of personaPatterns) {
+    if (pattern.test(content)) {
+      contentHasPersonaRef = true;
+      tempContent = tempContent.replace(pattern, '{PERSONA}');
+    }
+  }
+
+  // 如果检测到模式，生成模板
+  if (titleHasUserRef || titleHasPersonaRef) {
+    derivedTitleTpl = tempTitle;
+  }
+
+  if (contentHasUserRef || contentHasPersonaRef) {
+    derivedContentTpl = tempContent;
+  }
+
+  return {
+    title: finalTitle,
+    content: finalContent,
+    titleTpl: derivedTitleTpl,
+    contentTpl: derivedContentTpl,
+    participants: normalizedParticipants
+  };
 }

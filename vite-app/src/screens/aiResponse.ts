@@ -382,7 +382,31 @@ export class AiResponseModule {
             const { selectEventsForPrompt } = await import('../services/memory/select');
             const { renderMemoryBlock } = await import('../services/memory/render');
             const events = await selectEventsForPrompt(MemoryRepo as any, chat.personaId, { maxChars: memoryTokenBudget * 4 });
-            const fallbackPack = renderMemoryBlock(events);
+
+            // 获取用户和角色名称用于模板渲染
+            const win = window as any;
+            const state = win.STATE?.state || win.state;
+
+            // 使用与memory模块一致的用户名获取逻辑
+            let userName = '用户';
+            try {
+              if (state && state.userRoles && Array.isArray(state.userRoles)) {
+                const defaultUserRole = state.userRoles.find((role: any) => role.isGlobalDefault);
+                if (defaultUserRole?.name) {
+                  userName = defaultUserRole.name;
+                }
+              }
+            } catch (error) {
+              console.error('[aiResponse] 获取用户名称失败:', error);
+            }
+
+            const personaName = chat.name || chat.personaId;
+            const context = {
+              userName,
+              personaNameMap: { [chat.personaId]: personaName }
+            };
+
+            const fallbackPack = renderMemoryBlock(events, true, context);
             if (fallbackPack && fallbackPack.trim()) {
               memoryPack = fallbackPack;
               console.log('[MM][inject-fallback] 使用快速选择生成记忆注入');
