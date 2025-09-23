@@ -1,5 +1,10 @@
 import { defineConfig } from 'vite';
-import path from 'node:path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// ESM 环境下没有内置 __dirname，这里手动兼容
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export default defineConfig({
   base: './',
@@ -56,13 +61,13 @@ export default defineConfig({
   // 路径解析
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
-      '@constants': path.resolve(__dirname, 'src/constants'),
-      '@state': path.resolve(__dirname, 'src/state'),
-      '@database': path.resolve(__dirname, 'src/database'),
-      '@router': path.resolve(__dirname, 'src/router'),
-      '@screens': path.resolve(__dirname, 'src/screens'),
-      '@services': path.resolve(__dirname, 'src/services'),
+      '@': resolve(__dirname, 'src'),
+      '@constants': resolve(__dirname, 'src/constants'),
+      '@state': resolve(__dirname, 'src/state'),
+      '@database': resolve(__dirname, 'src/database'),
+      '@router': resolve(__dirname, 'src/router'),
+      '@screens': resolve(__dirname, 'src/screens'),
+      '@services': resolve(__dirname, 'src/services'),
     },
   },
   

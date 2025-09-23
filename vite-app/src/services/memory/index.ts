@@ -67,6 +67,7 @@ export type {
 import { MemoryRepo } from './repo';
 import { selectEventsForPrompt } from './select';
 import { renderMemoryBlock } from './render';
+import STATE from '../../state';
 import type { SelectBudget } from './types';
 
 export class MemoryManager {
@@ -76,7 +77,23 @@ export class MemoryManager {
     includeIds = true
   ): Promise<string> {
     const events = await selectEventsForPrompt(MemoryRepo, personaId, budget);
-    return renderMemoryBlock(events, includeIds);
+    // 传入上下文以启用模板渲染（{USER}/{PERSONA}）
+    let userName = '用户';
+    try {
+      const roles = (STATE.state?.userRoles as any[]) || [];
+      const defaultUserRole = roles.find((r: any) => r && r.isGlobalDefault);
+      if (defaultUserRole?.name) userName = defaultUserRole.name;
+    } catch {}
+
+    let personaName = personaId;
+    try {
+      const personas = (STATE.state?.personas as any[]) || [];
+      const p = personas.find((x: any) => x && x.id === personaId);
+      if (p?.name) personaName = p.name;
+    } catch {}
+
+    const context = { userName, personaNameMap: { [personaId]: personaName } };
+    return renderMemoryBlock(events, includeIds, context);
   }
 
   static async getEventCount(personaId: string): Promise<number> {

@@ -177,124 +177,6 @@ export class MemoryScreenModule {
         }
     }
 
-    private async createMemoryScreenDOM(): Promise<void> {
-        const existingScreen = document.getElementById('memory-management-screen');
-        if (existingScreen) {
-            existingScreen.remove();
-        }
-
-        const screenHTML = `
-            <div id=\"memory-management-screen\" class=\"screen\" role=\"application\" aria-label=\"记忆管理\">
-                <header class=\"header\" role=\"banner\">
-                    <button class=\"back-btn\" onclick=\"window.showScreen && window.showScreen('persona-center-screen')\" aria-label=\"返回角色中心\">
-                        <span aria-hidden=\"true\">‹</span>
-                    </button>
-                    <h1 class=\"header-title\"><span class=\"title-icon\">🧠</span>记忆管理</h1>
-                    <div style=\"width: 30px;\"></div>
-                </header>
-
-                <!-- 主体两栏布局 -->
-                <div class="memory-layout">
-                    <!-- 左侧角色列表 -->
-                    <aside class="persona-list-pane" id="memory-persona-pane" role="navigation" aria-label="角色列表">
-                        <div class="persona-list-header">
-                            <h2>选择角色</h2>
-                        </div>
-                        <div class="persona-list-content" id="persona-list-content">
-                            <!-- 动态生成的角色列表 -->
-                        </div>
-                    </aside>
-
-                    <!-- 右侧记忆面板 -->
-                    <section class="memory-panel" id="memory-panel" role="main" aria-label="记忆面板">
-                        <!-- 筛选栏 -->
-                        <div id="memory-filter" class="memory-filter">
-                            <select id="memory-status-filter" aria-label="状态筛选">
-                                <option value="all">全部状态</option>
-                                <option value="open">进行中</option>
-                                <option value="done">已完成</option>
-                                <option value="note">笔记</option>
-                                <option value="cancelled">已取消</option>
-                            </select>
-                        </div>
-
-                        <!-- 记忆内容区域 -->
-                        <div class="memory-content-area">
-                            <!-- 空态提示 -->
-                            <div id="memory-empty-state" class="memory-empty-state">
-                                <div class="empty-state-icon">👤</div>
-                                <h3>尚未选择角色</h3>
-                                <p>请从左侧选择角色后查看记忆</p>
-                            </div>
-
-                            <!-- 事件列表 -->
-                            <div id="memory-event-list" class="memory-event-list" role="list" style="display: none;">
-                                <!-- 动态生成的事件条目 -->
-                            </div>
-                        </div>
-
-                        <!-- 压缩管理区域 -->
-                        <div id="memory-compress-section" class="memory-compress-section" style="display: none;">
-                    <div class="compress-header">
-                        <h3>📦 压缩管理</h3>
-                        <p class="compress-description">压缩旧事件可节省存储空间，同时保留关键信息摘要</p>
-                    </div>
-                    <div class="compress-controls">
-                        <div class="compress-info">
-                            <span id="compress-candidate-count">检查中...</span>
-                        </div>
-                        <div class="compress-actions">
-                            <button id="compress-preview-btn" class="btn btn-secondary" disabled>
-                                <span>👁️</span>
-                                <span>压缩预览</span>
-                            </button>
-                            <button id="compress-execute-btn" class="btn btn-primary" disabled>
-                                <span>🗜️</span>
-                                <span>执行压缩</span>
-                            </button>
-                            <button id="export-events-btn" class="btn btn-secondary">
-                                <span>📤</span>
-                                <span>导出备份</span>
-                            </button>
-                            <label class="force-compress-toggle" style="margin-left:12px;display:inline-flex;align-items:center;gap:6px;">
-                                <input type="checkbox" id="force-compress-open-due" />
-                                <span>允许强制压缩进行中/临期</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                        <!-- 批量操作工具栏 -->
-                        <div id="memory-batch-toolbar" class="memory-batch-toolbar" style="display: none;">
-                            <div class="batch-info">
-                                <span id="memory-selected-count">0</span> 项已选中
-                            </div>
-                            <div class="batch-actions">
-                                <button id="memory-batch-complete" class="btn btn-primary">标记完成</button>
-                                <button id="memory-batch-cancel" class="btn btn-secondary">标记取消</button>
-                                <button id="memory-batch-delete" class="btn btn-danger">删除</button>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-            </div>
-        `;
-
-        // 将记忆管理屏幕挂载到与其他屏幕一致的容器内（#phone-screen）
-        const phoneScreen = document.getElementById('phone-screen');
-        if (phoneScreen) {
-            const wrapper = document.createElement('div');
-            wrapper.innerHTML = screenHTML;
-            // 仅附加实际 screen 根节点，避免多余文本节点
-            const screenRoot = wrapper.firstElementChild as HTMLElement;
-            if (screenRoot) phoneScreen.appendChild(screenRoot);
-        } else {
-            // 兜底：若未找到容器则挂到 body（不影响功能，但可能样式与切屏不一致）
-            document.body.insertAdjacentHTML('beforeend', screenHTML);
-        }
-        this.initializeDOMCache();
-    }
-
     private async renderMemoryScreen(): Promise<void> {
         // 渲染左侧角色列表（新架构）
         await this.renderPersonaList();
@@ -414,12 +296,40 @@ export class MemoryScreenModule {
                 contentEl.appendChild(item);
             });
 
+            // 异步更新各角色记忆计数（不阻塞首屏渲染）
+            void this.updatePersonaMemoryCounts();
+
         } catch (error) {
             console.error('[Memory] 渲染角色列表失败:', error);
             const errorEl = document.createElement('div');
             errorEl.className = 'persona-list-error';
             errorEl.textContent = '加载角色列表失败';
             contentEl.appendChild(errorEl);
+        }
+    }
+
+    /**
+     * 异步统计并更新左侧角色的记忆条数
+     */
+    private async updatePersonaMemoryCounts(): Promise<void> {
+        try {
+            if (!this.personas || this.personas.length === 0) return;
+            await Promise.all(this.personas.map(async (p) => {
+                try {
+                    const events = await MemoryRepo.getEventsByPersona(p.id);
+                    const count = events.length;
+                    const countEl = document.querySelector(
+                        `.persona-list-item[data-persona-id="${p.id}"] .persona-memory-count`
+                    ) as HTMLElement | null;
+                    if (countEl) {
+                        countEl.textContent = String(count);
+                    }
+                } catch (e) {
+                    // 单个失败不影响整体
+                }
+            }));
+        } catch (error) {
+            console.warn('[Memory] 统计角色记忆条数失败:', error);
         }
     }
 
@@ -765,9 +675,9 @@ export class MemoryScreenModule {
         // Esc键关闭Modal
         if (e.key === 'Escape') {
             const win = window as any;
-            // 检查是否有自定义Modal打开
-            const customModal = document.getElementById('custom-modal');
-            if (customModal && customModal.style.display === 'block') {
+            // 检查是否有自定义Modal打开（检测overlay的visible类）
+            const customModalOverlay = document.getElementById('custom-modal-overlay');
+            if (customModalOverlay && customModalOverlay.classList.contains('visible')) {
                 e.preventDefault();
                 win.hideCustomModal && win.hideCustomModal();
                 return;
@@ -995,6 +905,21 @@ export class MemoryScreenModule {
             dueGroup.appendChild(dueLabel);
             dueGroup.appendChild(dueInput);
 
+            // 标签输入
+            const tagsGroup = document.createElement('div');
+            tagsGroup.className = 'form-group';
+            const tagsLabel = document.createElement('label');
+            tagsLabel.htmlFor = 'edit-event-tags';
+            tagsLabel.textContent = '标签（可选，逗号分隔）';
+            const tagsInput = document.createElement('input');
+            tagsInput.type = 'text';
+            tagsInput.id = 'edit-event-tags';
+            tagsInput.className = 'form-input';
+            tagsInput.placeholder = '例如：重要,工作,个人';
+            tagsInput.value = event.tags ? event.tags.join(', ') : '';
+            tagsGroup.appendChild(tagsLabel);
+            tagsGroup.appendChild(tagsInput);
+
             // 排除注入选项
             const excludeGroup = document.createElement('div');
             excludeGroup.className = 'form-group';
@@ -1014,6 +939,7 @@ export class MemoryScreenModule {
             form.appendChild(contentGroup);
             form.appendChild(statusGroup);
             form.appendChild(dueGroup);
+            form.appendChild(tagsGroup);
             form.appendChild(excludeGroup);
 
             bodyEl.appendChild(form);
@@ -1041,6 +967,14 @@ export class MemoryScreenModule {
                     excludeFromPrompt: excludeCheckbox.checked,
                     updatedAt: Date.now()
                 };
+
+                // 处理标签
+                const tagsText = tagsInput.value.trim();
+                if (tagsText) {
+                    updateData.tags = tagsText.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+                } else {
+                    updateData.tags = [];
+                }
 
                 if (dueInput.value) {
                     updateData.dueAt = new Date(dueInput.value).getTime();
@@ -1204,7 +1138,7 @@ export class MemoryScreenModule {
     private async batchCancelEvents(): Promise<void> {
         const ids = Array.from(this.selectedEventIds);
         if (ids.length === 0) return;
-        const ok = await (window as any).showCustomConfirm('取消确认', `将标记 ${ids.length} 条事件为已取消，是否继续？`, { confirmButtonClass: 'btn-warning' });
+        const ok = await (window as any).showCustomConfirm('取消确认', `将标记 ${ids.length} 条事件为已取消，是否继续？`, { confirmButtonClass: 'btn-secondary' });
         if (!ok) return;
         try {
             const now = Date.now();
@@ -1700,8 +1634,8 @@ function buildMemoryScreenRootForMemoryModule(): HTMLElement {
     header.setAttribute('role', 'banner');
     const backBtn = document.createElement('button');
     backBtn.className = 'back-btn';
-    backBtn.setAttribute('aria-label', '返回角色中心');
-    backBtn.addEventListener('click', () => { const w = window as any; if (w.showScreen) w.showScreen('persona-center-screen'); });
+    backBtn.setAttribute('aria-label', '返回首页');
+    backBtn.addEventListener('click', () => { const w = window as any; if (w.showScreen) w.showScreen('home-screen'); });
     const backIcon = document.createElement('span');
     backIcon.setAttribute('aria-hidden', 'true');
     backIcon.textContent = '‹';

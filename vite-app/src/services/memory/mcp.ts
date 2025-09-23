@@ -1,5 +1,6 @@
 import type { EventRec } from './types';
 import { MemoryRepo, deduplicateEvents, checkNearDuplicates } from './repo';
+import { getEventDisplayText } from './render';
 
 const COOLDOWN_MS = 5000;
 // 使用Map存储各个persona的冷却时间，避免跨会话互相干扰
@@ -137,6 +138,14 @@ export async function maybeExtractAndRecord(
       createdAt: now,
       updatedAt: now
     };
+
+    // 向后兼容填充：为旧渲染路径提供即时渲染后的文本
+    // 使用默认角色名，确保旧代码路径能正确显示
+    if (event.titleTpl || event.contentTpl) {
+      const renderedText = getEventDisplayText(event, '用户', 'AI');
+      event.title = renderedText.title;
+      event.content = renderedText.content;
+    }
     
     // 记录过滤统计
     if (containsPII) {

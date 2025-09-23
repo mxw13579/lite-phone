@@ -4,6 +4,7 @@ import { MemoryRepo } from '../memory/repo';
 import { selectEventsForPrompt, selectEventsForGroup } from '../memory/select';
 import { renderMemoryBlock, renderGroupMemoryBlock } from '../memory/render';
 import type { EventRec, SelectBudget } from '../memory/types';
+import STATE from '../../state';
 
 type Member = { personaId?: string; name?: string };
 
@@ -31,6 +32,26 @@ export class ChatMemoryEstimator {
     private currentMembers: Member[] = [];
     private memoryBudgetChars = 600 * TOKEN_TO_CHAR_RATIO;
     private tempExcludedIds: Set<string> = new Set();
+
+    private getContextForSingleChat(): { userName?: string; personaNameMap?: Record<string, string> } {
+        if (!this.currentChatId || !this.currentPersonaId) {
+            return {};
+        }
+
+        const chatMap = STATE.state?.chats || {} as Record<string, any>;
+        const chat = chatMap[this.currentChatId];
+        if (!chat) {
+            return {};
+        }
+
+        const personas = STATE.state?.personas || [] as Array<{ id: string; name?: string }>;
+        const personaName = personas.find(p => p.id === this.currentPersonaId)?.name || 'AI';
+
+        return {
+            userName: chat.settings?.myPersona || '用户',
+            personaNameMap: { [this.currentPersonaId]: personaName }
+        };
+    }
 
     private refreshTimer: number | null = null;
     private readonly refreshDelay = 80; // 防抖，避免频繁刷新
@@ -543,7 +564,8 @@ export class ChatMemoryEstimator {
                     const budget: SelectBudget = { maxChars: this.memoryBudgetChars };
                     let events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
                     events = events.filter(e => !this.tempExcludedIds.has(e.id));
-                    const text = renderMemoryBlock(events);
+                    const context = this.getContextForSingleChat();
+                    const text = renderMemoryBlock(events, true, context);
                     console.log('[MM][P2] 单人回退注入长度:', text.length);
                     return text;
                 }
@@ -551,7 +573,8 @@ export class ChatMemoryEstimator {
                 const budget: SelectBudget = { maxChars: this.memoryBudgetChars };
                 let events = await selectEventsForPrompt(MemoryRepo, this.currentPersonaId, budget);
                 events = events.filter(e => !this.tempExcludedIds.has(e.id));
-                const text = renderMemoryBlock(events);
+                const context = this.getContextForSingleChat();
+                const text = renderMemoryBlock(events, true, context);
                 // 简单提示：接近预算的阈值
                 const nearThreshold = Math.floor(this.memoryBudgetChars * 0.9);
                 if (text.length >= nearThreshold) {
