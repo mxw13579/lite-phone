@@ -6,6 +6,7 @@ import { showError, showSuccess, showValidationError, showOperationError, showNe
 import { chatScreenModule, ChatScreenModule } from './chat/';
 import { aiResponseModule } from './aiResponse';
 import { memoryScreenModule, MemoryScreenModule } from './memory/';
+import { downloadJsonAs } from '../services/utils/download';
 
 // ============ 通用工具 ============
 
@@ -490,12 +491,10 @@ export class PresetScreen implements ScreenModule {
       exportTime: new Date().toISOString()
     };
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = el('a', { href: url }) as HTMLAnchorElement;
-    a.download = `presets_${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    void downloadJsonAs(
+      `presets_${new Date().toISOString().slice(0, 10)}.json`,
+      exportData
+    );
   }
 
   async importPresets(file: File): Promise<void> {
@@ -695,12 +694,10 @@ export class ApiSettingsScreen implements ScreenModule {
       exportTime: new Date().toISOString(),
       version: '1.0.0'
     };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = el('a', { href: url }) as HTMLAnchorElement;
-    a.download = `settings_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    void downloadJsonAs(
+      `settings_backup_${new Date().toISOString().slice(0, 10)}.json`,
+      exportData
+    );
   }
 
   async importSettings(file: File): Promise<void> {

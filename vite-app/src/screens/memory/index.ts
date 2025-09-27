@@ -8,6 +8,7 @@ import { compressOldEvents, selectCompressionCandidates, previewCompress } from 
 import { PersonaService } from '../personaCenter/services/PersonaService';
 import STATE from '../../state';
 import DB from '../../database';
+import { downloadJsonAs } from '../../services/utils/download';
 
 export interface MemoryScreenOptions {
     personaId?: string;         // 指定角色，为空时显示所有
@@ -1369,19 +1370,11 @@ export class MemoryScreenModule {
                 events: exportEvents
             };
 
-            // 创建并下载文件
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-                type: 'application/json'
-            });
-
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `memory-events-${this.currentPersonaId || 'all'}-${Date.now()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            // 创建并下载文件（统一工具）
+            await downloadJsonAs(
+                `memory-events-${this.currentPersonaId || 'all'}-${Date.now()}.json`,
+                exportData
+            );
 
             (window as any).showCustomAlert('成功', `已导出 ${exportEvents.length} 个事件`);
 
@@ -1603,15 +1596,10 @@ export class MemoryScreenModule {
                 candidateCount: this.compressionCandidates.length,
                 candidates: this.compressionCandidates
             };
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `memory-compress-candidates-${this.currentPersonaId || 'all'}-${Date.now()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            await downloadJsonAs(
+                `memory-compress-candidates-${this.currentPersonaId || 'all'}-${Date.now()}.json`,
+                exportData
+            );
             (window as any).showCustomAlert('成功', `已导出 ${this.compressionCandidates.length} 个候选`);
         } catch (error) {
             console.error('[Memory] 导出候选失败:', error);

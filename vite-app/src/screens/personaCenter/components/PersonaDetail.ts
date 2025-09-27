@@ -20,6 +20,7 @@ import type { WorldBook } from '../../../state';
 import { PersonaService } from '../services/PersonaService';
 import { UserRoleService } from '../services/UserRoleService';
 import { CompositionService } from '../services/CompositionService';
+import { downloadJsonAs } from '../../../services/utils/download';
 
 // Memory Manager P2: 导入记忆管理相关模块
 import { MemoryRepo, MemoryManager, estimateEventChars } from '../../../services/memory';
@@ -1109,17 +1110,10 @@ export class PersonaDetailComponent {
         }))
       };
       
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `memories_${personaId}_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      URL.revokeObjectURL(url);
+      await downloadJsonAs(
+        `memories_${personaId}_${new Date().toISOString().split('T')[0]}.json`,
+        exportData
+      );
       
       this.showMemoryMessage(`成功导出 ${events.length} 条记忆事件`, 'success');
     } catch (error) {
